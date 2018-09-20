@@ -1,0 +1,24 @@
+TARGET=smon
+CFLAGS=-g -std=c++14 -DBOOST_THREAD_USE_LIB -I ./Include -pipe -O3 -march=armv7-a -mfpu=neon-vfpv4 -mfloat-abi=hard
+
+all: $(TARGET)
+
+clean:
+	rm -rf $(TARGET) Objects/*.[ao]
+
+
+$(TARGET): Objects/main.o Objects/libMyUtils.a
+	g++ $(CFLAGS) -o $@ $< -L ./Objects -lMyUtils -lboost_program_options -lboost_system -lboost_thread -lpthread
+
+Objects/libMyUtils.a: Objects/Entity.o Objects/CyclicTimer.o Objects/SerialControl.o Objects/RTSControl-linux.o
+	ar rcs $@ $^
+
+Objects/%.o: Source/%.cpp
+	g++ $(CFLAGS) -c -o $@ $<
+
+
+Objects/main.o: Source/main.cpp Include/Entity.hpp Include/CyclicTimer.hpp Include/SerialControl.hpp
+Objects/Entity.o: Source/Entity.cpp Include/Entity.hpp
+Objects/CyclicTimer.o: Source/CyclicTimer.cpp Include/CyclicTimer.hpp Include/Entity.hpp
+Objects/SerialControl.o: Source/SerialControl.cpp Include/SerialControl.hpp Include/CyclicTimer.hpp Include/Entity.hpp
+Objects/RTSControl-linux.o: Source/RTSControl-linux.cpp Include/SerialControl.hpp Include/CyclicTimer.hpp Include/Entity.hpp
