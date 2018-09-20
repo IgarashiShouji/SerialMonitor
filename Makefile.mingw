@@ -1,17 +1,20 @@
 TARGET=smon.exe
 CFLAGS=-g -std=c++14 -DBOOST_THREAD_USE_LIB -I ./Include -pipe -O3
 
-all: $(TARGET) $(MODBUS)
+all: Objects $(TARGET)
 
 clean:
-	rm -rf $(TARGET) $(MODBUS) Objects/*.o
+	rm -rf $(TARGET) Objects/*.o
 
 
-$(TARGET): Objects/main.o Objects/libMyUtils.a
+$(TARGET): Objects/main.o Objects/libMyUtils.a Objects
 	g++ $(CFLAGS) -static -o $@ $< -L ./Objects -lMyUtils -lboost_program_options-mt -lboost_system-mt -lboost_thread-mt -lws2_32
 
 Objects/libMyUtils.a: Objects/Entity.o Objects/CyclicTimer.o Objects/SerialControl.o Objects/RTSControl-mingw.o
 	ar rcs $@ $^
+
+Objects:
+	mkdir -p Objects
 
 Objects/%.o: Source/%.cpp
 	g++ $(CFLAGS) -c -o $@ $<
