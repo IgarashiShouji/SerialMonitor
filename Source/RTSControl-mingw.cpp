@@ -53,6 +53,6 @@ void RTSContorlMingw::clear(void)
 // ----------<< SerialControl >>----------
 SerialControl::RtsContorl * SerialControl::createRtsControl(void)
 {
-    RtsContorl * rts = new RTSContorlMingw(port.native());
+    RtsContorl * rts = new RTSContorlMingw(port.native_handle());
     return rts;
 }
