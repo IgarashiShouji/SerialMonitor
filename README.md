@@ -31,3 +31,20 @@ This is a data monitor for half duplex serial comminication running on respi, li
 * -s [ --sum ] arg      calclate checksum of XOR<br>
 * -f [ --float ] arg    hex to float value<br>
 * -h [ --help ]         help<br>
+
+## Build
+
+* linux
+~~~
+ # make -f Makefile.linux
+~~~
+
+* Mingw
+~~~
+ # make -f Makefile.mingw
+~~~
+
+* RasPi
+~~~
+ # make -f Makefile.raspi
+~~~
