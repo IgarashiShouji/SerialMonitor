@@ -23,7 +23,7 @@ namespace MyBoost
     public:
         virtual void rcvIntarval(unsigned int tick) = 0;
     };
-    
+
     class SerialControl : public TimerHandler
     {
     public:
@@ -80,7 +80,7 @@ namespace MyBoost
     protected:
         RtsContorl * createRtsControl(void);
     };
-    
+
     inline bool SerialControl::isSend(void)
     {
         return is_send;
