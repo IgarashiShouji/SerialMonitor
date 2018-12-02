@@ -1,27 +1,31 @@
 TARGET=smon
-CFLAGS=-g -std=c++14 -DBOOST_THREAD_USE_LIB -I ./Include -pipe -O3 -march=native
+CFLAGS=-g -std=c++14 -DBOOST_THREAD_USE_LIB -I ./Include -I ./MyUtilities/Include -pipe -O3 -march=native
 
 all: Objects $(TARGET)
 
 clean:
 	rm -rf $(TARGET) Objects/*.[ao]
 
-
-$(TARGET): Objects/main.o Objects/libMyUtils.a Objects
-	g++ $(CFLAGS) -o $@ $< -L ./Objects -lMyUtils -lboost_program_options -lboost_system -lboost_thread -lpthread
-
-Objects/libMyUtils.a: Objects/Entity.o Objects/CyclicTimer.o Objects/SerialControl.o Objects/RTSControl-linux.o
-	ar rcs $@ $^
+$(TARGET): Objects/main.o MyUtilities/libUtilities.a Objects/libSerialMonitor.a Objects
+	g++ $(CFLAGS) -o $@ $< -L ./Objects -L ./MyUtilities -lSerialMonitor -lUtilities -lboost_program_options -lboost_system -lboost_thread -lpthread
 
 Objects:
 	mkdir -p Objects
 
+MyUtilities:
+	git clone https://github.com/IgarashiShouji/MyUtilities.git
+
+MyUtilities/libUtilities.a: MyUtilities
+	cd MyUtilities; make -f Makefile.linux all
+
+Objects/libSerialMonitor.a: Objects/CyclicTimer.o Objects/SerialControl.o Objects/RTSControl-linux.o
+	ar rcs $@ $^
+
 Objects/%.o: Source/%.cpp
 	g++ $(CFLAGS) -c -o $@ $<
 
-
-Objects/main.o: Source/main.cpp Include/Entity.hpp Include/CyclicTimer.hpp Include/SerialControl.hpp
-Objects/Entity.o: Source/Entity.cpp Include/Entity.hpp
-Objects/CyclicTimer.o: Source/CyclicTimer.cpp Include/CyclicTimer.hpp Include/Entity.hpp
-Objects/SerialControl.o: Source/SerialControl.cpp Include/SerialControl.hpp Include/CyclicTimer.hpp Include/Entity.hpp
-Objects/RTSControl-linux.o: Source/RTSControl-linux.cpp Include/SerialControl.hpp Include/CyclicTimer.hpp Include/Entity.hpp
+MyUtilities/Include/Entity.hpp: MyUtilities
+Objects/main.o: Source/main.cpp Include/CyclicTimer.hpp Include/SerialControl.hpp MyUtilities/Include/Entity.hpp
+Objects/CyclicTimer.o: Source/CyclicTimer.cpp Include/CyclicTimer.hpp MyUtilities/Include/Entity.hpp
+Objects/SerialControl.o: Source/SerialControl.cpp Include/SerialControl.hpp Include/CyclicTimer.hpp MyUtilities/Include/Entity.hpp
+Objects/RTSControl-linux.o: Source/RTSControl-linux.cpp Include/SerialControl.hpp Include/CyclicTimer.hpp MyUtilities/Include/Entity.hpp
