@@ -1,7 +1,7 @@
 TARGET=smon.exe
 CFLAGS=-g -std=c++14 -DBOOST_THREAD_USE_LIB -I ./Include -I ./MyUtilities/Include -pipe -O3
 
-all: Doxygen/html/index.html $(TARGET)
+all: Objects Doxygen/html/index.html $(TARGET)
 
 clean:
 	rm -rf $(TARGET) Objects/*.[ao]
@@ -35,7 +35,7 @@ Objects/%.o: Source/%.cpp
 	g++ $(CFLAGS) -c -o $@ $<
 
 MyUtilities/Include/Entity.hpp: MyUtilities
-Objects/main.o: Source/main.cpp Include/CyclicTimer.hpp Include/SerialControl.hpp MyUtilities/Include/Entity.hpp Objects
-Objects/CyclicTimer.o: Source/CyclicTimer.cpp Include/CyclicTimer.hpp MyUtilities/Include/Entity.hpp Objects
-Objects/SerialControl.o: Source/SerialControl.cpp Include/SerialControl.hpp Include/CyclicTimer.hpp MyUtilities/Include/Entity.hpp Objects
-Objects/RTSControl-mingw.o: Source/RTSControl-mingw.cpp Include/SerialControl.hpp Include/CyclicTimer.hpp MyUtilities/Include/Entity.hpp Objects
+Objects/main.o: Source/main.cpp Include/CyclicTimer.hpp Include/SerialControl.hpp MyUtilities/Include/Entity.hpp
+Objects/CyclicTimer.o: Source/CyclicTimer.cpp Include/CyclicTimer.hpp MyUtilities/Include/Entity.hpp
+Objects/SerialControl.o: Source/SerialControl.cpp Include/SerialControl.hpp Include/CyclicTimer.hpp MyUtilities/Include/Entity.hpp
+Objects/RTSControl-mingw.o: Source/RTSControl-mingw.cpp Include/SerialControl.hpp Include/CyclicTimer.hpp MyUtilities/Include/Entity.hpp

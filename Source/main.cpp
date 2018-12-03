@@ -375,6 +375,7 @@ static bool prnModbusCRC(string & data)
     if((data.size()%2) == 0)
     {
         CalcCRC16 crc(modbusCRC);
+        unsigned int size = 0;
         for(unsigned int idx=0, max=data.size();idx<max; idx += 2)
         {
             stringstream ss;
@@ -382,8 +383,9 @@ static bool prnModbusCRC(string & data)
             int val;
             ss >> val;
             crc << val;
+            size ++;
         }
-        printf("%s: %04x\n", data.c_str(), *crc);
+        printf("%s: %04x (%d [byte])\n", data.c_str(), *crc, size);
         return true;
     }
     cout << data << endl;
