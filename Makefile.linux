@@ -1,14 +1,13 @@
 TARGET=smon
 CFLAGS=-g -std=c++14 -DBOOST_THREAD_USE_LIB -I ./Include -I ./MyUtilities/Include -pipe -O3 -march=native
 
-all: Objects $(TARGET)
+all: Doxygen/html/index.html $(TARGET)
 
 clean:
-	rm -rf $(TARGET) Doxygen/* Objects/*.[ao]
+	rm -rf $(TARGET) Objects/*.[ao]
 
-$(TARGET): Objects/main.o MyUtilities/libUtilities.a Objects/libSerialMonitor.a Objects Doxygen
+$(TARGET): Objects/main.o MyUtilities/libUtilities.a Objects/libSerialMonitor.a Objects
 	g++ $(CFLAGS) -o $@ $< -L ./Objects -L ./MyUtilities -lSerialMonitor -lUtilities -lboost_program_options -lboost_system -lboost_thread -lpthread
-	doxygen Doxyfile
 
 Objects:
 	mkdir -p Objects
@@ -19,8 +18,15 @@ MyUtilities:
 Doxygen:
 	mkdir -p Doxygen
 
+Doxygen/html/index.html: Doxyfile Doxygen \
+							Source/main.cpp Include/CyclicTimer.hpp Include/SerialControl.hpp \
+							Source/CyclicTimer.cpp Include/CyclicTimer.hpp \
+							Source/SerialControl.cpp Include/SerialControl.hpp \
+							Source/RTSControl-mingw.cpp Include/SerialControl.hpp Include/CyclicTimer.hpp 
+	doxygen Doxyfile
+
 MyUtilities/libUtilities.a: MyUtilities
-	cd MyUtilities; make -f Makefile.linux all
+	cd MyUtilities; make -f Makefile all
 
 Objects/libSerialMonitor.a: Objects/CyclicTimer.o Objects/SerialControl.o Objects/RTSControl-linux.o
 	ar rcs $@ $^
@@ -29,7 +35,7 @@ Objects/%.o: Source/%.cpp
 	g++ $(CFLAGS) -c -o $@ $<
 
 MyUtilities/Include/Entity.hpp: MyUtilities
-Objects/main.o: Source/main.cpp Include/CyclicTimer.hpp Include/SerialControl.hpp MyUtilities/Include/Entity.hpp
-Objects/CyclicTimer.o: Source/CyclicTimer.cpp Include/CyclicTimer.hpp MyUtilities/Include/Entity.hpp
-Objects/SerialControl.o: Source/SerialControl.cpp Include/SerialControl.hpp Include/CyclicTimer.hpp MyUtilities/Include/Entity.hpp
-Objects/RTSControl-linux.o: Source/RTSControl-linux.cpp Include/SerialControl.hpp Include/CyclicTimer.hpp MyUtilities/Include/Entity.hpp
+Objects/main.o: Source/main.cpp Include/CyclicTimer.hpp Include/SerialControl.hpp MyUtilities/Include/Entity.hpp Objects
+Objects/CyclicTimer.o: Source/CyclicTimer.cpp Include/CyclicTimer.hpp MyUtilities/Include/Entity.hpp Objects
+Objects/SerialControl.o: Source/SerialControl.cpp Include/SerialControl.hpp Include/CyclicTimer.hpp MyUtilities/Include/Entity.hpp Objects
+Objects/RTSControl-linux.o: Source/RTSControl-linux.cpp Include/SerialControl.hpp Include/CyclicTimer.hpp MyUtilities/Include/Entity.hpp Objects
