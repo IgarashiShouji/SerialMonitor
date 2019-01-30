@@ -320,7 +320,7 @@ int Application::checkOptions(boost::program_options::variables_map & argmap)
     }
     if(argmap.count("timer3"))
     {
-        unsigned int val = argmap["timer2"].as<unsigned int>();
+        unsigned int val = argmap["timer3"].as<unsigned int>();
         timer[3] = val;
     }
     if(argmap.count("timer2"))
