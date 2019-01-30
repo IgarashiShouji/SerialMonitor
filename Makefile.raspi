@@ -1,5 +1,5 @@
 TARGET=smon
-CFLAGS=-g -std=c++14 -DBOOST_THREAD_USE_LIB -I ./Include -pipe -O3 -march=armv7-a -mfpu=neon-vfpv4 -mfloat-abi=hard
+CFLAGS=-g -std=c++14 -DBOOST_THREAD_USE_LIB -I ./Include -I ./MyUtilities/Include -pipe -O3 -march=armv7-a -mfpu=neon-vfpv4 -mfloat-abi=hard
 
 all: Doxygen/html/index.html $(TARGET)
 
