@@ -52,6 +52,6 @@ void RTSContorlLinux::clear(void)
 // ----------<< SerialControl >>----------
 SerialControl::RtsContorl * SerialControl::createRtsControl(void)
 {
-    RtsContorl * rts = new RTSContorlLinux(port.native());
+    RtsContorl * rts = new RTSContorlLinux(port.native_handle());
     return rts;
 }
