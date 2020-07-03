@@ -439,6 +439,19 @@ static bool prnFloat(string & data)
     return false;
 }
 
+static bool prnFloatl(string & org_data)
+{
+    string data("");
+    if(org_data.size() == 8)
+    {
+        data  = org_data.substr(6, 2);
+        data += org_data.substr(4, 2);
+        data += org_data.substr(2, 2);
+        data += org_data.substr(0, 2);
+    }
+    return prnFloat(data);
+}
+
 int main(int argc, char *argv[])
 {
     using namespace boost::program_options;
@@ -456,6 +469,7 @@ int main(int argc, char *argv[])
             ("crc,c",    value<string>(),       "calclate modbus RTU CRC")
             ("sum,s",    value<string>(),       "calclate checksum of XOR")
             ("float,f",  value<string>(),       "hex to float value")
+            ("floatl,F", value<string>(),       "litle endian hex to float value")
             ("help,h",                          "help");
         variables_map argmap;
         store(parse_command_line(argc, argv, desc), argmap);
@@ -489,6 +503,16 @@ int main(int argc, char *argv[])
         {
             string data = argmap["float"].as<string>();
             bool result = prnFloat(data);
+            if(result)
+            {
+                return 0;
+            }
+            return -1;
+        }
+        if(argmap.count("floatl"))
+        {
+            string data = argmap["floatl"].as<string>();
+            bool result = prnFloatl(data);
             if(result)
             {
                 return 0;
