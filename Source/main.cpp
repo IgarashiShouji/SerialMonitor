@@ -120,21 +120,18 @@ void Application::recive(void)
     while(active)
     {
         size_t len = serial->read(test, sizeof(test));
-        if( !serial->isSend() )
+        boost::lock_guard<boost::mutex> lock(mtx);
+        if(0<len)
         {
-            boost::lock_guard<boost::mutex> lock(mtx);
-            if(0<len)
+            state=RECVING;
+        }
+        for(size_t cnt=0; cnt<len; cnt++)
+        {
+            rdata[wbank][ridx[wbank]++] = test[cnt];
+            if(bank_size <= ridx[wbank])
             {
-                state=RECVING;
-            }
-            for(size_t cnt=0; cnt<len; cnt++)
-            {
-                rdata[wbank][ridx[wbank]++] = test[cnt];
-                if(bank_size <= ridx[wbank])
-                {
-                    wbank ++;
-                    wbank &= 0x0000000F;
-                }
+                wbank ++;
+                wbank &= 0x0000000F;
             }
         }
     }
@@ -183,17 +180,18 @@ void Application::printer(void)
                             r_bank &= 0x0000000F;
                         }
                         state=TO_GAP;
+                        printf("GAP:\n");
                         break;
                     case 1:
-                        printf("TO:%d0ms\n", timer[1]);
+                        printf("TO1:%d0ms\n", timer[1]);
                         state=TO_1;
                         break;
                     case 2:
-                        printf("TO:%d0ms\n", timer[2]);
+                        printf("TO2:%d0ms\n", timer[2]);
                         state=TO_2;
                         break;
                     case 3:
-                        printf("TO:%d0ms\n", timer[3]);
+                        printf("TO3:%d0ms\n", timer[3]);
                         state=TO_3;
                         break;
                     case 4:
@@ -412,6 +410,12 @@ static bool prnCheckSum(string & data)
     return false;
 }
 
+/**
+ * print float type numeric from hex data.(big endian)
+ *
+ * data  hex string
+ * return true(success) / flase(failure of output)
+ */
 static bool prnFloat(string & data)
 {
     if(data.size() == 8)
@@ -439,6 +443,12 @@ static bool prnFloat(string & data)
     return false;
 }
 
+/**
+ * print float type numeric from hex data.(little edian)
+ *
+ * data  hex string
+ * return true(success) / flase(failure of output)
+ */
 static bool prnFloatl(string & org_data)
 {
     string data("");
