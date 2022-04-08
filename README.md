@@ -17,6 +17,7 @@ smon.exe [Device File] [Options]:
   -t [ --timer ] arg    time out tick. Default 30  (300 [ms])
   --timer2 arg          time out tick. Default 50  (500 [ms])
   --timer3 arg          time out tick. Default 100 (  1 [s])
+  --no-rts              no control RTS signal
   -c [ --crc ] arg      calclate modbus RTU CRC
   -s [ --sum ] arg      calclate checksum of XOR
   -f [ --float ] arg    hex to float value
@@ -29,6 +30,7 @@ smon.exe [Device File] [Options]:
 * -t [ --timer ] arg    time out tick. Default 30  (300 [ms])
 * --timer2 arg          time out tick. Default 50  (500 [ms])
 * --timer3 arg          time out tick. Default 100 (  1 [s])
+* --no-rts              no control RTS signal
 * -c [ --crc ] arg      calclate modbus RTU CRC<br>
 * -s [ --sum ] arg      calclate checksum of XOR<br>
 * -f [ --float ] arg    hex to float value<br>

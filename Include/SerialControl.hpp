@@ -66,8 +66,11 @@ namespace MyBoost
         unsigned int tick;
         unsigned int latest;
         bool is_send;
+        BaudRate _baudrate;
+        unsigned char bit_num;
+        bool is_control_RTS;
     public:
-        SerialControl(const char * pname, SerialSignal & obj, BaudRate baud=BR1200, Parity pt=odd, StopBit st=one);
+        SerialControl(const char * pname, SerialSignal & obj, BaudRate baud=BR1200, Parity pt=odd, StopBit st=one, bool RTS_control = true);
         virtual ~SerialControl(void);
         virtual std::size_t read(unsigned char * data, std::size_t size);
         virtual std::size_t send(unsigned char * data, std::size_t size);

@@ -21,9 +21,12 @@ using namespace boost;
 using namespace boost::asio;
 using namespace std;
 
-SerialControl::SerialControl(const char * pname, SerialSignal & obj, BaudRate baud, Parity parity, StopBit stop)
-  : port(io, pname), rcv(obj), tick(0), latest(0), is_send(false)
+SerialControl::SerialControl(const char * pname, SerialSignal & obj, BaudRate baud, Parity parity, StopBit stop, bool RTS_control)
+  : port(io, pname), rcv(obj), tick(0), latest(0), is_send(false), _baudrate(BR1200), bit_num(11), is_control_RTS(true)
 {
+    _baudrate = baud;
+    bit_num   = 1 + 8 + stop;
+    if(parity != none) bit_num ++;
     port.set_option(serial_port_base::baud_rate(baud));
     port.set_option(serial_port_base::character_size(8));
     port.set_option(serial_port_base::flow_control(serial_port_base::flow_control::none));
@@ -78,8 +81,8 @@ std::size_t SerialControl::send(unsigned char * data, std::size_t size)
     }
     latest = tick;
     setRTS();
-    std::size_t wlen = port.write_some( buffer( data, size ) );
-    unsigned int wait_time = ((1000 * 11 * (wlen+1)) / 1200);
+    std::size_t wlen = port.write_some(buffer(data, size));
+    unsigned int wait_time = (1000 * bit_num * (wlen+1)) / _baudrate;
     boost::this_thread::sleep(boost::posix_time::milliseconds(wait_time));
     clearRTS();
     latest = tick;
@@ -88,13 +91,19 @@ std::size_t SerialControl::send(unsigned char * data, std::size_t size)
 
 void SerialControl::clearRTS(void)
 {
-    rts->clear();
+    if(is_control_RTS)
+    {
+        rts->clear();
+    }
     is_send = false;
 }
 
 void SerialControl::setRTS(void)
 {
-    rts->set();
+    if(is_control_RTS)
+    {
+        rts->set();
+    }
     is_send = true;
 }
 
