@@ -14,11 +14,28 @@
 #include <boost/thread.hpp>
 #include <boost/program_options.hpp>
 #include <sstream>
+#include <string>
+#include <list>
 #include <iostream>
+#include <fstream>
+#include <sstream>
 #include <stdio.h>
+#include <regex>
+
+#include <mruby.h>
+#include <mruby/proc.h>
+#include <mruby/data.h>
+#include <mruby/compile.h>
+#include <mruby/string.h>
+#include <mruby/hash.h>
+#include <mruby/variable.h>
+
 
 namespace MyApplications
 {
+    /**
+     * Serial Monitor Main Class
+     */
     class Application : MyBoost::SerialSignal
     {
     private:
@@ -54,6 +71,11 @@ namespace MyApplications
         bool          active;
         MyBoost::SerialControl::Profile  profile;
         unsigned int  timer[4];
+        bool                        is_mruby;
+        std::string                 mruby_fname;
+        boost::mutex                msg_mtx;
+        boost::condition_variable   msg_cond;
+        std::list<std::string>      msg;
     public:
         Application(void);
         virtual ~Application(void);
@@ -62,8 +84,12 @@ namespace MyApplications
         void recive(void);
         static void prn(void);
         void printer(void);
-        int main(int argc, char * argv[]);
-        virtual void rcvIntarval(unsigned int tick);
+        static void mruby(void);
+        std::string msg_wait(void);
+        void msg_send(std::string & str);
+        void mruby_exec(void);
+        int main(char * com_name);
+        void rcvIntarval(unsigned int tick);
         MyBoost::SerialControl::Profile & refProfile(void);
         void setTimeOut(unsigned int type, unsigned int tick);
         int checkOptions(boost::program_options::variables_map & argmap);
@@ -75,276 +101,6 @@ using namespace MyEntity;
 using namespace MyBoost;
 using namespace boost;
 using namespace std;
-
-
-Application::Application(void)
-  : state(BEGIN), evt(0), wbank(0), r_bank(0), active(true)
-{
-    for(auto & idx: ridx)
-    {
-        idx = 0;
-    }
-    timer[0] = 3;
-    timer[1] = 30;
-    timer[2] = 50;
-    timer[3] = 100;
-}
-
-Application::~Application(void)
-{
-}
-
-Application & Application ::ref(void)
-{
-    static Application obj;
-    return obj;
-}
-
-void Application::rcv(void)
-{
-    try
-    {
-        Application & app = Application::ref();
-        app.recive();
-    }
-    catch(...)
-    {
-    }
-}
-
-void Application::recive(void)
-{
-    serial->clearRTS();
-    unsigned char test[256];
-    memset(&(test[0]), 0, sizeof(test));
-    while(active)
-    {
-        size_t len = serial->read(test, sizeof(test));
-        boost::lock_guard<boost::mutex> lock(mtx);
-        if(0<len)
-        {
-            state=RECVING;
-        }
-        for(size_t cnt=0; cnt<len; cnt++)
-        {
-            rdata[wbank][ridx[wbank]++] = test[cnt];
-            if(bank_size <= ridx[wbank])
-            {
-                wbank ++;
-                wbank &= 0x0000000F;
-            }
-        }
-    }
-}
-
-void Application::prn(void)
-{
-    try
-    {
-        Application & app = Application::ref();
-        app.printer();
-    }
-    catch(...)
-    {
-    }
-}
-
-void Application::printer(void)
-{
-    while(active)
-    {
-        unsigned char event=0;
-        {
-            boost::unique_lock< boost::mutex > lock(mtx);
-            cond.wait(lock);
-            event = this->evt;
-        }
-        for(unsigned char mask=0x80, code=0; 0 != mask; mask >>= 1, code ++)
-        {
-            if(mask & event)
-            {
-                switch(code)
-                {
-                    case 0:
-                        wbank ++;
-                        wbank &= 0x0000000F;
-                        while(wbank != r_bank)
-                        {
-                            for(unsigned int idx=0, max=ridx[r_bank]; idx<max; idx++)
-                            {
-                                printf("%02X", rdata[r_bank][idx]);
-                            }
-                            printf("\n");
-                            ridx[r_bank]=0;
-                            r_bank ++;
-                            r_bank &= 0x0000000F;
-                        }
-                        state=TO_GAP;
-                        printf("GAP:\n");
-                        break;
-                    case 1:
-                        printf("TO1:%d0ms\n", timer[1]);
-                        state=TO_1;
-                        break;
-                    case 2:
-                        printf("TO2:%d0ms\n", timer[2]);
-                        state=TO_2;
-                        break;
-                    case 3:
-                        printf("TO3:%d0ms\n", timer[3]);
-                        state=TO_3;
-                        break;
-                    case 4:
-                        break;
-                    case 7:
-                        break;
-                    default:
-                        break;
-                }
-            }
-        }
-        fflush(stdout);
-    }
-}
-
-unsigned char toValue(unsigned char data)
-{
-    unsigned char val=0;
-    if(('0' <= data) && (data<='9'))
-    {
-        val = data - '0';
-    }
-    else if(('a' <= data) && (data<='f'))
-    {
-        val = 10 + data - 'a';
-    }
-    else if(('A' <= data) && (data<='F'))
-    {
-        val = 10 + data - 'A';
-    }
-    return val;
-}
-
-int Application::main(int argc, char *argv[])
-{
-    serial = new SerialControl(argv[1], *this, profile.baud, profile.parity, profile.stop);
-    TimerThread cyc(*serial);
-    boost::thread thr_rcv(&rcv);
-    boost::thread thr_prn(&prn);
-    std::string str;
-    while(std::getline(std::cin, str))
-    {
-        if(str == "exit")
-        {
-            active = false;
-            serial->close();
-            boost::lock_guard<boost::mutex> lock(mtx);
-            evt = 0x01;
-            cond.notify_one();
-            break;
-        }
-        if((0==(str.size() % 2)) && (0<(str.size() / 2)))
-        {
-            unsigned int len = 0;
-            unsigned char data[256];
-            unsigned int max = str.size() / 2;
-            if(sizeof(data)<max)
-            {
-                max = sizeof(data);
-            }
-            for(unsigned int idx = 0; len < max; len ++)
-            {
-                unsigned char val = (toValue(str.at(idx ++)) << 4);
-                val |= toValue(str.at(idx ++));
-                data[len] = val;
-            }
-            serial->send(data, len);
-        }
-    }
-    fflush(stdout);
-    cyc.stop();
-    thr_prn.join();
-    delete serial;
-    return 0;
-}
-
-void Application::rcvIntarval(unsigned int tick)
-{
-    if(active)
-    {
-        unsigned char evt = 0x80;
-        for( auto to: timer)
-        {
-            if(tick==to)
-            {
-                boost::lock_guard<boost::mutex> lock(mtx);
-                this->evt = evt;
-                cond.notify_one();
-            }
-            evt >>= 1;
-        }
-    }
-}
-
-SerialControl::Profile & Application::refProfile(void)
-{
-    return profile;
-}
-void Application::setTimeOut(unsigned int type, unsigned int tick)
-{
-    if(type<(sizeof(timer)/sizeof(timer[0])))
-    {
-        timer[type] = tick;
-    }
-}
-
-int Application::checkOptions(boost::program_options::variables_map & argmap)
-{
-    if(argmap.count("baud"))
-    {
-        string baud = argmap["baud"].as<string>();
-        SerialControl::Profile & pro = refProfile();
-        if(!SerialControl::hasBaudRate(baud, pro))
-        {
-            cout << baud << endl;
-            return -1;
-        }
-    }
-    else
-    {
-        string baud = "B1200O1";
-        SerialControl::Profile & pro = refProfile();
-        SerialControl::hasBaudRate(baud, pro);
-    }
-    if(argmap.count("timer3"))
-    {
-        unsigned int val = argmap["timer3"].as<unsigned int>();
-        timer[3] = val;
-    }
-    if(argmap.count("timer2"))
-    {
-        unsigned int val = argmap["timer2"].as<unsigned int>();
-        timer[2] = val;
-    }
-    if(argmap.count("timer"))
-    {
-        unsigned int val = argmap["timer"].as<unsigned int>();
-        timer[1] = val;
-    }
-    if(argmap.count("gap"))
-    {
-        unsigned int val = argmap["gap"].as<unsigned int>();
-        timer[0] = val;
-    }
-    for(unsigned int idx=0; idx<(sizeof(timer)/sizeof(timer[0])-1); idx++)
-    {
-        if(timer[idx] >= timer[idx+1])
-        {
-            return -1;
-        }
-    }
-    return 0;
-}
 
 static const unsigned short modbusCRC[256] =
 {
@@ -367,7 +123,91 @@ static const unsigned short modbusCRC[256] =
     0x0044, 0xC184, 0x8185, 0x4045, 0x0187, 0xC047, 0x8046, 0x4186, 0x0182, 0xC042, 0x8043, 0x4183, 0x0041, 0xC181, 0x8180,
     0x4040
 };
-
+static unsigned char toValue(unsigned char data)
+{
+    unsigned char val=0;
+    if(('0' <= data) && (data<='9'))
+    {
+        val = data - '0';
+    }
+    else if(('a' <= data) && (data<='f'))
+    {
+        val = 10 + data - 'a';
+    }
+    else if(('A' <= data) && (data<='F'))
+    {
+        val = 10 + data - 'A';
+    }
+    return val;
+}
+static mrb_value smon_initialize(mrb_state * mrb, mrb_value self)
+{
+//    char * str;
+//    mrb_get_args(mrb, "z", &str);
+    return self;
+}
+static mrb_value smon_crc(mrb_state * mrb, mrb_value self)
+{
+    char result[5] = {0};
+    char * str;
+    mrb_get_args(mrb, "z", &str);
+    string data(str);
+    if((data.size()%2) == 0)
+    {
+        CalcCRC16 crc(modbusCRC);
+        unsigned int size = 0;
+        for(unsigned int idx=0, max=data.size();idx<max; idx += 2)
+        {
+            stringstream ss;
+            ss << hex << data.substr(idx, 2);
+            int val;
+            ss >> val;
+            crc << val;
+            size ++;
+        }
+        sprintf(result, "%04x", *crc);
+    }
+    return mrb_str_new_cstr(mrb, result);
+}
+static mrb_value smon_wait(mrb_state * mrb, mrb_value self)
+{
+    Application & app = Application::ref();
+    string result(app.msg_wait());
+    return mrb_str_new_cstr(mrb, result.c_str());
+}
+static mrb_value smon_send(mrb_state * mrb, mrb_value self)
+{
+    char * str;
+    mrb_get_args(mrb, "z", &str);
+    string data(str);
+    Application & app = Application::ref();
+    app.msg_send(data);
+    return self;
+}
+static mrb_value smon_regex_matches(mrb_state * mrb, mrb_value self)
+{
+    char * reg_cstr;
+    char * cstr;
+    mrb_get_args(mrb, "zz", &reg_cstr, &cstr);
+    std::regex reg(reg_cstr);
+    if(std::regex_search(cstr, reg))
+    {
+        return mrb_true_value();
+    }
+    return mrb_false_value();
+}
+static mrb_value regex_initialize(mrb_state * mrb, mrb_value self)
+{
+    char * reg_cstr;
+    mrb_get_args(mrb, "z", &reg_cstr);
+    return self;
+}
+static mrb_value regex_regex_matches(mrb_state * mrb, mrb_value self)
+{
+    char * cstr;
+    mrb_get_args(mrb, "z", &cstr);
+    return mrb_bool_value(false);
+}
 static bool prnModbusCRC(string & data)
 {
     if((data.size()%2) == 0)
@@ -462,6 +302,402 @@ static bool prnFloatl(string & org_data)
     return prnFloat(data);
 }
 
+
+/**
+ * constracter
+ *
+ */
+Application::Application(void)
+  : state(BEGIN), evt(0), wbank(0), r_bank(0), active(true), is_mruby(false)
+{
+    for(auto & idx: ridx)
+    {
+        idx = 0;
+    }
+    timer[0] = 3;
+    timer[1] = 30;
+    timer[2] = 50;
+    timer[3] = 100;
+}
+
+/**
+ * destractor
+ */
+Application::~Application(void)
+{
+}
+
+/**
+ * get Application Object
+ */
+Application & Application ::ref(void)
+{
+    static Application * app = nullptr;
+    if(nullptr == app)
+    {
+        app = new Application();
+    }
+    return (*app);
+}
+
+/**
+ * thread main of data reciver
+ */
+void Application::rcv(void)
+{
+    try
+    {
+        Application & app = Application::ref();
+        app.recive();
+    }
+    catch(...)
+    {
+    }
+}
+
+/**
+ * data reciver
+ */
+void Application::recive(void)
+{
+    serial->clearRTS();
+    unsigned char test[256];
+    memset(&(test[0]), 0, sizeof(test));
+    while(active)
+    {
+        size_t len = serial->read(test, sizeof(test));
+        boost::lock_guard<boost::mutex> lock(mtx);
+        if(0<len)
+        {
+            state=RECVING;
+        }
+        for(size_t cnt=0; cnt<len; cnt++)
+        {
+            rdata[wbank][ridx[wbank]++] = test[cnt];
+            if(bank_size <= ridx[wbank])
+            {
+                wbank ++;
+                wbank &= 0x0000000F;
+            }
+        }
+    }
+}
+
+void Application::prn(void)
+{
+    boost::thread thr_mruby(&mruby);
+    try
+    {
+        Application & app = Application::ref();
+        app.printer();
+    }
+    catch(...)
+    {
+    }
+    thr_mruby.join();
+    exit(0);
+}
+
+void Application::printer(void)
+{
+    while(active)
+    {
+        unsigned char event=0;
+        {
+            boost::unique_lock< boost::mutex > lock(mtx);
+            cond.wait(lock);
+            event = this->evt;
+        }
+        for(unsigned char mask=0x80, code=0; 0 != mask; mask >>= 1, code ++)
+        {
+            if(mask & event)
+            {
+                char data[64];
+                switch(code)
+                {
+                    case 0:
+                        wbank ++;
+                        wbank &= 0x0000000F;
+                        {
+                            boost::lock_guard<boost::mutex> lock(msg_mtx);
+                            while(wbank != r_bank)
+                            {
+                                string str;
+                                for(unsigned int idx=0, max=ridx[r_bank]; idx<max; idx++)
+                                {
+                                    sprintf(data, "%02X", rdata[r_bank][idx]);
+                                    str += data;
+                                }
+                                ridx[r_bank]=0;
+                                r_bank ++;
+                                r_bank &= 0x0000000F;
+                                if(0 < str.size())
+                                {
+                                    msg.push_back(str);
+                                }
+                            }
+                            state=TO_GAP;
+                            string msg_gap("GAP:");
+                            msg.push_back(msg_gap);
+                            msg_cond.notify_one();
+                        }
+                        break;
+                    case 1:
+                        {
+                            sprintf(data, "TO1:%d0ms", timer[1]);
+                            string str(data);
+                            boost::lock_guard<boost::mutex> lock(msg_mtx);
+                            if(0 < str.size())
+                            {
+                                msg.push_back(str);
+                            }
+                            msg_cond.notify_one();
+                        }
+                        state=TO_1;
+                        break;
+                    case 2:
+                        {
+                            sprintf(data, "TO2:%d0ms", timer[2]);
+                            string str(data);
+                            boost::lock_guard<boost::mutex> lock(msg_mtx);
+                            if(0 < str.size())
+                            {
+                                msg.push_back(str);
+                            }
+                            msg_cond.notify_one();
+                        }
+                        state=TO_2;
+                        break;
+                    case 3:
+                        {
+                            sprintf(data, "TO3:%d0ms", timer[3]);
+                            string str(data);
+                            boost::lock_guard<boost::mutex> lock(msg_mtx);
+                            if(0 < str.size())
+                            {
+                                msg.push_back(str);
+                            }
+                            msg_cond.notify_one();
+                        }
+                        state=TO_3;
+                        break;
+                    case 4:
+                        break;
+                    case 7:
+                        break;
+                    default:
+                        break;
+                }
+            }
+        }
+        fflush(stdout);
+    }
+    string str("exit");
+    boost::lock_guard<boost::mutex> lock(msg_mtx);
+    msg.push_back(str);
+    msg_cond.notify_one();
+}
+
+void Application::mruby(void)
+{
+    try
+    {
+        Application & app = Application::ref();
+        app.mruby_exec();
+    }
+    catch(...)
+    {
+    }
+}
+
+string Application::msg_wait(void)
+{
+    string str("");
+    boost::unique_lock< boost::mutex > lock(msg_mtx);
+    while(0 == msg.size())
+    {
+        msg_cond.wait(lock);
+    }
+    str = msg.front();
+    msg.pop_front();
+    return str;
+}
+
+void Application::msg_send(std::string & str)
+{
+    if((0==(str.size() % 2)) && (0<(str.size() / 2)))
+    {
+        unsigned int len = 0;
+        unsigned char data[256];
+        unsigned int max = str.size() / 2;
+        if(sizeof(data)<max)
+        {
+            max = sizeof(data);
+        }
+        for(unsigned int idx = 0; len < max; len ++)
+        {
+            unsigned char val = (toValue(str.at(idx ++)) << 4);
+            val |= toValue(str.at(idx ++));
+            data[len] = val;
+        }
+        serial->send(data, len);
+    }
+}
+
+void Application::mruby_exec(void)
+{
+    mrb_state * mrb = mrb_open();
+    struct RClass * regex_class = mrb_define_class_under(mrb, mrb->kernel_module, "regex", mrb->object_class);
+    mrb_define_method(mrb, regex_class, "initialize",    regex_initialize, MRB_ARGS_REQ(2));
+    mrb_define_method(mrb, regex_class, "reg_matches",   regex_regex_matches, MRB_ARGS_REQ(2));
+
+    struct RClass * smon_class = mrb_define_class_under(mrb, mrb->kernel_module, "Smon", mrb->object_class);
+    mrb_define_method(mrb, smon_class, "initialize",    smon_initialize, MRB_ARGS_REQ(2));
+    mrb_define_method(mrb, smon_class, "crc",           smon_crc, MRB_ARGS_REQ(2));
+    mrb_define_method(mrb, smon_class, "wait",          smon_wait, MRB_ARGS_REQ(2));
+    mrb_define_method(mrb, smon_class, "send",          smon_send, MRB_ARGS_REQ(2));
+    mrb_define_method(mrb, smon_class, "reg_matches",   smon_regex_matches, MRB_ARGS_REQ(3));
+
+    if(is_mruby)
+    {
+        ifstream fin(mruby_fname);
+        if(fin.is_open())
+        {
+            string code((std::istreambuf_iterator<char>(fin)), std::istreambuf_iterator<char>());
+            mrb_load_string(mrb, code.c_str());
+            mrb_close(mrb);
+        }
+        else
+        {
+            is_mruby = false;
+        }
+    }
+    if(!is_mruby)
+    {
+        static const char code[] = "mon = Smon.new()\n while( 1 )\n msg = mon.wait()\n case msg\n when \"exit\" then\n exit 0;\n else\n print msg, \"\\n\"\n end\n STDOUT.flush\n end";
+        mrb_load_string(mrb, code);
+        mrb_close(mrb);
+    }
+            active = false;
+            serial->close();
+            boost::lock_guard<boost::mutex> lock(mtx);
+            evt = 0x01;
+            cond.notify_one();
+}
+
+int Application::main(char * com_name)
+{
+    serial = new SerialControl(com_name, *this, profile.baud, profile.parity, profile.stop);
+    TimerThread cyc(*serial);
+    boost::thread thr_rcv(&rcv);
+    boost::thread thr_prn(&prn);
+    std::string str;
+    while(std::getline(std::cin, str))
+    {
+        if(str == "exit")
+        {
+            active = false;
+            serial->close();
+            boost::lock_guard<boost::mutex> lock(mtx);
+            evt = 0x01;
+            cond.notify_one();
+            break;
+        }
+        msg_send(str);
+    }
+    fflush(stdout);
+    cyc.stop();
+    //thr_rcv.join();
+    thr_prn.join();
+    delete serial;
+    return 0;
+}
+
+void Application::rcvIntarval(unsigned int tick)
+{
+    if(active)
+    {
+        unsigned char evt = 0x80;
+        for( auto to: timer)
+        {
+            if(tick==to)
+            {
+                boost::lock_guard<boost::mutex> lock(mtx);
+                this->evt = evt;
+                cond.notify_one();
+            }
+            evt >>= 1;
+        }
+    }
+}
+
+SerialControl::Profile & Application::refProfile(void)
+{
+    return profile;
+}
+void Application::setTimeOut(unsigned int type, unsigned int tick)
+{
+    if(type<(sizeof(timer)/sizeof(timer[0])))
+    {
+        timer[type] = tick;
+    }
+}
+
+int Application::checkOptions(boost::program_options::variables_map & argmap)
+{
+    if(argmap.count("baud"))
+    {
+        string baud = argmap["baud"].as<string>();
+        SerialControl::Profile & pro = refProfile();
+        if(!SerialControl::hasBaudRate(baud, pro))
+        {
+            cout << baud << endl;
+            return -1;
+        }
+    }
+    else
+    {
+        string baud = "B1200O1";
+        SerialControl::Profile & pro = refProfile();
+        SerialControl::hasBaudRate(baud, pro);
+    }
+    if(argmap.count("timer3"))
+    {
+        unsigned int val = argmap["timer3"].as<unsigned int>();
+        timer[3] = val;
+    }
+    if(argmap.count("timer2"))
+    {
+        unsigned int val = argmap["timer2"].as<unsigned int>();
+        timer[2] = val;
+    }
+    if(argmap.count("timer"))
+    {
+        unsigned int val = argmap["timer"].as<unsigned int>();
+        timer[1] = val;
+    }
+    if(argmap.count("gap"))
+    {
+        unsigned int val = argmap["gap"].as<unsigned int>();
+        timer[0] = val;
+    }
+    for(unsigned int idx=0; idx<(sizeof(timer)/sizeof(timer[0])-1); idx++)
+    {
+        if(timer[idx] >= timer[idx+1])
+        {
+            return -1;
+        }
+    }
+    /* check mruby Script */
+    if(argmap.count("mruby-script"))
+    {
+        mruby_fname = argmap["mruby-script"].as<string>();
+        is_mruby = true;
+        return 0;
+    }
+    return 0;
+}
+
 int main(int argc, char *argv[])
 {
     using namespace boost::program_options;
@@ -481,6 +717,7 @@ int main(int argc, char *argv[])
             ("sum,s",    value<string>(),       "calclate checksum of XOR")
             ("float,f",  value<string>(),       "hex to float value")
             ("floatl,F", value<string>(),       "litle endian hex to float value")
+            ("mruby-script,m", value<string>(), "execute mruby script")
             ("help,h",                          "help");
         variables_map argmap;
         store(parse_command_line(argc, argv, desc), argmap);
@@ -488,6 +725,7 @@ int main(int argc, char *argv[])
         if(argmap.count("help"))
         {
             cout << desc << endl;
+            cout << "  smon Rev 0.1.0" << endl;
             return 0;
         }
         if(argmap.count("crc"))
@@ -539,7 +777,7 @@ int main(int argc, char *argv[])
         }
         try
         {
-            result = app.main(argc, argv);
+            result = app.main(argv[1]);
         }
         catch(const std::exception & exp)
         {
