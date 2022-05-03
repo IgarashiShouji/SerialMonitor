@@ -11,12 +11,12 @@
 #ifndef __SerialControl_cpp__
 #define __SerialControl_cpp__
 
-#include "CyclicTimer.hpp"
+#include "Timer.hpp"
 #include <boost/asio.hpp>
 #include <string>
 #include <stdlib.h>
 
-namespace MyBoost
+namespace MyApplications
 {
     class SerialSignal
     {
@@ -24,7 +24,7 @@ namespace MyBoost
         virtual void rcvIntarval(unsigned int tick) = 0;
     };
 
-    class SerialControl : public TimerHandler
+    class SerialControl : public MyApplications::TimerHandler
     {
     public:
         enum BaudRate

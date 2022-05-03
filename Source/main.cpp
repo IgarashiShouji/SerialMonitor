@@ -9,7 +9,7 @@
  */
 
 #include "Entity.hpp"
-#include "CyclicTimer.hpp"
+#include "Timer.hpp"
 #include "SerialControl.hpp"
 #include <boost/thread.hpp>
 #include <boost/program_options.hpp>
@@ -21,6 +21,9 @@
 #include <sstream>
 #include <stdio.h>
 #include <regex>
+#include <thread>
+#include <mutex>
+#include <condition_variable>
 
 #include <mruby.h>
 #include <mruby/proc.h>
@@ -36,13 +39,13 @@ namespace MyApplications
     /**
      * Serial Monitor Main Class
      */
-    class Application : MyBoost::SerialSignal
+    class Application : MyApplications::SerialSignal
     {
     private:
         enum
         {
-            bank_size = 512,    //!< buffer size
-            bank_num  = 16      //!< buffer count
+            bank_size = 1024,   //!< buffer size
+            bank_num  = 32      //!< buffer count
         };
         enum State
         {
@@ -53,52 +56,47 @@ namespace MyApplications
             TO_2,
             TO_3
         };
-        /**
-         * Event Mutex
-         */
-        boost::mutex mtx;
-        /**
-         * Event Condition Variable
-         */
-        boost::condition_variable cond;
-        MyBoost::SerialControl * serial;
-        enum State state;
-        unsigned char evt;
-        unsigned int  wbank;
-        unsigned int  r_bank;
-        unsigned char rdata[bank_num][bank_size];
-        unsigned int  ridx[bank_num];
-        bool          active;
-        MyBoost::SerialControl::Profile  profile;
-        unsigned int  timer[4];
-        bool                        is_mruby;
-        std::string                 mruby_fname;
-        boost::mutex                msg_mtx;
-        boost::condition_variable   msg_cond;
-        std::list<std::string>      msg;
+
+        bool                                active;     /*!< effective serial monitor   */
+        enum State                          state;      /*!< communication status       */
+        unsigned char                       evt;
+        unsigned int                        w_bank;
+        unsigned int                        r_bank;
+        bool                                is_mruby;
+        std::string                         mruby_fname;
+        unsigned char                       rdata[bank_num][bank_size];
+        unsigned int                        ridx[bank_num];
+        unsigned int                        timer[4];
+
+        std::mutex                          mtx;        /*!< Event Mutex                */
+        std::condition_variable             cond;       /*!< Event Condition Variable   */
+        MyApplications::SerialControl *            serial;
+        MyApplications::SerialControl::Profile     profile;
+        std::mutex                          msg_mtx;
+        std::condition_variable             msg_cond;
+        std::list<std::string>              msg;
     public:
         Application(void);
         virtual ~Application(void);
         static Application & ref(void);
-        static void rcv(void);
-        void recive(void);
-        static void prn(void);
-        void printer(void);
-        static void mruby(void);
+
         std::string msg_wait(void);
-        void msg_send(std::string & str);
-        void mruby_exec(void);
-        int main(char * com_name);
         void rcvIntarval(unsigned int tick);
-        MyBoost::SerialControl::Profile & refProfile(void);
+        MyApplications::SerialControl::Profile & refProfile(void);
         void setTimeOut(unsigned int type, unsigned int tick);
         int checkOptions(boost::program_options::variables_map & argmap);
+
+        void read_stdin(size_t id);
+        void recive(size_t id);
+        void eventer(size_t id);
+        void msg_send(std::string & str);
+        void mruby_exec(size_t id);
+        int main(char * com_name);
     };
 };
 
 using namespace MyApplications;
 using namespace MyEntity;
-using namespace MyBoost;
 using namespace boost;
 using namespace std;
 
@@ -302,13 +300,12 @@ static bool prnFloatl(string & org_data)
     return prnFloat(data);
 }
 
-
 /**
  * constracter
  *
  */
 Application::Application(void)
-  : state(BEGIN), evt(0), wbank(0), r_bank(0), active(true), is_mruby(false)
+  : active(true), state(BEGIN), evt(0), w_bank(0), r_bank(0), is_mruby(false)
 {
     for(auto & idx: ridx)
     {
@@ -325,6 +322,11 @@ Application::Application(void)
  */
 Application::~Application(void)
 {
+    if(nullptr != serial)
+    {
+        delete serial;
+    }
+    serial = nullptr;
 }
 
 /**
@@ -340,180 +342,10 @@ Application & Application ::ref(void)
     return (*app);
 }
 
-/**
- * thread main of data reciver
- */
-void Application::rcv(void)
-{
-    try
-    {
-        Application & app = Application::ref();
-        app.recive();
-    }
-    catch(...)
-    {
-    }
-}
-
-/**
- * data reciver
- */
-void Application::recive(void)
-{
-    serial->clearRTS();
-    unsigned char test[256];
-    memset(&(test[0]), 0, sizeof(test));
-    while(active)
-    {
-        size_t len = serial->read(test, sizeof(test));
-        boost::lock_guard<boost::mutex> lock(mtx);
-        if(0<len)
-        {
-            state=RECVING;
-        }
-        for(size_t cnt=0; cnt<len; cnt++)
-        {
-            rdata[wbank][ridx[wbank]++] = test[cnt];
-            if(bank_size <= ridx[wbank])
-            {
-                wbank ++;
-                wbank &= 0x0000000F;
-            }
-        }
-    }
-}
-
-void Application::prn(void)
-{
-    boost::thread thr_mruby(&mruby);
-    try
-    {
-        Application & app = Application::ref();
-        app.printer();
-    }
-    catch(...)
-    {
-    }
-    thr_mruby.join();
-    exit(0);
-}
-
-void Application::printer(void)
-{
-    while(active)
-    {
-        unsigned char event=0;
-        {
-            boost::unique_lock< boost::mutex > lock(mtx);
-            cond.wait(lock);
-            event = this->evt;
-        }
-        for(unsigned char mask=0x80, code=0; 0 != mask; mask >>= 1, code ++)
-        {
-            if(mask & event)
-            {
-                char data[64];
-                switch(code)
-                {
-                    case 0:
-                        wbank ++;
-                        wbank &= 0x0000000F;
-                        {
-                            boost::lock_guard<boost::mutex> lock(msg_mtx);
-                            while(wbank != r_bank)
-                            {
-                                string str;
-                                for(unsigned int idx=0, max=ridx[r_bank]; idx<max; idx++)
-                                {
-                                    sprintf(data, "%02X", rdata[r_bank][idx]);
-                                    str += data;
-                                }
-                                ridx[r_bank]=0;
-                                r_bank ++;
-                                r_bank &= 0x0000000F;
-                                if(0 < str.size())
-                                {
-                                    msg.push_back(str);
-                                }
-                            }
-                            state=TO_GAP;
-                            string msg_gap("GAP:");
-                            msg.push_back(msg_gap);
-                            msg_cond.notify_one();
-                        }
-                        break;
-                    case 1:
-                        {
-                            sprintf(data, "TO1:%d0ms", timer[1]);
-                            string str(data);
-                            boost::lock_guard<boost::mutex> lock(msg_mtx);
-                            if(0 < str.size())
-                            {
-                                msg.push_back(str);
-                            }
-                            msg_cond.notify_one();
-                        }
-                        state=TO_1;
-                        break;
-                    case 2:
-                        {
-                            sprintf(data, "TO2:%d0ms", timer[2]);
-                            string str(data);
-                            boost::lock_guard<boost::mutex> lock(msg_mtx);
-                            if(0 < str.size())
-                            {
-                                msg.push_back(str);
-                            }
-                            msg_cond.notify_one();
-                        }
-                        state=TO_2;
-                        break;
-                    case 3:
-                        {
-                            sprintf(data, "TO3:%d0ms", timer[3]);
-                            string str(data);
-                            boost::lock_guard<boost::mutex> lock(msg_mtx);
-                            if(0 < str.size())
-                            {
-                                msg.push_back(str);
-                            }
-                            msg_cond.notify_one();
-                        }
-                        state=TO_3;
-                        break;
-                    case 4:
-                        break;
-                    case 7:
-                        break;
-                    default:
-                        break;
-                }
-            }
-        }
-        fflush(stdout);
-    }
-    string str("exit");
-    boost::lock_guard<boost::mutex> lock(msg_mtx);
-    msg.push_back(str);
-    msg_cond.notify_one();
-}
-
-void Application::mruby(void)
-{
-    try
-    {
-        Application & app = Application::ref();
-        app.mruby_exec();
-    }
-    catch(...)
-    {
-    }
-}
-
 string Application::msg_wait(void)
 {
     string str("");
-    boost::unique_lock< boost::mutex > lock(msg_mtx);
+    std::unique_lock<std::mutex> lock(msg_mtx);
     while(0 == msg.size())
     {
         msg_cond.wait(lock);
@@ -544,85 +376,16 @@ void Application::msg_send(std::string & str)
     }
 }
 
-void Application::mruby_exec(void)
-{
-    mrb_state * mrb = mrb_open();
-    struct RClass * regex_class = mrb_define_class_under(mrb, mrb->kernel_module, "regex", mrb->object_class);
-    mrb_define_method(mrb, regex_class, "initialize",    regex_initialize, MRB_ARGS_REQ(2));
-    mrb_define_method(mrb, regex_class, "reg_matches",   regex_regex_matches, MRB_ARGS_REQ(2));
-
-    struct RClass * smon_class = mrb_define_class_under(mrb, mrb->kernel_module, "Smon", mrb->object_class);
-    mrb_define_method(mrb, smon_class, "initialize",    smon_initialize, MRB_ARGS_REQ(2));
-    mrb_define_method(mrb, smon_class, "crc",           smon_crc, MRB_ARGS_REQ(2));
-    mrb_define_method(mrb, smon_class, "wait",          smon_wait, MRB_ARGS_REQ(2));
-    mrb_define_method(mrb, smon_class, "send",          smon_send, MRB_ARGS_REQ(2));
-    mrb_define_method(mrb, smon_class, "reg_matches",   smon_regex_matches, MRB_ARGS_REQ(3));
-
-    if(is_mruby)
-    {
-        ifstream fin(mruby_fname);
-        if(fin.is_open())
-        {
-            string code((std::istreambuf_iterator<char>(fin)), std::istreambuf_iterator<char>());
-            mrb_load_string(mrb, code.c_str());
-            mrb_close(mrb);
-        }
-        else
-        {
-            is_mruby = false;
-        }
-    }
-    if(!is_mruby)
-    {
-        static const char code[] = "mon = Smon.new()\n while( 1 )\n msg = mon.wait()\n case msg\n when \"exit\" then\n exit 0;\n else\n print msg, \"\\n\"\n end\n STDOUT.flush\n end";
-        mrb_load_string(mrb, code);
-        mrb_close(mrb);
-    }
-            active = false;
-            serial->close();
-            boost::lock_guard<boost::mutex> lock(mtx);
-            evt = 0x01;
-            cond.notify_one();
-}
-
-int Application::main(char * com_name)
-{
-    serial = new SerialControl(com_name, *this, profile.baud, profile.parity, profile.stop);
-    TimerThread cyc(*serial);
-    boost::thread thr_rcv(&rcv);
-    boost::thread thr_prn(&prn);
-    std::string str;
-    while(std::getline(std::cin, str))
-    {
-        if(str == "exit")
-        {
-            active = false;
-            serial->close();
-            boost::lock_guard<boost::mutex> lock(mtx);
-            evt = 0x01;
-            cond.notify_one();
-            break;
-        }
-        msg_send(str);
-    }
-    fflush(stdout);
-    cyc.stop();
-    //thr_rcv.join();
-    thr_prn.join();
-    delete serial;
-    return 0;
-}
-
 void Application::rcvIntarval(unsigned int tick)
 {
     if(active)
     {
-        unsigned char evt = 0x80;
+        unsigned char evt = 0x40;
         for( auto to: timer)
         {
             if(tick==to)
             {
-                boost::lock_guard<boost::mutex> lock(mtx);
+                std::lock_guard<std::mutex> lock(mtx);
                 this->evt = evt;
                 cond.notify_one();
             }
@@ -698,6 +461,227 @@ int Application::checkOptions(boost::program_options::variables_map & argmap)
     return 0;
 }
 
+void Application::read_stdin(size_t id)
+{
+    std::string str;
+    while(std::getline(std::cin, str))
+    {
+        if(str == "exit")
+        {
+            std::lock_guard<std::mutex> lock(mtx);
+            evt = 0x80;
+            cond.notify_one();
+            break;
+        }
+        msg_send(str);
+    }
+}
+
+/**
+ * data reciver on serial port
+ */
+void Application::recive(size_t id)
+{
+    serial->clearRTS();
+    unsigned char test[1024];
+    memset(&(test[0]), 0, sizeof(test));
+    while(active)
+    {
+        size_t len = serial->read(test, sizeof(test));
+        std::lock_guard<std::mutex> lock(mtx);
+        if(0 < len)
+        {
+            state=RECVING;
+        }
+        for(size_t cnt = 0; cnt < len; cnt ++)
+        {
+            rdata[w_bank][ridx[w_bank]++] = test[cnt];
+            if(bank_size <= ridx[w_bank])
+            {
+                w_bank ++;
+                w_bank &= 0x0000000F;
+            }
+        }
+    }
+    active = false;
+}
+
+/**
+ * execute of mruby
+ */
+void Application::mruby_exec(size_t id)
+{
+    mrb_state * mrb = mrb_open();
+    struct RClass * regex_class = mrb_define_class_under(mrb, mrb->kernel_module, "regex", mrb->object_class);
+    mrb_define_method(mrb, regex_class, "initialize",    regex_initialize, MRB_ARGS_REQ(2));
+    mrb_define_method(mrb, regex_class, "reg_matches",   regex_regex_matches, MRB_ARGS_REQ(2));
+
+    struct RClass * smon_class = mrb_define_class_under(mrb, mrb->kernel_module, "Smon", mrb->object_class);
+    mrb_define_method(mrb, smon_class, "initialize",    smon_initialize, MRB_ARGS_REQ(2));
+    mrb_define_method(mrb, smon_class, "crc",           smon_crc, MRB_ARGS_REQ(2));
+    mrb_define_method(mrb, smon_class, "wait",          smon_wait, MRB_ARGS_REQ(2));
+    mrb_define_method(mrb, smon_class, "send",          smon_send, MRB_ARGS_REQ(2));
+    mrb_define_method(mrb, smon_class, "reg_matches",   smon_regex_matches, MRB_ARGS_REQ(3));
+
+    if(is_mruby)
+    {
+        ifstream fin(mruby_fname);
+        if(fin.is_open())
+        {
+            string code((std::istreambuf_iterator<char>(fin)), std::istreambuf_iterator<char>());
+            mrb_load_string(mrb, code.c_str());
+            mrb_close(mrb);
+        }
+        else
+        {
+            is_mruby = false;
+        }
+    }
+    if(!is_mruby)
+    {
+        static const char code[] = "mon = Smon.new()\n while( 1 )\n msg = mon.wait()\n case msg\n when \"exit\" then\n exit 0;\n else\n print msg, \"\\n\"\n end\n STDOUT.flush\n end";
+        mrb_load_string(mrb, code);
+        mrb_close(mrb);
+    }
+    std::lock_guard<std::mutex> lock(mtx);
+    evt = 0x80;
+    cond.notify_one();
+}
+
+/**
+ * event watcher
+ */
+void Application::eventer(size_t id)
+{
+    std::jthread th_mruby(&Application::mruby_exec, this, 0);
+    std::jthread th_recive(&Application::recive, this, 0);
+    std::jthread th_stdin(&Application::read_stdin, this, 0);
+
+    while(active)
+    {
+        unsigned char event_all = 0;
+        {
+            std::unique_lock<std::mutex> lock(mtx);
+            cond.wait(lock);
+            event_all = this->evt;
+        }
+        for(unsigned char mask = 0x80; 0 != mask; mask >>= 1)
+        {
+            unsigned char evt = event_all & mask;
+            if(0 != evt)
+            {
+                char data[64];
+                switch(evt)
+                {
+                case 0x80:          /* exit event */
+                    serial->close();
+                    {
+                        auto rcv_stop_source = th_recive.get_stop_source();
+                        auto std_stop_source = th_stdin.get_stop_source();
+                        rcv_stop_source.request_stop();
+                        std_stop_source.request_stop();
+                    }
+                    {
+                        string str("exit");
+                        std::lock_guard<std::mutex> lock(msg_mtx);
+                        msg.push_back(str);
+                        msg_cond.notify_one();
+                    }
+                    active = false;
+                    break;
+                case 0x40:      /* GAP timer event */
+                    w_bank ++;
+                    w_bank &= 0x0000000F;
+                    {
+                        std::lock_guard<std::mutex> lock(msg_mtx);
+                        while(w_bank != r_bank)
+                        {
+                            string str;
+                            for(unsigned int idx=0, max=ridx[r_bank]; idx<max; idx++)
+                            {
+                                sprintf(data, "%02X", rdata[r_bank][idx]);
+                                str += data;
+                            }
+                            ridx[r_bank]=0;
+                            r_bank ++;
+                            r_bank &= 0x0000000F;
+                            if(0 < str.size())
+                            {
+                                msg.push_back(str);
+                            }
+                        }
+                        state=TO_GAP;
+                        string msg_gap("GAP:");
+                        msg.push_back(msg_gap);
+                        msg_cond.notify_one();
+                    }
+                    break;
+                case 0x20:      /* Time Out 1   */
+                    {
+                        sprintf(data, "TO1:%d0ms", timer[1]);
+                        string str(data);
+                        std::lock_guard<std::mutex> lock(msg_mtx);
+                        if(0 < str.size())
+                        {
+                            msg.push_back(str);
+                        }
+                        msg_cond.notify_one();
+                    }
+                    state=TO_1;
+                    break;
+                case 0x10:      /* Time Out 2   */
+                    {
+                        sprintf(data, "TO2:%d0ms", timer[2]);
+                        string str(data);
+                        std::lock_guard<std::mutex> lock(msg_mtx);
+                        if(0 < str.size())
+                        {
+                            msg.push_back(str);
+                        }
+                        msg_cond.notify_one();
+                    }
+                    state=TO_2;
+                    break;
+                case 0x08:      /* Time out 3   */
+                    {
+                        sprintf(data, "TO3:%d0ms", timer[3]);
+                        string str(data);
+                        std::lock_guard<std::mutex> lock(msg_mtx);
+                        if(0 < str.size())
+                        {
+                            msg.push_back(str);
+                        }
+                        msg_cond.notify_one();
+                    }
+                    state=TO_3;
+                    break;
+                default:
+                    break;
+                }
+            }
+        }
+        cout.flush();
+    }
+    active = false;
+    th_mruby.join();
+    th_recive.detach();
+    th_stdin.detach();
+//    th_recive.join();
+//    th_stdin.join();
+}
+
+int Application::main(char * com_name)
+{
+    serial = new SerialControl(com_name, *this, profile.baud, profile.parity, profile.stop);
+    TimerThread timer;
+    timer.cyclic(*serial, 10);
+    std::jthread th_eventer(&Application::eventer, this, 0);
+    cout.flush();
+    th_eventer.join();
+    timer.stop();
+    return 0;
+}
+
 int main(int argc, char *argv[])
 {
     using namespace boost::program_options;
@@ -705,7 +689,7 @@ int main(int argc, char *argv[])
     Application & app = Application::ref();
     try
     {
-        options_description desc("smon.exe [Device File] [Options]");
+        options_description desc("smon.exe [Device File] [Options]\n  smon Software revision 0.1.0\n");
         desc.add_options()
             ("baud,b",   value<string>(),       "baud rate ex) -b B9600E1")
             ("gap,g",    value<unsigned int>(), "time out tick. Default 3   ( 30 [ms])")
@@ -725,7 +709,6 @@ int main(int argc, char *argv[])
         if(argmap.count("help"))
         {
             cout << desc << endl;
-            cout << "  smon Rev 0.1.0" << endl;
             return 0;
         }
         if(argmap.count("crc"))

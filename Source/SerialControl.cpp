@@ -9,15 +9,15 @@
  */
 
 #include "Entity.hpp"
-#include "CyclicTimer.hpp"
+#include "Timer.hpp"
 #include "SerialControl.hpp"
-#include <boost/thread.hpp>
 #include <boost/asio.hpp>
+#include <thread>
+#include <chrono>
 #include <stdio.h>
 
+using namespace MyApplications;
 using namespace MyEntity;
-using namespace MyBoost;
-using namespace boost;
 using namespace boost::asio;
 using namespace std;
 
@@ -83,7 +83,7 @@ std::size_t SerialControl::send(unsigned char * data, std::size_t size)
     setRTS();
     std::size_t wlen = port.write_some(buffer(data, size));
     unsigned int wait_time = (1000 * bit_num * (wlen+1)) / _baudrate;
-    boost::this_thread::sleep(boost::posix_time::milliseconds(wait_time));
+    std::this_thread::sleep_for(std::chrono::milliseconds(wait_time));
     clearRTS();
     latest = tick;
     return wlen;
