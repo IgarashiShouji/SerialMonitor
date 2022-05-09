@@ -13,7 +13,7 @@
 #include <boost/asio.hpp>
 #include <windows.h>
 
-using namespace MyBoost;
+using namespace MyApplications;
 using namespace boost;
 using namespace boost::asio;
 

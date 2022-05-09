@@ -65,10 +65,16 @@ SerialControl::~SerialControl(void)
 std::size_t SerialControl::read(unsigned char * data, std::size_t size)
 {
     std::size_t len = 0;
-    if( port.is_open() )
+    try
     {
-        len = port.read_some(buffer(data, size));
-        latest = tick;
+        if( port.is_open() )
+        {
+            len = port.read_some(buffer(data, size));
+            latest = tick;
+        }
+    }
+    catch(...)
+    {
     }
     return len;
 }
