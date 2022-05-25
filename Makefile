@@ -40,7 +40,7 @@ MyUtilities/libUtilities.a: MyUtilities
 	cd MyUtilities; make -f Makefile
 
 mruby/build/host/lib/libmruby.a: mruby
-	cd mruby; ruby minirake
+	cp default.rb mruby/build_config/; cd mruby; ruby minirake
 
 ifdef MSYSTEM
 Objects/libSerialMonitor.a: Objects/SerialControl.o Objects/RTSControl-mingw.o
