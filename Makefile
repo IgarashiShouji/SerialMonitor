@@ -1,9 +1,7 @@
 TARGET=smon
 ifdef MSYSTEM
-CFLAGS=-g -I ./Include -I ./MyUtilities/Include -I ./mruby/include -I ./mruby/build/host/include -pipe -O3
-LIBS=-static -L ./Objects -L ./MyUtilities -L ./mruby/build/host/lib -lSerialMonitor -lUtilities -lmruby -lboost_program_options -lboost_system -lws2_32
-#LIBS=-L ./Objects -L ./MyUtilities -L ./mruby/build/host/lib -lSerialMonitor -lUtilities -lmruby -lboost_program_options-mt -lboost_system-mt -lws2_32
-#LIBS=-static -L ./Objects -L ./MyUtilities -L ./mruby/build/host/lib -lSerialMonitor -lUtilities -lmruby -lboost_program_options-mt -lboost_system-mt -lws2_32
+CFLAGS=-g -I ./Include -I ./MyUtilities/Include -pipe -O3
+LIBS=-static -L ./Objects -L ./MyUtilities -lSerialMonitor -lUtilities -lboost_program_options-mt -lboost_system-mt -lws2_32
 else
 CFLAGS=-g -I ./Include -I ./MyUtilities/Include -I ./mruby/include -I ./mruby/build/host/include -pipe -O3 -march=native
 LIBS=-L ./Objects -L ./MyUtilities -L ./mruby/build/host/lib -lSerialMonitor -lUtilities -lmruby -lboost_program_options -lboost_system -lpthread
