@@ -27,7 +27,7 @@ namespace MyApplications
     {
     private:
         std::atomic<bool>           active{false};
-        std::list<std::jthread>     list_th;
+        std::list<std::thread>      list_th;
     public:
         inline TimerThread(void);
         inline ~TimerThread(void);
@@ -48,7 +48,7 @@ namespace MyApplications
                 sig_obj.handler();
             }
         };
-        list_th.push_back(std::jthread(lamda));
+        list_th.push_back(std::thread(lamda));
     }
     inline void TimerThread::cyclic(TimerHandler & sig_obj, int interval)
     {
@@ -64,18 +64,13 @@ namespace MyApplications
                 }
             }
         };
-        list_th.push_back(std::jthread(lamda));
+        list_th.push_back(std::thread(lamda));
     }
     inline void TimerThread::stop(void)
     {
         if(active)
         {
             active = false;
-            for(auto & th : list_th)
-            {
-                auto ss = th.get_stop_source();
-                ss.request_stop();
-            }
             for(auto & th : list_th)
             {
                 th.join();

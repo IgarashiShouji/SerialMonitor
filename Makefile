@@ -1,20 +1,39 @@
 TARGET=smon
+CPP=g++
+AR=ar
+
 ifdef MSYSTEM
-CFLAGS=-g -I ./Include -I ./MyUtilities/Include -pipe -O3
-LIBS=-static -L ./Objects -L ./MyUtilities -lSerialMonitor -lUtilities -lboost_program_options-mt -lboost_system-mt -lws2_32
+# mingw on msys2
+CFLAGS=-g -I ./Include -I ./MyUtilities/Include -I ./mruby/include -I ./mruby/build/host/include -pipe -O3
+LIBS=-L ./Objects -L ./MyUtilities -L ./mruby/build/host/lib -lSerialMonitor -lUtilities -lmruby -lboost_program_options-mt -lboost_system-mt -lws2_32 -lregex
+AR_OBJS=Objects/SerialControl.o Objects/RTSControl-mingw.o
+MAIN_DEPS=Objects/main.o MyUtilities/libUtilities.a mruby/build/host/lib/libmruby.a Objects/libSerialMonitor.a Objects
+else
+# on Linux
+ifdef CROSSDEV
+# x86_64-w64-mingw32
+CFLAGS=-g -I /usr/x86_64-w64-mingw32/include -I ./Include -I ./MyUtilities/Include -I ./mruby/include -I ./mruby/build/cross-mingw-winetest/include -pipe -O3 -march=native
+LIBS=-static -L ./Objects -L ./MyUtilities -L ./mruby/build/cross-mingw-winetest/lib -lSerialMonitor -lUtilities -lmruby -lboost_program_options -lboost_system -lws2_32
+AR_OBJS=Objects/SerialControl.o Objects/RTSControl-mingw.o
+MAIN_DEPS=MyUtilities/libUtilities.a mruby/build/cross-mingw-winetest/lib/libmruby.a mruby Objects/libSerialMonitor.a Objects
+CPP=x86_64-w64-mingw32-g++
+AR=x86_64-w64-mingw32-ar
 else
 CFLAGS=-g -I ./Include -I ./MyUtilities/Include -I ./mruby/include -I ./mruby/build/host/include -pipe -O3 -march=native
 LIBS=-L ./Objects -L ./MyUtilities -L ./mruby/build/host/lib -lSerialMonitor -lUtilities -lmruby -lboost_program_options -lboost_system -lpthread
+AR_OBJS=Objects/SerialControl.o Objects/RTSControl-linux.o
+MAIN_DEPS=Objects/main.o MyUtilities/libUtilities.a mruby/build/host/lib/libmruby.a Objects/libSerialMonitor.a Objects
 endif
-CPPFLAGS=-std=c++20 $(CFLAGS)
+endif
+CPPFLAGS=-std=c++17 $(CFLAGS)
 
 all: $(Objects) $(TARGET)
 
 clean:
 	rm -rf $(TARGET) Objects/*.[ao]
 
-$(TARGET): Objects/main.o MyUtilities/libUtilities.a mruby/build/host/lib/libmruby.a Objects/libSerialMonitor.a Objects
-	g++ $(CPPFLAGS) -o $@ $< $(LIBS)
+$(TARGET): Objects/main.o $(MAIN_DEPS)
+	$(CPP) $(CPPFLAGS) $< -o $@ $(LIBS)
 
 Objects:
 	mkdir -p Objects
@@ -37,21 +56,21 @@ Doxygen/html/index.html: Doxyfile Doxygen \
 	doxygen Doxyfile
 
 MyUtilities/libUtilities.a: MyUtilities
-	cd MyUtilities; make -f Makefile
+	cd MyUtilities; make -f Makefile lib
 
-mruby/build/host/lib/libmruby.a: mruby
-	cp default.rb mruby/build_config/; cd mruby; ruby minirake
-
-ifdef MSYSTEM
-Objects/libSerialMonitor.a: Objects/SerialControl.o Objects/RTSControl-mingw.o
-	ar rcs $@ $^
+ifdef CROSSDEV
+mruby/build/cross-mingw-winetest/lib/libmruby.a: mruby
+	/bin/bash ./build-mruby-cross.sh
 else
-Objects/libSerialMonitor.a: Objects/SerialControl.o Objects/RTSControl-linux.o
-	ar rcs $@ $^
+mruby/build/host/lib/libmruby.a: mruby
+	/bin/bash ./build-mruby.sh
 endif
 
+Objects/libSerialMonitor.a: $(AR_OBJS)
+	$(AR) rcs $@ $^
+
 Objects/%.o: Source/%.cpp
-	g++ $(CPPFLAGS) -c -o $@ $<
+	$(CPP) $(CPPFLAGS) -c -o $@ $<
 
 MyUtilities/Include/Entity.hpp: MyUtilities
 mruby/include/mruby.h: mruby

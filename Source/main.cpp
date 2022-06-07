@@ -553,9 +553,9 @@ void Application::mruby_exec(size_t id)
  */
 void Application::eventer(size_t id)
 {
-    std::jthread th_mruby(&Application::mruby_exec, this, 0);
-    std::jthread th_recive(&Application::recive, this, 0);
-    std::jthread th_stdin(&Application::read_stdin, this, 0);
+    std::thread th_mruby(&Application::mruby_exec, this, 0);
+    std::thread th_recive(&Application::recive, this, 0);
+    std::thread th_stdin(&Application::read_stdin, this, 0);
 
     while(active)
     {
@@ -575,12 +575,6 @@ void Application::eventer(size_t id)
                 {
                 case 0x80:          /* exit event */
                     serial->close();
-                    {
-                        auto rcv_stop_source = th_recive.get_stop_source();
-                        auto std_stop_source = th_stdin.get_stop_source();
-                        rcv_stop_source.request_stop();
-                        std_stop_source.request_stop();
-                    }
                     {
                         string str("exit");
                         std::lock_guard<std::mutex> lock(msg_mtx);
@@ -675,7 +669,7 @@ int Application::main(char * com_name)
     serial = new SerialControl(com_name, *this, profile.baud, profile.parity, profile.stop);
     TimerThread timer;
     timer.cyclic(*serial, 10);
-    std::jthread th_eventer(&Application::eventer, this, 0);
+    std::thread th_eventer(&Application::eventer, this, 0);
     cout.flush();
     th_eventer.join();
     timer.stop();
