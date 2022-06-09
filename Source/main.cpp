@@ -11,6 +11,7 @@
 #include "Entity.hpp"
 #include "Timer.hpp"
 #include "SerialControl.hpp"
+#include <OpenXLSX.hpp>
 #include <boost/thread.hpp>
 #include <boost/program_options.hpp>
 #include <sstream>
@@ -97,6 +98,7 @@ namespace MyApplications
 
 using namespace MyApplications;
 using namespace MyEntity;
+using namespace OpenXLSX;
 using namespace boost;
 using namespace std;
 
@@ -674,6 +676,33 @@ int Application::main(char * com_name)
     th_eventer.join();
     timer.stop();
     return 0;
+}
+
+void test_OpenXlsx(void)
+{
+    cout << "********************************************************************************\n";
+    cout << "DEMO PROGRAM #04: Unicode\n";
+    cout << "********************************************************************************\n";
+
+    XLDocument doc1;
+    doc1.create("./Demo04.xlsx");
+    auto wks1 = doc1.workbook().worksheet("Sheet1");
+    wks1.setName("test sheet");
+
+    wks1.cell(XLCellReference("A3")).value() = "Hello World";
+    doc1.save();
+    doc1.saveAs("./スプレッドシート.xlsx");
+    doc1.close();
+
+    doc1.open("./スプレッドシート.xlsx");
+    wks1 = doc1.workbook().worksheet("test sheet");
+    cout << "Cell A1 (Korean)  : " << wks1.cell(XLCellReference("A1")).value().get<std::string>() << std::endl;
+    cout << "Cell A2 (Chinese) : " << wks1.cell(XLCellReference("A2")).value().get<std::string>() << std::endl;
+    cout << "Cell A3 (Japanese): " << wks1.cell(XLCellReference("A3")).value().get<std::string>() << std::endl;
+    cout << "Cell A4 (Hindi)   : " << wks1.cell(XLCellReference("A4")).value().get<std::string>() << std::endl;
+    cout << "Cell A5 (Russian) : " << wks1.cell(XLCellReference("A5")).value().get<std::string>() << std::endl;
+    cout << "Cell A6 (Greek)   : " << wks1.cell(XLCellReference("A6")).value().get<std::string>() << std::endl;
+    doc1.close();
 }
 
 int main(int argc, char *argv[])
