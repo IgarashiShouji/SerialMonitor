@@ -40,9 +40,6 @@ MyUtilities:
 mruby:
 	git clone https://github.com/mruby/mruby.git
 
-OpenXLSX:
-	git clone https://github.com/troldal/OpenXLSX.git
-
 document: Doxygen/html/index.html
 
 Doxygen:
@@ -61,13 +58,13 @@ ifdef CROSSDEV
 mruby/build/cross-mingw-winetest/lib/libmruby.a: mruby
 	/bin/bash ./build-mruby-cross.sh
 mruby/include/mruby.h: mruby/build/cross-mingw-winetest/lib/libmruby.a
-OpenXLSX/build/output/libOpenXLSX.a: OpenXLSX
+OpenXLSX/build/output/libOpenXLSX.a:
 	/bin/bash build-OpenXLSX-cross.sh
 else
 mruby/build/host/lib/libmruby.a: mruby
 	/bin/bash ./build-mruby.sh
 mruby/include/mruby.h: mruby/build/host/lib/libmruby.a
-OpenXLSX/build/output/libOpenXLSX.a: OpenXLSX
+OpenXLSX/build/output/libOpenXLSX.a:
 	/bin/bash build-OpenXLSX.sh
 endif
 
