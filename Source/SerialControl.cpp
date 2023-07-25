@@ -9,60 +9,71 @@
  */
 
 #include "Entity.hpp"
-#include "Timer.hpp"
 #include "SerialControl.hpp"
 #include <boost/asio.hpp>
 #include <thread>
 #include <chrono>
 #include <stdio.h>
 
-using namespace MyApplications;
 using namespace MyEntity;
 using namespace boost::asio;
 using namespace std;
 
-SerialControl::SerialControl(const char * pname, SerialSignal & obj, BaudRate baud, Parity parity, StopBit stop, bool RTS_control)
-  : port(io, pname), rcv(obj), tick(0), latest(0), is_send(false), _baudrate(BR1200), bit_num(11), is_control_RTS(true)
+
+class SerialControlBoost : public SerialControl
 {
-    _baudrate = baud;
-    bit_num   = 1 + 8 + stop;
-    if(parity != none) bit_num ++;
-    port.set_option(serial_port_base::baud_rate(baud));
+protected:
+        boost::asio::io_service     io;
+        boost::asio::serial_port    port;
+        BaudRate                    _baudrate;
+        unsigned char               bit_num;
+        RtsContorl *                rts;
+
+public:
+        SerialControlBoost(const char * name, BaudRate bd, Parity pt, StopBit st, bool rts);
+        virtual ~SerialControlBoost(void);
+        virtual std::size_t read(unsigned char * data, std::size_t size);
+        virtual std::size_t send(unsigned char * data, std::size_t size);
+        virtual void setRTS(void);
+        virtual void clearRTS(void);
+        virtual void close(void);
+};
+
+SerialControlBoost::SerialControlBoost(const char * name, BaudRate bd, Parity pt, StopBit st, bool rts_ctrl)
+  : port(io, name), _baudrate(bd), bit_num(1 + 8 + st)
+{
+    if(pt != none) bit_num ++;
+    rts = createRtsControl(port.native_handle(), rts_ctrl);
+
+    port.set_option(serial_port_base::baud_rate(_baudrate));
     port.set_option(serial_port_base::character_size(8));
     port.set_option(serial_port_base::flow_control(serial_port_base::flow_control::none));
-    switch(parity)
+    switch(pt)
     {
-        case none:
-            port.set_option(serial_port_base::parity(serial_port_base::parity::none));
-            break;
-        case odd:
-            port.set_option(serial_port_base::parity(serial_port_base::parity::odd));
-            break;
-        case even:
-            port.set_option(serial_port_base::parity(serial_port_base::parity::even));
-            break;
-        default:
-            break;
+        case none:  port.set_option(serial_port_base::parity(serial_port_base::parity::none));  break;
+        case odd:   port.set_option(serial_port_base::parity(serial_port_base::parity::odd));   break;
+        case even:  port.set_option(serial_port_base::parity(serial_port_base::parity::even));  break;
+        default: break;
     }
-    switch(stop)
+    switch(st)
     {
-        case one:
-            port.set_option(serial_port_base::stop_bits(serial_port_base::stop_bits::one));
-            break;
-        case two:
-            port.set_option(serial_port_base::stop_bits(serial_port_base::stop_bits::two));
-            break;
+        case one:   port.set_option(serial_port_base::stop_bits(serial_port_base::stop_bits::one)); break;
+        case two: port.set_option(serial_port_base::stop_bits(serial_port_base::stop_bits::two));   break;
+        default: break;
     }
-    rts = createRtsControl();
     clearRTS();
 }
 
-SerialControl::~SerialControl(void)
+void SerialControlBoost::close(void)
 {
-    delete rts;
+    port.close();
+}
+SerialControlBoost::~SerialControlBoost(void)
+{
+    port.close();
 }
 
-std::size_t SerialControl::read(unsigned char * data, std::size_t size)
+std::size_t SerialControlBoost::read(unsigned char * data, std::size_t size)
 {
     std::size_t len = 0;
     try
@@ -70,7 +81,9 @@ std::size_t SerialControl::read(unsigned char * data, std::size_t size)
         if( port.is_open() )
         {
             len = port.read_some(buffer(data, size));
-            latest = tick;
+#if 0
+    Resteart Response timer
+#endif
         }
     }
     catch(...)
@@ -79,67 +92,44 @@ std::size_t SerialControl::read(unsigned char * data, std::size_t size)
     return len;
 }
 
-std::size_t SerialControl::send(unsigned char * data, std::size_t size)
+std::size_t SerialControlBoost::send(unsigned char * data, std::size_t size)
 {
-    if(size<=0)
+    if(0 < size)
     {
-        return 0;
+        setRTS();
+        unsigned int    send_time = (1000 * bit_num * (size+1)) / _baudrate;
+        std::size_t     wlen      = port.write_some(buffer(data, size));
+        std::this_thread::sleep_for(std::chrono::milliseconds(send_time));
+        clearRTS();
+#if 0
+    Start Response Timer
+#endif
+        return wlen;
     }
-    latest = tick;
-    setRTS();
-    std::size_t wlen = port.write_some(buffer(data, size));
-    unsigned int wait_time = (1000 * bit_num * (wlen+1)) / _baudrate;
-    std::this_thread::sleep_for(std::chrono::milliseconds(wait_time));
-    clearRTS();
-    latest = tick;
-    return wlen;
+    return 0;
 }
 
-void SerialControl::clearRTS(void)
-{
-    if(is_control_RTS)
-    {
-        rts->clear();
-    }
-    is_send = false;
-}
+void SerialControlBoost::setRTS(void)   { rts->set();   }
+void SerialControlBoost::clearRTS(void) { rts->clear(); }
 
-void SerialControl::setRTS(void)
+SerialControl * SerialControl::createObject(const string & name, BaudRate baud, Parity pt, StopBit st, bool rts)
 {
-    if(is_control_RTS)
-    {
-        rts->set();
-    }
-    is_send = true;
-}
-
-void SerialControl::handler(void)
-{
-    tick ++;
-    if( !is_send )
-    {
-        unsigned int diff = tick - latest;
-        rcv.rcvIntarval(diff);
-    }
-}
-
-void SerialControl::close(void)
-{
-    port.close();
+    SerialControl * com = new SerialControlBoost(name.c_str(), baud, pt, st, rts);
+    return com;
 }
 
 bool SerialControl::hasBaudRate(std::string & baud, Profile & info)
 {
     static const char * list[] =
     {
-        "B115200E1", "B115200E2", "B115200N1", "B115200N2", "B115200O1", "B115200O2",
-        "B1200E1",   "B1200E2",   "B1200N1",   "B1200N2",   "B1200O1",   "B1200O2",
-        "B19200E1",  "B19200E2",  "B19200N1",  "B19200N2",  "B19200O1",  "B19200O2",
-        "B38400E1",  "B38400E2",  "B38400N1",  "B38400N2",  "B38400O1",  "B38400O2",
-        "B9600E1",   "B9600E2",   "B9600N1",   "B9600N2",   "B9600O1",   "B9600O2"
+        "115200E1", "115200E2", "115200N1", "115200N2", "115200O1", "115200O2",
+        "1200E1",   "1200E2",   "1200N1",   "1200N2",   "1200O1",   "1200O2",
+        "19200E1",  "19200E2",  "19200N1",  "19200N2",  "19200O1",  "19200O2",
+        "38400E1",  "38400E2",  "38400N1",  "38400N2",  "38400O1",  "38400O2",
+        "9600E1",   "9600E2",   "9600N1",   "9600N2",   "9600O1",   "9600O2"
     };
     enum {ListMax=(sizeof(list)/sizeof(list[0]))};
-    static const Profile pro[ListMax] =
+    static const Profile prof[ListMax] =
     {
         { BR115200, even, one }, { BR115200, even, two }, { BR115200, none, one }, { BR115200, none, two }, { BR115200, odd,  one }, { BR115200, odd,  two },
         { BR1200,   even, one }, { BR1200,   even, two }, { BR1200,   none, one }, { BR1200,   none, two }, { BR1200,   odd,  one }, { BR1200,   odd,  two },
@@ -151,9 +141,9 @@ bool SerialControl::hasBaudRate(std::string & baud, Profile & info)
     ConstArray<const char *> arry(list, (sizeof(list)/sizeof(list[0])));
     ConstCString target(baud.c_str(), baud.size());
     size_t idx = getIndexArray<const char *>(arry, target);
-    if(idx < (sizeof(list)/sizeof(list[0])) )
+    if(idx < __ArrayCount(list))
     {
-        info = pro[idx];
+        info = prof[idx];
         return true;
     }
     return false;

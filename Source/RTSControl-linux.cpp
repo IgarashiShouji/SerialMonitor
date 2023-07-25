@@ -13,45 +13,33 @@
 #include <boost/asio.hpp>
 #include <sys/ioctl.h>
 
-using namespace MyApplications;
 using namespace boost;
 using namespace boost::asio;
 
 class RTSContorlLinux : public SerialControl::RtsContorl 
 {
 protected:
-    int fd;
+    int     fd;
+    bool    ctrl;
+    bool    rts;
 public:
-    RTSContorlLinux(int fd);
+    RTSContorlLinux(int fd, bool ctrl);
     virtual ~RTSContorlLinux(void);
     virtual void set(void);
     virtual void clear(void);
+    virtual bool status(void) const;
 };
 
-RTSContorlLinux::RTSContorlLinux(int _fd)
-  : fd(_fd)
+RTSContorlLinux::RTSContorlLinux(int _fd, bool _ctrl)
+  : fd(_fd), ctrl(_ctrl), rts(false)
 {
 }
+RTSContorlLinux::~RTSContorlLinux(void)     { }
+void RTSContorlLinux::set(void)             { if(ctrl) { int data = TIOCM_RTS; ioctl(fd, TIOCMBIS, &data); } rts = true;   }
+void RTSContorlLinux::clear(void)           { if(ctrl) { int data = TIOCM_RTS; ioctl(fd, TIOCMBIC, &data); } rts = false;  }
+bool RTSContorlLinux::status(void) const    { return rts; }
 
-RTSContorlLinux::~RTSContorlLinux(void)
+SerialControl::RtsContorl * SerialControl::createRtsControl(unsigned long int fd, bool ctrl)
 {
-}
-
-void RTSContorlLinux::set(void)
-{
-    int data = TIOCM_RTS;
-    ioctl(fd, TIOCMBIS, &data);
-}
-
-void RTSContorlLinux::clear(void)
-{
-    int data = TIOCM_RTS;
-    ioctl(fd, TIOCMBIC, &data);
-}
-
-// ----------<< SerialControl >>----------
-SerialControl::RtsContorl * SerialControl::createRtsControl(void)
-{
-    RtsContorl * rts = new RTSContorlLinux(port.native_handle());
-    return rts;
+    return new RTSContorlLinux(static_cast<int>(fd), ctrl);
 }

@@ -46,9 +46,9 @@ Doxygen:
 	mkdir -p Doxygen
 
 Doxygen/html/index.html: Doxyfile Doxygen \
-							Source/main.cpp Include/Timer.hpp Include/SerialControl.hpp \
+							Source/main.cpp Include/SerialControl.hpp \
 							Source/SerialControl.cpp Include/SerialControl.hpp \
-							Source/RTSControl-mingw.cpp Include/SerialControl.hpp Include/Timer.hpp 
+							Source/RTSControl-mingw.cpp Include/SerialControl.hpp
 	doxygen Doxyfile
 
 MyUtilities/libUtilities.a: MyUtilities
@@ -75,6 +75,6 @@ Objects/%.o: Source/%.cpp
 	$(CPP) $(CPPFLAGS) -c -o $@ $<
 
 MyUtilities/Include/Entity.hpp: MyUtilities
-Objects/main.o: Source/main.cpp Include/Timer.hpp Include/SerialControl.hpp MyUtilities/Include/Entity.hpp mruby/include/mruby.h OpenXLSX/build/output/libOpenXLSX.a
-Objects/SerialControl.o: Source/SerialControl.cpp Include/SerialControl.hpp Include/Timer.hpp MyUtilities/Include/Entity.hpp
-Objects/RTSControl-linux.o: Source/RTSControl-linux.cpp Include/SerialControl.hpp Include/Timer.hpp MyUtilities/Include/Entity.hpp
+Objects/main.o: Source/main.cpp Include/SerialControl.hpp MyUtilities/Include/Entity.hpp mruby/include/mruby.h OpenXLSX/build/output/libOpenXLSX.a
+Objects/SerialControl.o: Source/SerialControl.cpp Include/SerialControl.hpp MyUtilities/Include/Entity.hpp
+Objects/RTSControl-linux.o: Source/RTSControl-linux.cpp Include/SerialControl.hpp MyUtilities/Include/Entity.hpp

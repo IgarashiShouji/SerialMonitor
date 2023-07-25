@@ -31,28 +31,14 @@ public:
     virtual void clear(void);
 };
 
-RTSContorlMingw::RTSContorlMingw( HANDLE commDeviceIn )
-  : commDevice(commDeviceIn)
-{
-}
-
-RTSContorlMingw::~RTSContorlMingw(void)
-{
-}
-
-void RTSContorlMingw::set(void)
-{
-    EscapeCommFunction( commDevice, set_RTS );
-}
-
-void RTSContorlMingw::clear(void)
-{
-    EscapeCommFunction( commDevice, clear_RTS );
-}
+RTSContorlMingw::RTSContorlMingw( HANDLE commDeviceIn ) : commDevice(commDeviceIn)  { }
+RTSContorlMingw::~RTSContorlMingw(void)                                             { }
+void RTSContorlMingw::set(void)                                                     { EscapeCommFunction( commDevice, set_RTS );    }
+void RTSContorlMingw::clear(void)                                                   { EscapeCommFunction( commDevice, clear_RTS );  }
 
 // ----------<< SerialControl >>----------
-SerialControl::RtsContorl * SerialControl::createRtsControl(void)
+SerialControl::RtsContorl * SerialControl::createRtsControl(unsigned long int handle)
 {
-    RtsContorl * rts = new RTSContorlMingw(port.native_handle());
+    RtsContorl * rts = new RTSContorlMingw(port.native_handle(handle));
     return rts;
 }

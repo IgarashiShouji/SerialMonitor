@@ -11,83 +11,56 @@
 #ifndef __SerialControl_cpp__
 #define __SerialControl_cpp__
 
-#include "Timer.hpp"
-#include <boost/asio.hpp>
 #include <string>
 #include <stdlib.h>
 
-namespace MyApplications
+class SerialControl
 {
-    class SerialSignal
+public:
+    enum BaudRate
+    {
+        BR1200   = 1200,
+        BR9600   = 9600,
+        BR19200  = 19200,
+        BR38400  = 38400,
+        BR115200 = 115200
+    };
+    enum Parity
+    {
+        none,
+        odd,
+        even
+    };
+    enum StopBit
+    {
+        one = 1,
+        two = 2
+    };
+    struct Profile
+    {
+        enum BaudRate   baud;
+        enum Parity     parity;
+        enum StopBit    stop;
+    };
+    class RtsContorl
     {
     public:
-        virtual void rcvIntarval(unsigned int tick) = 0;
+        virtual void set(void) = 0;
+        virtual void clear(void) = 0;
+        virtual bool status(void) const = 0;
     };
 
-    class SerialControl : public MyApplications::TimerHandler
-    {
-    public:
-        enum BaudRate
-        {
-            BR1200   = 1200,
-            BR9600   = 9600,
-            BR19200  = 19200,
-            BR38400  = 38400,
-            BR115200 = 115200
-        };
-        enum Parity
-        {
-            none,
-            odd,
-            even
-        };
-        enum StopBit
-        {
-            one = 1,
-            two = 2
-        };
-        struct Profile
-        {
-            enum BaudRate   baud;
-            enum Parity     parity;
-            enum StopBit    stop;
-        };
-        class RtsContorl
-        {
-        public:
-            virtual void set(void) = 0;
-            virtual void clear(void) = 0;
-        };
-    protected:
-        boost::asio::io_service io;
-        boost::asio::serial_port port;
-        SerialSignal & rcv;
-        RtsContorl * rts;
-        unsigned int tick;
-        unsigned int latest;
-        bool is_send;
-        BaudRate _baudrate;
-        unsigned char bit_num;
-        bool is_control_RTS;
-    public:
-        SerialControl(const char * pname, SerialSignal & obj, BaudRate baud=BR1200, Parity pt=odd, StopBit st=one, bool RTS_control = true);
-        virtual ~SerialControl(void);
-        virtual std::size_t read(unsigned char * data, std::size_t size);
-        virtual std::size_t send(unsigned char * data, std::size_t size);
-        virtual void setRTS(void);
-        virtual void clearRTS(void);
-        virtual void handler(void);
-        inline bool isSend(void);
-        virtual void close(void);
-        static bool hasBaudRate(std::string & baud, Profile & info);
-    protected:
-        RtsContorl * createRtsControl(void);
-    };
-
-    inline bool SerialControl::isSend(void)
-    {
-        return is_send;
-    }
+protected:
+    virtual RtsContorl * createRtsControl(unsigned long int fd, bool ctrl);
+public:
+    static bool hasBaudRate(std::string & baud, Profile & info);
+    static SerialControl * createObject(const std::string & name, SerialControl::BaudRate baud, SerialControl::Parity pt, SerialControl::StopBit st, bool rts);
+//    virtual ~SerialControl(void) = 0;
+    virtual std::size_t read(unsigned char * data, std::size_t size) = 0;
+    virtual std::size_t send(unsigned char * data, std::size_t size) = 0;
+    virtual void setRTS(void) = 0;
+    virtual void clearRTS(void) = 0;
+    virtual void close(void) = 0;
 };
 
 

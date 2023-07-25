@@ -61,6 +61,8 @@
 MRuby::CrossBuild.new("cross-mingw-winetest") do |conf|
   conf.toolchain :gcc
 
+  conf.gem :mgem => 'mruby-posix-regexp'
+
   conf.host_target = "x86_64-w64-mingw32"
 
   # Ubuntu 20

@@ -9,98 +9,41 @@
  */
 
 #include "Entity.hpp"
-#include "Timer.hpp"
 #include "SerialControl.hpp"
-#include <OpenXLSX.hpp>
-#include <boost/thread.hpp>
+
 #include <boost/program_options.hpp>
 #include <sstream>
 #include <string>
 #include <list>
+#include <vector>
+#include <map>
 #include <iostream>
 #include <fstream>
 #include <sstream>
 #include <stdio.h>
 #include <regex>
+
 #include <thread>
 #include <mutex>
 #include <condition_variable>
+#include <chrono>
 
 #include <mruby.h>
 #include <mruby/proc.h>
 #include <mruby/data.h>
 #include <mruby/compile.h>
 #include <mruby/string.h>
+#include <mruby/array.h>
 #include <mruby/hash.h>
+#include <mruby/range.h>
+#include <mruby/proc.h>
+#include <mruby/data.h>
+#include <mruby/class.h>
+#include <mruby/value.h>
 #include <mruby/variable.h>
+#include <mruby/dump.h>
 
-
-namespace MyApplications
-{
-    /**
-     * Serial Monitor Main Class
-     */
-    class Application : MyApplications::SerialSignal
-    {
-    private:
-        enum
-        {
-            bank_size = 1024,   //!< buffer size
-            bank_num  = 32      //!< buffer count
-        };
-        enum State
-        {
-            BEGIN = 0,
-            RECVING, 
-            TO_GAP,
-            TO_1,
-            TO_2,
-            TO_3
-        };
-
-        bool                                active;     /*!< effective serial monitor   */
-        enum State                          state;      /*!< communication status       */
-        unsigned char                       evt;
-        unsigned int                        w_bank;
-        unsigned int                        r_bank;
-        bool                                is_mruby;
-        std::string                         mruby_fname;
-        unsigned char                       rdata[bank_num][bank_size];
-        unsigned int                        ridx[bank_num];
-        unsigned int                        timer[4];
-
-        std::mutex                          mtx;        /*!< Event Mutex                */
-        std::condition_variable             cond;       /*!< Event Condition Variable   */
-        MyApplications::SerialControl *            serial;
-        MyApplications::SerialControl::Profile     profile;
-        std::mutex                          msg_mtx;
-        std::condition_variable             msg_cond;
-        std::list<std::string>              msg;
-    public:
-        Application(void);
-        virtual ~Application(void);
-        static Application & ref(void);
-
-        std::string msg_wait(void);
-        void rcvIntarval(unsigned int tick);
-        MyApplications::SerialControl::Profile & refProfile(void);
-        void setTimeOut(unsigned int type, unsigned int tick);
-        int checkOptions(boost::program_options::variables_map & argmap);
-
-        void read_stdin(size_t id);
-        void recive(size_t id);
-        void eventer(size_t id);
-        void msg_send(std::string & str);
-        void mruby_exec(size_t id);
-        int main(char * com_name);
-    };
-};
-
-using namespace MyApplications;
-using namespace MyEntity;
-using namespace OpenXLSX;
-using namespace boost;
-using namespace std;
+#include <OpenXLSX.hpp>
 
 static const unsigned short modbusCRC[256] =
 {
@@ -123,6 +66,151 @@ static const unsigned short modbusCRC[256] =
     0x0044, 0xC184, 0x8185, 0x4045, 0x0187, 0xC047, 0x8046, 0x4186, 0x0182, 0xC042, 0x8043, 0x4183, 0x0041, 0xC181, 0x8180,
     0x4040
 };
+
+/* class Options */
+static mrb_value mrb_opt_initialize(mrb_state * mrb, mrb_value self);
+static mrb_value mrb_opt_get(mrb_state * mrb, mrb_value self);
+static mrb_value mrb_opt_size(mrb_state * mrb, mrb_value self);
+
+/* class Clac */
+static mrb_value mrb_calc_crc(mrb_state* mrb, mrb_value self)
+{
+    char result[5] = {0};
+    char * arg;
+    mrb_get_args(mrb, "z", &arg);
+    std::string data(arg);
+    if((data.size()%2) == 0)
+    {
+        MyEntity::CalcCRC16 crc(modbusCRC);
+        unsigned int size = 0;
+        for(unsigned int idx=0, max=data.size();idx<max; idx += 2)
+        {
+            std::stringstream ss;
+            ss << std::hex << data.substr(idx, 2);
+            int val;
+            ss >> val;
+            crc << val;
+            size ++;
+        }
+        sprintf(result, "%04x", *crc);
+    }
+    return mrb_str_new_cstr(mrb, result);
+}
+static mrb_value mrb_calc_sum(mrb_state* mrb, mrb_value self)
+{
+    char result[3] = {0};
+    char * arg;
+    mrb_get_args(mrb, "z", &arg);
+    std::string data(arg);
+    if((data.size()%2) == 0)
+    {
+        unsigned char sum = 0;
+        for(unsigned int idx=0, max=data.size();idx<max; idx += 2)
+        {
+            std::stringstream ss;
+            ss << std::hex << data.substr(idx, 2);
+            int val;
+            ss >> val;
+            sum ^= static_cast<unsigned char>(val);
+        }
+        sprintf(result, "%02x", sum);
+    }
+    return mrb_str_new_cstr(mrb, result);
+}
+static mrb_value mrb_calc_float(mrb_state* mrb, mrb_value self)
+{
+    char * arg;
+    mrb_get_args(mrb, "z", &arg);
+    std::string data(arg);
+    if(data.size() == 8)
+    {
+        union
+        {
+            float           f;
+            unsigned long   dword;
+        } fval;
+        fval.dword = 0;
+        unsigned char sum = 0;
+        for(unsigned int idx=0, max=data.size();idx<max; idx += 2)
+        {
+            std::stringstream ss;
+            ss << std::hex << data.substr(idx, 2);
+            int val;
+            ss >> val;
+            fval.dword <<= 8;
+            fval.dword |= static_cast<unsigned long>(val);
+        }
+        return mrb_float_value( mrb, fval.f );
+    }
+    return mrb_nil_value();
+}
+static mrb_value mrb_calc_float_l(mrb_state* mrb, mrb_value self)
+{
+    char * arg;
+    mrb_get_args(mrb, "z", &arg);
+    std::string org_data(arg);
+    if(org_data.size() == 8)
+    {
+        std::string data("");
+        data  = org_data.substr(6, 2);
+        data += org_data.substr(4, 2);
+        data += org_data.substr(2, 2);
+        data += org_data.substr(0, 2);
+        union
+        {
+            float           f;
+            unsigned long   dword;
+        } fval;
+        fval.dword = 0;
+        unsigned char sum = 0;
+        for(unsigned int idx=0, max=data.size();idx<max; idx += 2)
+        {
+            std::stringstream ss;
+            ss << std::hex << data.substr(idx, 2);
+            int val;
+            ss >> val;
+            fval.dword <<= 8;
+            fval.dword |= static_cast<unsigned long>(val);
+        }
+        return mrb_float_value( mrb, fval.f );
+    }
+    return mrb_nil_value();
+}
+
+/* class thread */
+static mrb_value mrb_thread_initialize(mrb_state * mrb, mrb_value self);
+static mrb_value mrb_thread_run(mrb_state * mrb, mrb_value self);
+static mrb_value mrb_thread_join(mrb_state * mrb, mrb_value self);
+static mrb_value mrb_thread_sync(mrb_state * mrb, mrb_value self);
+static mrb_value mrb_thread_wait(mrb_state * mrb, mrb_value self);
+static mrb_value mrb_thread_notify(mrb_state * mrb, mrb_value self);
+static void mrb_thread_context_free(mrb_state * mrb, void * ptr);
+
+/* class SerialMonitor */
+static mrb_value mrb_smon_initialize(mrb_state * mrb, mrb_value self);
+static mrb_value mrb_smon_wait(mrb_state * mrb, mrb_value self);
+static mrb_value mrb_smon_send(mrb_state * mrb, mrb_value self);
+static void mrb_smon_context_free(mrb_state * mrb, void * ptr);
+
+/* class OpenXLSX */
+static mrb_value mrb_xlsx_initialize(mrb_state * mrb, mrb_value self);
+static mrb_value mrb_xlsx_create(mrb_state * mrb, mrb_value self);
+static mrb_value mrb_xlsx_open(mrb_state * mrb, mrb_value self);
+static mrb_value mrb_xlsx_workbook(mrb_state * mrb, mrb_value self);
+static mrb_value mrb_xlsx_worksheet(mrb_state * mrb, mrb_value self);
+static mrb_value mrb_xlsx_set_seet_name(mrb_state * mrb, mrb_value self);
+static mrb_value mrb_xlsx_set_value(mrb_state * mrb, mrb_value self);
+static mrb_value mrb_xlsx_cell(mrb_state * mrb, mrb_value self);
+static void mrb_xlsx_context_free(mrb_state * mrb, void * ptr);
+
+auto split = [](std::string & src, auto pat)
+{
+    std::vector<std::string> result{};
+    std::regex reg{pat};
+    std::copy( std::sregex_token_iterator{src.begin(), src.end(), reg, -1}, std::sregex_token_iterator{}, std::back_inserter(result) );
+    return result;
+};
+
 static unsigned char toValue(unsigned char data)
 {
     unsigned char val=0;
@@ -140,669 +228,914 @@ static unsigned char toValue(unsigned char data)
     }
     return val;
 }
-static mrb_value smon_initialize(mrb_state * mrb, mrb_value self)
-{
-//    char * str;
-//    mrb_get_args(mrb, "z", &str);
-    return self;
-}
-static mrb_value smon_crc(mrb_state * mrb, mrb_value self)
-{
-    char result[5] = {0};
-    char * str;
-    mrb_get_args(mrb, "z", &str);
-    string data(str);
-    if((data.size()%2) == 0)
-    {
-        CalcCRC16 crc(modbusCRC);
-        unsigned int size = 0;
-        for(unsigned int idx=0, max=data.size();idx<max; idx += 2)
-        {
-            stringstream ss;
-            ss << hex << data.substr(idx, 2);
-            int val;
-            ss >> val;
-            crc << val;
-            size ++;
-        }
-        sprintf(result, "%04x", *crc);
-    }
-    return mrb_str_new_cstr(mrb, result);
-}
-static mrb_value smon_wait(mrb_state * mrb, mrb_value self)
-{
-    Application & app = Application::ref();
-    string result(app.msg_wait());
-    return mrb_str_new_cstr(mrb, result.c_str());
-}
-static mrb_value smon_send(mrb_state * mrb, mrb_value self)
-{
-    char * str;
-    mrb_get_args(mrb, "z", &str);
-    string data(str);
-    Application & app = Application::ref();
-    app.msg_send(data);
-    return self;
-}
-static mrb_value smon_regex_matches(mrb_state * mrb, mrb_value self)
-{
-    char * reg_cstr;
-    char * cstr;
-    mrb_get_args(mrb, "zz", &reg_cstr, &cstr);
-    std::regex reg(reg_cstr);
-    if(std::regex_search(cstr, reg))
-    {
-        return mrb_true_value();
-    }
-    return mrb_false_value();
-}
-static mrb_value regex_initialize(mrb_state * mrb, mrb_value self)
-{
-    char * reg_cstr;
-    mrb_get_args(mrb, "z", &reg_cstr);
-    return self;
-}
-static mrb_value regex_regex_matches(mrb_state * mrb, mrb_value self)
-{
-    char * cstr;
-    mrb_get_args(mrb, "z", &cstr);
-    return mrb_bool_value(false);
-}
-static bool prnModbusCRC(string & data)
-{
-    if((data.size()%2) == 0)
-    {
-        CalcCRC16 crc(modbusCRC);
-        unsigned int size = 0;
-        for(unsigned int idx=0, max=data.size();idx<max; idx += 2)
-        {
-            stringstream ss;
-            ss << hex << data.substr(idx, 2);
-            int val;
-            ss >> val;
-            crc << val;
-            size ++;
-        }
-        printf("%s: %04x (%d [byte])\n", data.c_str(), *crc, size);
-        return true;
-    }
-    cout << data << endl;
-    return false;
-}
 
-static bool prnCheckSum(string & data)
+class CppThread
 {
-    if((data.size()%2) == 0)
+protected:
+    std::thread                                 th_ctrl;
+    std::mutex                                  mtx;
+    std::condition_variable                     cond;
+    mrb_state *                                 mrb;
+    mrb_value                                   proc;
+public:
+    CppThread(void) { }
+    virtual ~CppThread(void)
     {
-        unsigned char sum = 0;
-        for(unsigned int idx=0, max=data.size();idx<max; idx += 2)
-        {
-            stringstream ss;
-            ss << hex << data.substr(idx, 2);
-            int val;
-            ss >> val;
-            sum ^= static_cast<unsigned char>(val);
-        }
-        printf("%s: %02x\n", data.c_str(), sum);
-        return true;
-    }
-    cout << data << endl;
-    return false;
-}
-
-/**
- * print float type numeric from hex data.(big endian)
- *
- * data  hex string
- * return true(success) / flase(failure of output)
- */
-static bool prnFloat(string & data)
-{
-    if(data.size() == 8)
-    {
-        union
-        {
-            float           f;
-            unsigned long   dword;
-        } fval;
-        fval.dword = 0;
-        unsigned char sum = 0;
-        for(unsigned int idx=0, max=data.size();idx<max; idx += 2)
-        {
-            stringstream ss;
-            ss << hex << data.substr(idx, 2);
-            int val;
-            ss >> val;
-            fval.dword <<= 8;
-            fval.dword |= static_cast<unsigned long>(val);
-        }
-        printf("%s: %f(%e)\n", data.c_str(), fval.f, fval.f);
-        return true;
-    }
-    cout << data << endl;
-    return false;
-}
-
-/**
- * print float type numeric from hex data.(little edian)
- *
- * data  hex string
- * return true(success) / flase(failure of output)
- */
-static bool prnFloatl(string & org_data)
-{
-    string data("");
-    if(org_data.size() == 8)
-    {
-        data  = org_data.substr(6, 2);
-        data += org_data.substr(4, 2);
-        data += org_data.substr(2, 2);
-        data += org_data.substr(0, 2);
-    }
-    return prnFloat(data);
-}
-
-/**
- * constracter
- *
- */
-Application::Application(void)
-  : active(true), state(BEGIN), evt(0), w_bank(0), r_bank(0), is_mruby(false)
-{
-    for(auto & idx: ridx)
-    {
-        idx = 0;
-    }
-    timer[0] = 3;
-    timer[1] = 30;
-    timer[2] = 50;
-    timer[3] = 100;
-}
-
-/**
- * destractor
- */
-Application::~Application(void)
-{
-    if(nullptr != serial)
-    {
-        delete serial;
-    }
-    serial = nullptr;
-}
-
-/**
- * get Application Object
- */
-Application & Application ::ref(void)
-{
-    static Application * app = nullptr;
-    if(nullptr == app)
-    {
-        app = new Application();
-    }
-    return (*app);
-}
-
-string Application::msg_wait(void)
-{
-    string str("");
-    std::unique_lock<std::mutex> lock(msg_mtx);
-    while(0 == msg.size())
-    {
-        msg_cond.wait(lock);
-    }
-    str = msg.front();
-    msg.pop_front();
-    return str;
-}
-
-void Application::msg_send(std::string & str)
-{
-    if((0==(str.size() % 2)) && (0<(str.size() / 2)))
-    {
-        unsigned int len = 0;
-        unsigned char data[256];
-        unsigned int max = str.size() / 2;
-        if(sizeof(data)<max)
-        {
-            max = sizeof(data);
-        }
-        for(unsigned int idx = 0; len < max; len ++)
-        {
-            unsigned char val = (toValue(str.at(idx ++)) << 4);
-            val |= toValue(str.at(idx ++));
-            data[len] = val;
-        }
-        serial->send(data, len);
-    }
-}
-
-void Application::rcvIntarval(unsigned int tick)
-{
-    if(active)
-    {
-        unsigned char evt = 0x40;
-        for( auto to: timer)
-        {
-            if(tick==to)
-            {
-                std::lock_guard<std::mutex> lock(mtx);
-                this->evt = evt;
-                cond.notify_one();
-            }
-            evt >>= 1;
-        }
-    }
-}
-
-SerialControl::Profile & Application::refProfile(void)
-{
-    return profile;
-}
-void Application::setTimeOut(unsigned int type, unsigned int tick)
-{
-    if(type<(sizeof(timer)/sizeof(timer[0])))
-    {
-        timer[type] = tick;
-    }
-}
-
-int Application::checkOptions(boost::program_options::variables_map & argmap)
-{
-    if(argmap.count("baud"))
-    {
-        string baud = argmap["baud"].as<string>();
-        SerialControl::Profile & pro = refProfile();
-        if(!SerialControl::hasBaudRate(baud, pro))
-        {
-            cout << baud << endl;
-            return -1;
-        }
-    }
-    else
-    {
-        string baud = "B1200O1";
-        SerialControl::Profile & pro = refProfile();
-        SerialControl::hasBaudRate(baud, pro);
-    }
-    if(argmap.count("timer3"))
-    {
-        unsigned int val = argmap["timer3"].as<unsigned int>();
-        timer[3] = val;
-    }
-    if(argmap.count("timer2"))
-    {
-        unsigned int val = argmap["timer2"].as<unsigned int>();
-        timer[2] = val;
-    }
-    if(argmap.count("timer"))
-    {
-        unsigned int val = argmap["timer"].as<unsigned int>();
-        timer[1] = val;
-    }
-    if(argmap.count("gap"))
-    {
-        unsigned int val = argmap["gap"].as<unsigned int>();
-        timer[0] = val;
-    }
-    for(unsigned int idx=0; idx<(sizeof(timer)/sizeof(timer[0])-1); idx++)
-    {
-        if(timer[idx] >= timer[idx+1])
-        {
-            return -1;
-        }
-    }
-    /* check mruby Script */
-    if(argmap.count("mruby-script"))
-    {
-        mruby_fname = argmap["mruby-script"].as<string>();
-        is_mruby = true;
-        return 0;
-    }
-    return 0;
-}
-
-void Application::read_stdin(size_t id)
-{
-    std::string str;
-    while(std::getline(std::cin, str))
-    {
-        if(str == "exit")
-        {
-            std::lock_guard<std::mutex> lock(mtx);
-            evt = 0x80;
-            cond.notify_one();
-            break;
-        }
-        msg_send(str);
-    }
-}
-
-/**
- * data reciver on serial port
- */
-void Application::recive(size_t id)
-{
-    serial->clearRTS();
-    unsigned char test[1024];
-    memset(&(test[0]), 0, sizeof(test));
-    while(active)
-    {
-        size_t len = serial->read(test, sizeof(test));
-        std::lock_guard<std::mutex> lock(mtx);
-        if(0 < len)
-        {
-            state=RECVING;
-        }
-        for(size_t cnt = 0; cnt < len; cnt ++)
-        {
-            rdata[w_bank][ridx[w_bank]++] = test[cnt];
-            if(bank_size <= ridx[w_bank])
-            {
-                w_bank ++;
-                w_bank &= 0x0000000F;
-            }
-        }
-    }
-    active = false;
-}
-
-/**
- * execute of mruby
- */
-void Application::mruby_exec(size_t id)
-{
-    mrb_state * mrb = mrb_open();
-    struct RClass * regex_class = mrb_define_class_under(mrb, mrb->kernel_module, "regex", mrb->object_class);
-    mrb_define_method(mrb, regex_class, "initialize",    regex_initialize, MRB_ARGS_REQ(2));
-    mrb_define_method(mrb, regex_class, "reg_matches",   regex_regex_matches, MRB_ARGS_REQ(2));
-
-    struct RClass * smon_class = mrb_define_class_under(mrb, mrb->kernel_module, "Smon", mrb->object_class);
-    mrb_define_method(mrb, smon_class, "initialize",    smon_initialize, MRB_ARGS_REQ(2));
-    mrb_define_method(mrb, smon_class, "crc",           smon_crc, MRB_ARGS_REQ(2));
-    mrb_define_method(mrb, smon_class, "wait",          smon_wait, MRB_ARGS_REQ(2));
-    mrb_define_method(mrb, smon_class, "send",          smon_send, MRB_ARGS_REQ(2));
-    mrb_define_method(mrb, smon_class, "reg_matches",   smon_regex_matches, MRB_ARGS_REQ(3));
-
-    if(is_mruby)
-    {
-        ifstream fin(mruby_fname);
-        if(fin.is_open())
-        {
-            string code((std::istreambuf_iterator<char>(fin)), std::istreambuf_iterator<char>());
-            mrb_load_string(mrb, code.c_str());
-            mrb_close(mrb);
-        }
-        else
-        {
-            is_mruby = false;
-        }
-    }
-    if(!is_mruby)
-    {
-        static const char code[] = "mon = Smon.new()\n while( 1 )\n msg = mon.wait()\n case msg\n when \"exit\" then\n exit 0;\n else\n print msg, \"\\n\"\n end\n STDOUT.flush\n end";
-        mrb_load_string(mrb, code);
         mrb_close(mrb);
     }
-    std::lock_guard<std::mutex> lock(mtx);
-    evt = 0x80;
-    cond.notify_one();
-}
-
-/**
- * event watcher
- */
-void Application::eventer(size_t id)
-{
-    std::thread th_mruby(&Application::mruby_exec, this, 0);
-    std::thread th_recive(&Application::recive, this, 0);
-    std::thread th_stdin(&Application::read_stdin, this, 0);
-
-    while(active)
+    bool run(mrb_state * mrb, mrb_value self)
     {
-        unsigned char event_all = 0;
+//        this->mrb = mrb;
+        this->mrb = mrb_open();
+        mrb_get_args(mrb, "&", &proc);
+        if (!mrb_nil_p(proc))
         {
-            std::unique_lock<std::mutex> lock(mtx);
-            cond.wait(lock);
-            event_all = this->evt;
+            std::thread temp(&CppThread::run_context, this, 0);
+            th_ctrl.swap(temp);
+            return true;
         }
-        for(unsigned char mask = 0x80; 0 != mask; mask >>= 1)
+        return false;
+    }
+    void run_context(size_t id)
+    {
+        mrb_yield_argv(mrb, proc, 0, NULL);
+    }
+    void join(void)
+    {
+        th_ctrl.join();
+    }
+    mrb_value sync(mrb_state * mrb, mrb_value & proc)
+    {
+        std::lock_guard<std::mutex> lock(mtx);
+        auto result = mrb_yield_argv(mrb, proc, 0, NULL);
+        return result;
+    }
+    void wait(mrb_state * mrb, mrb_value & proc)
+    {
+        auto lamda = [this, &mrb, &proc]
         {
-            unsigned char evt = event_all & mask;
-            if(0 != evt)
+            auto result = mrb_yield_argv(mrb, proc, 0, NULL);
+            if(mrb_bool(result))
             {
-                char data[64];
-                switch(evt)
+                return true;
+            }
+            return false;
+        };
+        std::unique_lock<std::mutex> lock(mtx);
+        cond.wait(lock, lamda);
+    }
+    mrb_value notify(mrb_state * mrb, mrb_value & proc)
+    {
+        std::lock_guard<std::mutex> lock(mtx);
+        auto result = mrb_yield_argv(mrb, proc, 0, NULL);
+        cond.notify_one();
+        return result;
+    }
+};
+
+class SerialMonitor : public MyEntity::TimerHandler
+{
+public:
+    enum State
+    {
+        GAP = 0,
+        TIME_OUT_1,
+        TIME_OUT_2,
+        TIME_OUT_3,
+        CACHE_FULL,
+        CLOSE,
+        NONE
+    };
+    struct ReciveInfo
+    {
+        enum State      state;
+        unsigned int    cnt;
+        unsigned char * buff;
+    };
+protected:
+    std::string                                 arg;
+    std::vector<size_t>                         timer;
+    std::map<SerialMonitor *, std::string> &    res_list;
+    SerialControl *                             com;
+    unsigned int                                cache_size;
+    bool                                        enable;
+    ReciveInfo                                  cache;
+    std::thread                                 th_recive;
+    std::mutex                                  mtx;
+    std::condition_variable                     cond;
+    std::list<ReciveInfo>                       rcv_cache;
+public:
+    SerialMonitor(mrb_value & self, const char * arg_, std::vector<size_t> & timer_default, std::map<SerialMonitor *, std::string> & list, std::string def_boud, bool rts_ctrl)
+      : arg(arg_), timer(timer_default), res_list(list), com(nullptr), cache_size(1024), enable(false)
+    {   /* split */
+        std::vector<std::string> args;
+        for( auto&& item : split( arg, "," ) )
+        {
+            args.push_back(item);
+        }
+        std::string name(args[0]);
+        std::string baud(def_boud);
+        if(1 < args.size())
+        {
+            baud = args[1];
+        }
+        SerialControl::Profile info;
+        if( SerialControl::hasBaudRate(baud, info) )
+        {
+            com = SerialControl::createObject(name.c_str(), info.baud, info.parity, info.stop, rts_ctrl);
+        }
+        cache.buff  = new unsigned char [cache_size];
+        cache.cnt   = 0;
+        cache.state = NONE;
+        std::thread temp(&SerialMonitor::recive, this, 0);
+        th_recive.swap(temp);
+    }
+    virtual ~SerialMonitor(void)
+    {
+        delete com;
+        delete [] cache.buff;
+        cache.cnt   = 0;
+        for(auto & item : rcv_cache)
+        {
+            delete [] item.buff;
+        }
+        rcv_cache.clear();
+        res_list.erase(this);
+    }
+    void rts_ctrl( bool state )
+    {
+    }
+    void send(const std::string data, unsigned int timer)
+    {
+        auto s_len = data.size();
+        if( ( 1 < s_len ) && !( 1 & s_len ) )
+        {   /* even charactor count and more size of 1 byte */
+            auto max = s_len / 2;
+            auto len = 0;
+            auto bin = new unsigned  char [max];
+            for(auto idx = 0; len < max; len ++)
+            {
+                unsigned char val = (toValue(data.at(idx ++)) << 4);
+                val |= toValue(data.at(idx ++));
+                bin[len] = val;
+            }
+            com->send(bin, len);
+            std::this_thread::sleep_for(std::chrono::milliseconds(timer));
+            delete [] bin;
+        }
+    }
+    SerialMonitor::State recive_wait(std::string & data)
+    {
+        ReciveInfo rcv_info;
+        auto lamda = [this, &rcv_info]
+        {
+            if(0 < rcv_cache.size())
+            {
+                rcv_info = *(rcv_cache.begin());
+                rcv_cache.pop_front();
+                return true;
+            }
+            return false;
+        };
+        std::unique_lock<std::mutex> lock(mtx);
+        cond.wait(lock, lamda);
+        for(unsigned int idx = 0; idx < rcv_info.cnt; idx ++)
+        {
+            char temp[4];
+            sprintf(temp, "%02X", rcv_info.buff[idx]);
+            temp[2] = '\0';
+            data += temp;
+        }
+        delete [] rcv_info.buff;
+        return rcv_info.state;
+    }
+    void recive(size_t id)
+    {
+        enable = true;
+        MyEntity::OneShotTimerEventer timeout_evter(timer, *this);
+        while(enable)
+        {
+            unsigned char data;
+            size_t len = com->read(&(data), 1);
+            timeout_evter.restart();
+            std::lock_guard<std::mutex> lock(mtx);
+            if(0 < len)
+            {
+                cache.buff[cache.cnt] = data;
+                cache.cnt += len;
+                if(cache_size <= cache.cnt)
                 {
-                case 0x80:          /* exit event */
-                    serial->close();
+                    cache.state = CACHE_FULL;
+                    rcv_cache.push_back(cache);
+                    cache.buff  = new unsigned char [cache_size];
+                    cache.cnt   = 0;
+                    cond.notify_one();
+                }
+            }
+        }
+        enable = false;
+    }
+    virtual void handler(unsigned int idx)
+    {
+        static const enum State evt_state[] = { GAP, TIME_OUT_1, TIME_OUT_2, TIME_OUT_3 };
+        if(idx < __ArrayCount(evt_state))
+        {
+            std::lock_guard<std::mutex> lock(mtx);
+            cache.state = evt_state[idx];
+            rcv_cache.push_back(cache);
+            cache.buff  = new unsigned char [cache_size];
+            cache.cnt   = 0;
+            cond.notify_one();
+        }
+    }
+};
+
+class OpenXLSXCtrl
+{
+public:
+    enum Type
+    {
+        Empty,
+        Boolean,
+        Integer,
+        Float,
+        Error,
+        String
+    };
+protected:
+    OpenXLSX::XLDocument    xlsx;
+    OpenXLSX::XLWorkbook    book;
+    OpenXLSX::XLWorksheet   sheet;
+
+public:
+    OpenXLSXCtrl(void)
+    {
+    }
+    virtual ~OpenXLSXCtrl(void)
+    {
+    }
+    void create(char * fname)
+    {
+        xlsx.create(fname);
+    }
+    void open(char * fname)
+    {
+        xlsx.open(fname);
+    }
+    void workbook(void)
+    {
+        book = xlsx.workbook();
+    }
+    void worksheet(char * sheet_name)
+    {
+        sheet = book.worksheet(sheet_name);
+    }
+    void set_sheet_name(char * sheet_name)
+    {
+        sheet.setName(sheet_name);
+    }
+    void set_cell_value(char * cell_name, int val)
+    {
+        sheet.cell(OpenXLSX::XLCellReference(cell_name)).value() = val;
+    }
+    void set_cell_value(char * cell_name, float val)
+    {
+        sheet.cell(OpenXLSX::XLCellReference(cell_name)).value() = val;
+    }
+    void set_cell_value(char * cell_name, char * val)
+    {
+        sheet.cell(OpenXLSX::XLCellReference(cell_name)).value() = val;
+    }
+    OpenXLSXCtrl::Type get_cell(char * cell_name, int & val_int, float & val_float, std::string & str) const
+    {
+        switch( (sheet.cell(OpenXLSX::XLCellReference(cell_name)).value()).type() )
+        {
+        case OpenXLSX::XLValueType::Empty:
+            return Empty;
+        case OpenXLSX::XLValueType::Boolean:
+            if( (sheet.cell(OpenXLSX::XLCellReference(cell_name)).value()).get<bool>() ) { val_int = 1; }
+            else                    { val_int = 0; }
+            return Boolean;
+        case OpenXLSX::XLValueType::Integer:
+            val_int = static_cast<int>((sheet.cell(OpenXLSX::XLCellReference(cell_name)).value()).get<int64_t>());
+            return Integer;
+        case OpenXLSX::XLValueType::Float:
+            val_float = static_cast<float>((sheet.cell(OpenXLSX::XLCellReference(cell_name)).value()).get<double>());
+            return Float;
+        case OpenXLSX::XLValueType::String:
+            str = (sheet.cell(OpenXLSX::XLCellReference(cell_name)).value()).get<std::string>();
+            return String;
+        case OpenXLSX::XLValueType::Error:
+        default:
+            break;
+        }
+        return Error;
+    }
+    void save(void)
+    {
+        xlsx.save();
+    }
+    void close(void)
+    {
+        xlsx.close();
+    }
+};
+
+class Application
+{
+protected:
+    static Application *                        obj;
+    boost::program_options::variables_map &     opts;
+    std::vector<std::string> &                  args;
+    std::vector<size_t>                         timer;
+    std::map<SerialMonitor *, std::string>      res_list;
+    std::mutex                                  mtx;
+    std::condition_variable                     cond;
+    mrb_state * mrb;
+    std::mutex                                  com_wait_mtx;
+
+public:
+    static Application * getObject(void);
+    Application( boost::program_options::variables_map & optmap, std::vector<std::string> & arg)
+      : opts(optmap), args(arg), timer(4)
+    {
+        obj = this;
+        timer[0] =   30;
+        timer[1] =  300;
+        timer[2] =  500;
+        timer[3] = 1000;
+    }
+    virtual ~Application(void)
+    {
+        std::list<SerialMonitor *> keys;
+        for( auto & p : res_list )  keys.push_back(p.first);
+        for( auto & ptr : keys )    delete ptr;
+    }
+    mrb_value opt_init(mrb_state * mrb, mrb_value self)
+    {
+        return self;
+    }
+    mrb_value opt_size(mrb_state * mrb, mrb_value self)
+    {
+        return mrb_int_value( mrb, args.size() );
+    }
+    mrb_value opt_get(mrb_state * mrb, mrb_value self)
+    {
+        mrb_value y = mrb_get_arg1(mrb);
+        switch( mrb_type( y ) )
+        {
+            case MRB_TT_FLOAT:
+            case MRB_TT_RATIONAL:
+            case MRB_TT_COMPLEX:
+                break;
+            case MRB_TT_INTEGER:
+                {
+                    mrb_int index = mrb_integer(y);
+                    if( index < args.size() )
                     {
-                        string str("exit");
-                        std::lock_guard<std::mutex> lock(msg_mtx);
-                        msg.push_back(str);
-                        msg_cond.notify_one();
+                        return mrb_str_new_cstr( mrb, (args[index]).c_str() );
                     }
-                    active = false;
-                    break;
-                case 0x40:      /* GAP timer event */
-                    w_bank ++;
-                    w_bank &= 0x0000000F;
+                }
+                break;
+            default:
+                {
+                    char * key;
+                    mrb_get_args( mrb, "z", &key );
+                    if( opts.count( key ) )
                     {
-                        std::lock_guard<std::mutex> lock(msg_mtx);
-                        while(w_bank != r_bank)
-                        {
-                            string str;
-                            for(unsigned int idx=0, max=ridx[r_bank]; idx<max; idx++)
-                            {
-                                sprintf(data, "%02X", rdata[r_bank][idx]);
-                                str += data;
-                            }
-                            ridx[r_bank]=0;
-                            r_bank ++;
-                            r_bank &= 0x0000000F;
-                            if(0 < str.size())
-                            {
-                                msg.push_back(str);
-                            }
-                        }
-                        state=TO_GAP;
-                        string msg_gap("GAP:");
-                        msg.push_back(msg_gap);
-                        msg_cond.notify_one();
+                        std::string opt_val = opts[key].as<std::string>();
+                        return mrb_str_new_cstr( mrb, opt_val.c_str() );
                     }
+                }
+                break;
+        }
+        return mrb_str_new_cstr( mrb, "" );
+    }
+    mrb_value thread_init(mrb_state * mrb, mrb_value self)
+    {
+        static const struct mrb_data_type mrb_thread_context_type =
+        {
+            "mrb_cpp_thread_context", mrb_thread_context_free,
+        };
+        mrb_value       proc = mrb_nil_value();
+        mrb_int         argc;
+        mrb_value *     argv;
+        mrb_get_args(mrb, "&*", &proc, &argv, &argc);
+        CppThread * th_ctrl = new CppThread();
+        mrb_data_init(self, th_ctrl, &mrb_thread_context_type);
+        return self;
+    }
+    mrb_value thread_run(mrb_state * mrb, mrb_value self)
+    {
+        mrb_value ret  = mrb_nil_value();
+        mrb_value proc = mrb_nil_value();
+        mrb_get_args(mrb, "&", &proc);
+        if (!mrb_nil_p(proc))
+        {
+            CppThread * th_ctrl = static_cast<CppThread * >(DATA_PTR(self));
+            if(nullptr != th_ctrl )
+            {
+                th_ctrl->run(mrb, self);
+            }
+        }
+        return ret;
+    }
+    mrb_value thread_join(mrb_state * mrb, mrb_value self)
+    {
+        mrb_value ret = mrb_nil_value();
+        CppThread * th_ctrl = static_cast<CppThread * >(DATA_PTR(self));
+        if(nullptr != th_ctrl)
+        {
+            th_ctrl->join();
+        }
+        return ret;
+    }
+    mrb_value thread_sync(mrb_state * mrb, mrb_value self)
+    {
+        mrb_value proc = mrb_nil_value();
+        mrb_get_args(mrb, "&", &proc);
+        if (!mrb_nil_p(proc))
+        {
+            CppThread * th_ctrl = static_cast<CppThread * >(DATA_PTR(self));
+            if(nullptr != th_ctrl)
+            {
+                auto result = th_ctrl->sync(mrb, proc);
+                return result;
+            }
+        }
+        return mrb_nil_value();
+    }
+    mrb_value thread_wait(mrb_state * mrb, mrb_value self)
+    {
+        mrb_value proc = mrb_nil_value();
+        mrb_get_args(mrb, "&", &proc);
+        if (!mrb_nil_p(proc))
+        {
+            CppThread * th_ctrl = static_cast<CppThread * >(DATA_PTR(self));
+            if(nullptr != th_ctrl)
+            {
+                th_ctrl->wait(mrb, proc);
+            }
+        }
+        return mrb_nil_value();
+    }
+    mrb_value thread_notiry(mrb_state * mrb, mrb_value self)
+    {
+        mrb_value proc = mrb_nil_value();
+        mrb_get_args(mrb, "&", &proc);
+        if (!mrb_nil_p(proc))
+        {
+            CppThread * th_ctrl = static_cast<CppThread * >(DATA_PTR(self));
+            if(nullptr != th_ctrl)
+            {
+                th_ctrl->notify(mrb, proc);
+            }
+        }
+        return mrb_nil_value();
+    }
+
+    mrb_value smon_init(mrb_state * mrb, mrb_value self)
+    {
+        static const struct mrb_data_type mrb_smon_context_type =
+        {
+            "mrb_smon_context", mrb_smon_context_free,
+        };
+        char * arg;
+        mrb_get_args(mrb, "z", &arg);
+        std::string boud("1200O1");
+        bool rts_ctrl = true;
+        if(opts.count("baud"))
+        {
+            boud = opts["baud"].as<std::string>();
+        }
+        if(opts.count("no-rts"))
+        {
+            rts_ctrl = false;
+        }
+        SerialMonitor * smon = new SerialMonitor(self, arg, timer, res_list, boud, rts_ctrl);
+        mrb_data_init(self, smon, &mrb_smon_context_type);
+        return self;
+    }
+    mrb_value smon_wait(mrb_state * mrb, mrb_value self)
+    {
+        mrb_value proc = mrb_nil_value();
+        mrb_get_args(mrb, "&", &proc);
+        if (!mrb_nil_p(proc))
+        {
+            SerialMonitor * smon = static_cast<SerialMonitor * >(DATA_PTR(self));
+            if(nullptr != smon)
+            {
+                std::string data;
+                auto state = smon->recive_wait(data);
+                mrb_value argv[2];
+                argv[0] = mrb_fixnum_value(state);
+                switch(state)
+                {
+                case SerialMonitor::CACHE_FULL:
+                case SerialMonitor::GAP:
+                    argv[1] = mrb_str_new_cstr(mrb, data.c_str());
                     break;
-                case 0x20:      /* Time Out 1   */
+#if 0
+                case SerialMonitor::TIME_OUT_1:
+                case SerialMonitor::TIME_OUT_2:
+                case SerialMonitor::TIME_OUT_3:
+                case SerialMonitor::CLOSE:
+                case SerialMonitor::NONE:
+#endif
+                default:
+                    argv[1] = mrb_str_new_cstr(mrb, "");
+                     break;
+                }
+                std::lock_guard<std::mutex> lock(com_wait_mtx);
+                auto ret = mrb_yield_argv(mrb, proc, 2, &(argv[0]));
+                return ret;
+            }
+        }
+        return mrb_nil_value();
+    }
+    mrb_value smon_send(mrb_state * mrb, mrb_value self)
+    {
+        char *      msg;
+        mrb_int     timer;
+        mrb_get_args(mrb, "zi", &msg, &timer);
+
+        SerialMonitor * smon = static_cast<SerialMonitor * >(DATA_PTR(self));
+        if(nullptr != smon)
+        {
+            smon->send(msg, timer);
+        }
+        return self;
+    }
+    mrb_value xlsx_init(mrb_state * mrb, mrb_value self)
+    {
+        static const struct mrb_data_type mrb_xlsx_context_type =
+        {
+            "mrb_open_xlsx_context", mrb_xlsx_context_free,
+        };
+        OpenXLSXCtrl * xlsx = new OpenXLSXCtrl();
+        mrb_data_init(self, xlsx, &mrb_xlsx_context_type);
+        return self;
+    }
+    mrb_value xlsx_create(mrb_state * mrb, mrb_value self)
+    {
+        mrb_int argc;
+        mrb_value * argv;
+        mrb_value proc = mrb_nil_value();
+        mrb_get_args(mrb, "&*", &proc, &argv, &argc);
+        if((1 == argc) && (!mrb_nil_p(proc)))
+        {
+            OpenXLSXCtrl * xlsx = static_cast< OpenXLSXCtrl * >(DATA_PTR(self));
+            if(nullptr != xlsx)
+            {
+                struct RString * s = mrb_str_ptr(argv[0]);
+                xlsx->create(RSTR_PTR(s));
+                mrb_value ret = mrb_yield_argv(mrb, proc, 0, nullptr);
+                xlsx->save();
+                xlsx->close();
+                return ret;
+            }
+        }
+        return mrb_nil_value();
+    }
+    mrb_value xlsx_open(mrb_state * mrb, mrb_value self)
+    {
+        mrb_int argc;
+        mrb_value * argv;
+        mrb_value proc = mrb_nil_value();
+        mrb_get_args(mrb, "&*", &proc, &argv, &argc);
+        if((1 == argc) && (!mrb_nil_p(proc)))
+        {
+            OpenXLSXCtrl * xlsx = static_cast< OpenXLSXCtrl * >(DATA_PTR(self));
+            if(nullptr != xlsx)
+            {
+                struct RString * s = mrb_str_ptr(argv[0]);
+                xlsx->open(RSTR_PTR(s));
+                mrb_value ret = mrb_yield_argv(mrb, proc, 0, nullptr);
+                return ret;
+            }
+        }
+        return mrb_nil_value();
+        return mrb_nil_value();
+    }
+    mrb_value xlsx_workbook(mrb_state * mrb, mrb_value self)
+    {
+        mrb_value ret  = mrb_nil_value();
+        mrb_value proc = mrb_nil_value();
+        mrb_get_args(mrb, "&", &proc);
+        if (!mrb_nil_p(proc))
+        {
+            OpenXLSXCtrl * xlsx = static_cast< OpenXLSXCtrl * >(DATA_PTR(self));
+            if(nullptr != xlsx)
+            {
+                xlsx->workbook();
+                mrb_value ret = mrb_yield_argv(mrb, proc, 0, nullptr);
+                return ret;
+            }
+        }
+        return mrb_nil_value();
+    }
+    mrb_value xlsx_worksheet(mrb_state * mrb, mrb_value self)
+    {
+        mrb_int argc;
+        mrb_value * argv;
+        mrb_value proc = mrb_nil_value();
+        mrb_get_args(mrb, "&*", &proc, &argv, &argc);
+        if((1 == argc) && (!mrb_nil_p(proc)))
+        {
+            OpenXLSXCtrl * xlsx = static_cast< OpenXLSXCtrl * >(DATA_PTR(self));
+            if(nullptr != xlsx)
+            {
+                struct RString * s = mrb_str_ptr(argv[0]);
+                xlsx->worksheet(RSTR_PTR(s));
+                mrb_value ret = mrb_yield_argv(mrb, proc, 0, nullptr);
+                return ret;
+            }
+        }
+        return mrb_nil_value();
+    }
+    mrb_value xlsx_set_sheet_name(mrb_state * mrb, mrb_value self)
+    {
+        char * sheet_name;
+        mrb_get_args(mrb, "z", &sheet_name);
+        OpenXLSXCtrl * xlsx = static_cast< OpenXLSXCtrl * >(DATA_PTR(self));
+        if(nullptr != xlsx )
+        {
+            xlsx->set_sheet_name(sheet_name);
+        }
+        return mrb_nil_value();
+    }
+    mrb_value xlsx_set_value(mrb_state * mrb, mrb_value self)
+    {
+        mrb_int argc;
+        mrb_value * argv;
+        mrb_get_args(mrb, "*", &argv, &argc);
+        if(2 == argc)
+        {
+            OpenXLSXCtrl * xlsx = static_cast< OpenXLSXCtrl * >(DATA_PTR(self));
+            if(nullptr != xlsx)
+            {
+                struct RString * cell_name = mrb_str_ptr(argv[0]);
+                char * cel = RSTR_PTR(cell_name);
+                switch( mrb_type( argv[1] ) )
+                {
+                case MRB_TT_INTEGER:
                     {
-                        sprintf(data, "TO1:%d0ms", timer[1]);
-                        string str(data);
-                        std::lock_guard<std::mutex> lock(msg_mtx);
-                        if(0 < str.size())
-                        {
-                            msg.push_back(str);
-                        }
-                        msg_cond.notify_one();
+                        int value = static_cast<int>(mrb_integer(argv[1]));
+                        xlsx->set_cell_value(cel, value);
                     }
-                    state=TO_1;
                     break;
-                case 0x10:      /* Time Out 2   */
+                case MRB_TT_FLOAT:
                     {
-                        sprintf(data, "TO2:%d0ms", timer[2]);
-                        string str(data);
-                        std::lock_guard<std::mutex> lock(msg_mtx);
-                        if(0 < str.size())
-                        {
-                            msg.push_back(str);
-                        }
-                        msg_cond.notify_one();
+                        float value = static_cast<float>(mrb_float(argv[1]));
+                        xlsx->set_cell_value(cel, value);
                     }
-                    state=TO_2;
                     break;
-                case 0x08:      /* Time out 3   */
+                case MRB_TT_STRING:
                     {
-                        sprintf(data, "TO3:%d0ms", timer[3]);
-                        string str(data);
-                        std::lock_guard<std::mutex> lock(msg_mtx);
-                        if(0 < str.size())
-                        {
-                            msg.push_back(str);
-                        }
-                        msg_cond.notify_one();
+                        struct RString * str_value = mrb_str_ptr(argv[1]);
+                        char * value = RSTR_PTR(str_value);
+                        xlsx->set_cell_value(cel, value);
                     }
-                    state=TO_3;
                     break;
+                case MRB_TT_TRUE:   xlsx->set_cell_value(cel, 1); break;
+                case MRB_TT_FALSE:  xlsx->set_cell_value(cel, 0); break;
                 default:
                     break;
                 }
             }
         }
-        cout.flush();
+        return mrb_nil_value();
     }
-    active = false;
-    th_mruby.join();
-    th_recive.detach();
-    th_stdin.detach();
-//    th_recive.join();
-//    th_stdin.join();
+    mrb_value xlsx_cell(mrb_state * mrb, mrb_value self)
+    {
+        char * cell_name;
+        mrb_get_args(mrb, "z", &cell_name);
+        OpenXLSXCtrl * xlsx = static_cast< OpenXLSXCtrl * >(DATA_PTR(self));
+        if(nullptr != xlsx )
+        {
+            int         val_int;
+            float       val_float;
+            std::string str;
+            auto type = xlsx->get_cell(cell_name, val_int, val_float, str);
+            switch(type)
+            {
+            case OpenXLSXCtrl::Boolean:
+                return mrb_bool_value(val_int != 0);
+            case OpenXLSXCtrl::Integer:
+                return mrb_int_value( mrb, val_int );
+            case OpenXLSXCtrl::Float:
+                return mrb_float_value( mrb, val_float );
+            case OpenXLSXCtrl::String:
+                return mrb_str_new_cstr( mrb, str.c_str() );
+            case OpenXLSXCtrl::Empty:
+            case OpenXLSXCtrl::Error:
+            default:
+                break;
+            }
+        }
+        return mrb_nil_value();
+    }
+
+    void main(void)
+    {
+        if(opts.count("gap"))
+        {
+            unsigned int val = opts["gap"].as<unsigned int>();
+            timer[0] = val;
+        }
+        if(opts.count("timer"))
+        {
+            unsigned int val = opts["timer"].as<unsigned int>();
+            timer[1] = val;
+        }
+        if(opts.count("timer2"))
+        {
+            unsigned int val = opts["timer2"].as<unsigned int>();
+            timer[2] = val;
+        }
+        if(opts.count("timer3"))
+        {
+            unsigned int val = opts["timer3"].as<unsigned int>();
+            timer[3] = val;
+        }
+        if(opts.count("mruby-script"))
+        {
+            bool noerror(true);
+            std::string code("");
+            std::string mruby_fnames = opts["mruby-script"].as<std::string>();
+            for( auto&& fname : split( mruby_fnames, "," ) )
+            {
+                std::ifstream fin(fname);
+                if(fin.is_open())
+                {
+                    std::string script((std::istreambuf_iterator<char>(fin)), std::istreambuf_iterator<char>());
+                    code += script;
+                }
+                else
+                {
+                    noerror = false;
+                    printf("file open error: %s\n", fname.c_str());
+                    break;
+                }
+            }
+            if(noerror)
+            {
+                mrb_state * mrb = mrb_open();
+                if( nullptr != mrb )
+                {
+                    /* Class options */
+                    struct RClass * opt_class = mrb_define_class_under( mrb, mrb->kernel_module, "Options", mrb->object_class );
+                    mrb_define_method( mrb, opt_class, "initialize",    mrb_opt_initialize,         MRB_ARGS_ANY()          );
+                    mrb_define_method( mrb, opt_class, "size",          mrb_opt_size,               MRB_ARGS_NONE()         );
+                    mrb_define_method( mrb, opt_class, "[]",            mrb_opt_get,                MRB_ARGS_ARG( 1, 1 )    );
+
+                    /* Class Calc */
+                    struct RClass * calc_class = mrb_define_class_under( mrb, mrb->kernel_module, "Clac", mrb->object_class );
+                    mrb_define_module_function(mrb, calc_class, "crc",      mrb_calc_crc,           MRB_ARGS_ARG( 1, 1 )    );
+                    mrb_define_module_function(mrb, calc_class, "sum",      mrb_calc_sum,           MRB_ARGS_ARG( 1, 1 )    );
+                    mrb_define_module_function(mrb, calc_class, "float",    mrb_calc_float,         MRB_ARGS_ARG( 1, 1 )    );
+                    mrb_define_module_function(mrb, calc_class, "float_l",  mrb_calc_float_l,       MRB_ARGS_ARG( 1, 1 )    );
+
+                    /* Class Thread */
+                    struct RClass * thread_class = mrb_define_class_under( mrb, mrb->kernel_module, "CppThread", mrb->object_class );
+                    mrb_define_method( mrb, thread_class, "initialize",     mrb_thread_initialize,  MRB_ARGS_ANY()          );
+                    mrb_define_method( mrb, thread_class, "run",            mrb_thread_run,         MRB_ARGS_ANY()          );
+                    mrb_define_method( mrb, thread_class, "join",           mrb_thread_join,        MRB_ARGS_ANY()          );
+                    mrb_define_method( mrb, thread_class, "synchronize",    mrb_thread_sync,        MRB_ARGS_NONE()         );
+                    mrb_define_method( mrb, thread_class, "wait",           mrb_thread_wait,        MRB_ARGS_NONE()         );
+                    mrb_define_method( mrb, thread_class, "notify",         mrb_thread_notify,      MRB_ARGS_NONE()         );
+
+                    /* Class Smon */
+                    struct RClass * smon_class = mrb_define_class_under( mrb, mrb->kernel_module, "Smon", mrb->object_class );
+                    mrb_define_const(  mrb, smon_class, "GAP",          mrb_fixnum_value(SerialMonitor::GAP)                );
+                    mrb_define_const(  mrb, smon_class, "TO1",          mrb_fixnum_value(SerialMonitor::TIME_OUT_1)         );
+                    mrb_define_const(  mrb, smon_class, "TO2",          mrb_fixnum_value(SerialMonitor::TIME_OUT_2)         );
+                    mrb_define_const(  mrb, smon_class, "TO3",          mrb_fixnum_value(SerialMonitor::TIME_OUT_3)         );
+                    mrb_define_const(  mrb, smon_class, "CLOSE",        mrb_fixnum_value(SerialMonitor::CLOSE)              );
+                    mrb_define_const(  mrb, smon_class, "CACHE_FULL",   mrb_fixnum_value(SerialMonitor::CACHE_FULL)         );
+                    mrb_define_const(  mrb, smon_class, "NONE",         mrb_fixnum_value(SerialMonitor::NONE)               );
+                    mrb_define_method( mrb, smon_class, "initialize",   mrb_smon_initialize,        MRB_ARGS_REQ( 2 )       );
+                    mrb_define_method( mrb, smon_class, "wait",         mrb_smon_wait,              MRB_ARGS_ARG( 2, 1 )    );
+                    mrb_define_method( mrb, smon_class, "send",         mrb_smon_send,              MRB_ARGS_ARG( 2, 1 )    );
+
+                    /* Class OpenXLSX */
+                    struct RClass * xlsx_class = mrb_define_class_under( mrb, mrb->kernel_module, "OpenXLSX", mrb->object_class );
+                    mrb_define_method( mrb, xlsx_class, "initialize",   mrb_xlsx_initialize,        MRB_ARGS_REQ( 2 )       );
+                    mrb_define_method( mrb, xlsx_class, "create",       mrb_xlsx_create,            MRB_ARGS_ARG( 1, 1 )    );
+                    mrb_define_method( mrb, xlsx_class, "open",         mrb_xlsx_open,              MRB_ARGS_ARG( 1, 1 )    );
+                    mrb_define_method( mrb, xlsx_class, "workbook",     mrb_xlsx_workbook,          MRB_ARGS_NONE()         );
+                    mrb_define_method( mrb, xlsx_class, "sheet",        mrb_xlsx_worksheet,         MRB_ARGS_ARG( 1, 1 )    );
+                    mrb_define_method( mrb, xlsx_class, "setSheetName", mrb_xlsx_set_seet_name,     MRB_ARGS_ARG( 1, 1 )    );
+                    mrb_define_method( mrb, xlsx_class, "set_value",    mrb_xlsx_set_value,         MRB_ARGS_ARG( 2, 1 )    );
+                    mrb_define_method( mrb, xlsx_class, "cell",         mrb_xlsx_cell,              MRB_ARGS_ARG( 1, 1 )    );
+
+                    /* exec mRuby Script */
+                    mrb_load_string(mrb, code.c_str());
+                    mrb_close(mrb);
+                }
+            }
+        }
+    }
+};
+Application * Application::obj = nullptr;
+Application * Application::getObject(void)
+{
+    return Application::obj;
 }
 
-int Application::main(char * com_name)
+mrb_value mrb_opt_initialize(mrb_state * mrb, mrb_value self)       { Application * app = Application::getObject(); return app->opt_init(mrb, self);            }
+mrb_value mrb_opt_size(mrb_state * mrb, mrb_value self)             { Application * app = Application::getObject(); return app->opt_size(mrb, self);            }
+mrb_value mrb_opt_get(mrb_state * mrb, mrb_value self)              { Application * app = Application::getObject(); return app->opt_get(mrb, self);             }
+
+mrb_value mrb_thread_initialize(mrb_state * mrb, mrb_value self)    { Application * app = Application::getObject(); return app->thread_init(mrb, self);         }
+mrb_value mrb_thread_run(mrb_state * mrb, mrb_value self)           { Application * app = Application::getObject(); return app->thread_run(mrb, self);          }
+mrb_value mrb_thread_join(mrb_state * mrb, mrb_value self)          { Application * app = Application::getObject(); return app->thread_join(mrb, self);         }
+mrb_value mrb_thread_sync(mrb_state * mrb, mrb_value self)          { Application * app = Application::getObject(); return app->thread_sync(mrb, self);         }
+mrb_value mrb_thread_wait(mrb_state * mrb, mrb_value self)          { Application * app = Application::getObject(); return app->thread_wait(mrb, self);         }
+mrb_value mrb_thread_notify(mrb_state * mrb, mrb_value self)        { Application * app = Application::getObject(); return app->thread_notiry(mrb, self);       }
+
+mrb_value mrb_smon_initialize(mrb_state * mrb, mrb_value self)      { Application * app = Application::getObject(); return app->smon_init(mrb, self);           }
+mrb_value mrb_smon_wait(mrb_state * mrb, mrb_value self)            { Application * app = Application::getObject(); return app->smon_wait(mrb, self);           }
+mrb_value mrb_smon_send(mrb_state * mrb, mrb_value self)            { Application * app = Application::getObject(); return app->smon_send(mrb, self);           }
+
+mrb_value mrb_xlsx_initialize(mrb_state * mrb, mrb_value self)      { Application * app = Application::getObject(); return app->xlsx_init(mrb, self);           }
+mrb_value mrb_xlsx_create(mrb_state * mrb, mrb_value self)          { Application * app = Application::getObject(); return app->xlsx_create(mrb, self);         }
+mrb_value mrb_xlsx_open(mrb_state * mrb, mrb_value self)            { Application * app = Application::getObject(); return app->xlsx_open(mrb, self);           }
+mrb_value mrb_xlsx_workbook(mrb_state * mrb, mrb_value self)        { Application * app = Application::getObject(); return app->xlsx_workbook(mrb, self);       }
+mrb_value mrb_xlsx_worksheet(mrb_state * mrb, mrb_value self)       { Application * app = Application::getObject(); return app->xlsx_worksheet(mrb, self);      }
+mrb_value mrb_xlsx_set_seet_name(mrb_state * mrb, mrb_value self)   { Application * app = Application::getObject(); return app->xlsx_set_sheet_name(mrb, self); }
+mrb_value mrb_xlsx_set_value(mrb_state * mrb, mrb_value self)       { Application * app = Application::getObject(); return app->xlsx_set_value(mrb, self);      }
+mrb_value mrb_xlsx_cell(mrb_state * mrb, mrb_value self)            { Application * app = Application::getObject(); return app->xlsx_cell(mrb, self);           }
+
+void mrb_thread_context_free(mrb_state * mrb, void * ptr)
 {
-    serial = new SerialControl(com_name, *this, profile.baud, profile.parity, profile.stop);
-    TimerThread timer;
-    timer.cyclic(*serial, 10);
-    std::thread th_eventer(&Application::eventer, this, 0);
-    cout.flush();
-    th_eventer.join();
-    timer.stop();
-    return 0;
+    printf("%s:%d: %s\n", __FILE__, __LINE__, __FUNCTION__);
+    if(nullptr != ptr)
+    {
+        CppThread * th_ctrl = static_cast<CppThread *>(ptr);
+        delete th_ctrl;
+    }
 }
 
-void test_OpenXlsx(void)
+void mrb_smon_context_free(mrb_state * mrb, void * ptr)
 {
-    cout << "********************************************************************************\n";
-    cout << "DEMO PROGRAM #04: Unicode\n";
-    cout << "********************************************************************************\n";
-
-    XLDocument doc1;
-    doc1.create("./Demo04.xlsx");
-    auto wks1 = doc1.workbook().worksheet("Sheet1");
-    wks1.setName("test sheet");
-
-    wks1.cell(XLCellReference("A3")).value() = "Hello World";
-    doc1.save();
-    doc1.saveAs("./スプレッドシート.xlsx");
-    doc1.close();
-
-    doc1.open("./スプレッドシート.xlsx");
-    wks1 = doc1.workbook().worksheet("test sheet");
-    cout << "Cell A1 (Korean)  : " << wks1.cell(XLCellReference("A1")).value().get<std::string>() << std::endl;
-    cout << "Cell A2 (Chinese) : " << wks1.cell(XLCellReference("A2")).value().get<std::string>() << std::endl;
-    cout << "Cell A3 (Japanese): " << wks1.cell(XLCellReference("A3")).value().get<std::string>() << std::endl;
-    cout << "Cell A4 (Hindi)   : " << wks1.cell(XLCellReference("A4")).value().get<std::string>() << std::endl;
-    cout << "Cell A5 (Russian) : " << wks1.cell(XLCellReference("A5")).value().get<std::string>() << std::endl;
-    cout << "Cell A6 (Greek)   : " << wks1.cell(XLCellReference("A6")).value().get<std::string>() << std::endl;
-    doc1.close();
+    printf("%s:%d: %s\n", __FILE__, __LINE__, __FUNCTION__);
+    if(nullptr != ptr)
+    {
+        SerialMonitor * smon = static_cast<SerialMonitor *>(ptr);
+        delete smon;
+    }
+}
+void mrb_xlsx_context_free(mrb_state * mrb, void * ptr)
+{
+    printf("%s:%d: %s\n", __FILE__, __LINE__, __FUNCTION__);
+    if(nullptr != ptr)
+    {
+        OpenXLSXCtrl * xlsx = static_cast<OpenXLSXCtrl *>(ptr);
+        delete xlsx;
+    }
 }
 
-int main(int argc, char *argv[])
+int main(int argc, char * argv[])
 {
-    using namespace boost::program_options;
-    int result = 0;
-    Application & app = Application::ref();
     try
     {
-        options_description desc("smon.exe [Device File] [Options]\n  smon Software revision 0.1.0\n");
+        boost::program_options::options_description desc("smon.exe [Options]");
         desc.add_options()
-            ("baud,b",   value<string>(),       "baud rate ex) -b B9600E1")
-            ("gap,g",    value<unsigned int>(), "time out tick. Default 3   ( 30 [ms])")
-            ("timer,t",  value<unsigned int>(), "time out tick. Default 30  (300 [ms])")
-            ("timer2",   value<unsigned int>(), "time out tick. Default 50  (500 [ms])")
-            ("timer3",   value<unsigned int>(), "time out tick. Default 100 (  1 [s])")
-            ("no-rts",                          "no control RTS signal")
-            ("crc,c",    value<string>(),       "calclate modbus RTU CRC")
-            ("sum,s",    value<string>(),       "calclate checksum of XOR")
-            ("float,f",  value<string>(),       "hex to float value")
-            ("floatl,F", value<string>(),       "litle endian hex to float value")
-            ("mruby-script,m", value<string>(), "execute mruby script")
-            ("help,h",                          "help");
-        variables_map argmap;
-        store(parse_command_line(argc, argv, desc), argmap);
-        notify(argmap);
+            ("baud,b",          boost::program_options::value<std::string>(),   "baud rate ex) -b 9600E1")
+            ("gap,g",           boost::program_options::value<unsigned int>(),  "time out tick. Default 3   ( 30 [ms])")
+            ("timer,t",         boost::program_options::value<unsigned int>(),  "time out tick. Default 30  (300 [ms])")
+            ("timer2",          boost::program_options::value<unsigned int>(),  "time out tick. Default 50  (500 [ms])")
+            ("timer3",          boost::program_options::value<unsigned int>(),  "time out tick. Default 100 (  1 [s])")
+            ("no-rts",                                                          "no control RTS signal")
+            ("crc,c",          boost::program_options::value<std::string>(),    "calclate modbus RTU CRC")
+            ("sum,s",          boost::program_options::value<std::string>(),    "calclate checksum of XOR")
+            ("float,f",        boost::program_options::value<std::string>(),    "hex to float value")
+            ("floatl,F",       boost::program_options::value<std::string>(),    "litle endian hex to float value")
+            ("mruby-script,m", boost::program_options::value<std::string>(),    "execute mruby script")
+            ("help,h",                                                          "help");
+        boost::program_options::variables_map argmap;
+        auto const parsing_result = parse_command_line( argc, argv, desc );
+        store( parsing_result, argmap );
+        notify( argmap );
         if(argmap.count("help"))
         {
-            cout << desc << endl;
+            std::cout << "smon Software revision 0.9.0" << std::endl;
+            std::cout << std::endl;
+            std::cout << desc << std::endl;
             return 0;
         }
-        if(argmap.count("crc"))
+        std::vector<std::string> arg;
+        for(auto const& str : collect_unrecognized(parsing_result.options, boost::program_options::include_positional))
         {
-            string data = argmap["crc"].as<string>();
-            bool result = prnModbusCRC(data);
-            if(result)
-            {
-                return 0;
-            }
-            return -1;
+            arg.push_back(str);
         }
-        if(argmap.count("sum"))
-        {
-            string data = argmap["sum"].as<string>();
-            bool result = prnCheckSum(data);
-            if(result)
-            {
-                return 0;
-            }
-            return -1;
-        }
-        if(argmap.count("float"))
-        {
-            string data = argmap["float"].as<string>();
-            bool result = prnFloat(data);
-            if(result)
-            {
-                return 0;
-            }
-            return -1;
-        }
-        if(argmap.count("floatl"))
-        {
-            string data = argmap["floatl"].as<string>();
-            bool result = prnFloatl(data);
-            if(result)
-            {
-                return 0;
-            }
-            return -1;
-        }
-        Application & app = Application::ref();
-        int result = app.checkOptions(argmap);
-        if(result < 0)
-        {
-            printf("Timer Setting Error!\n");
-            return result;
-        }
-        try
-        {
-            result = app.main(argv[1]);
-        }
-        catch(const std::exception & exp)
-        {
-            printf("Open Error\n");
-            std::cout << exp.what() << std::endl;
-        }
-    }
-    catch(const boost::program_options::error_with_option_name & exp)
-    {
-        cout << exp.what() << endl;
-    }
-    catch(const std::exception & exp)
-    {
-        printf("Open Error\n");
-        std::cout << exp.what() << std::endl;
+        Application app( argmap, arg );
+        app.main();
     }
     catch(...)
     {
         printf("Other Error\n");
     }
-    return result;
+    return 0;
 }
