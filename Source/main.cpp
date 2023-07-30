@@ -45,67 +45,99 @@
 
 #include <OpenXLSX.hpp>
 
-static const unsigned short modbusCRC[256] =
-{
-    0x0000, 0xC1C0, 0x81C1, 0x4001, 0x01C3, 0xC003, 0x8002, 0x41C2, 0x01C6, 0xC006, 0x8007, 0x41C7, 0x0005, 0xC1C5, 0x81C4,
-    0x4004, 0x01CC, 0xC00C, 0x800D, 0x41CD, 0x000F, 0xC1CF, 0x81CE, 0x400E, 0x000A, 0xC1CA, 0x81CB, 0x400B, 0x01C9, 0xC009,
-    0x8008, 0x41C8, 0x01D8, 0xC018, 0x8019, 0x41D9, 0x001B, 0xC1DB, 0x81DA, 0x401A, 0x001E, 0xC1DE, 0x81DF, 0x401F, 0x01DD,
-    0xC01D, 0x801C, 0x41DC, 0x0014, 0xC1D4, 0x81D5, 0x4015, 0x01D7, 0xC017, 0x8016, 0x41D6, 0x01D2, 0xC012, 0x8013, 0x41D3,
-    0x0011, 0xC1D1, 0x81D0, 0x4010, 0x01F0, 0xC030, 0x8031, 0x41F1, 0x0033, 0xC1F3, 0x81F2, 0x4032, 0x0036, 0xC1F6, 0x81F7,
-    0x4037, 0x01F5, 0xC035, 0x8034, 0x41F4, 0x003C, 0xC1FC, 0x81FD, 0x403D, 0x01FF, 0xC03F, 0x803E, 0x41FE, 0x01FA, 0xC03A,
-    0x803B, 0x41FB, 0x0039, 0xC1F9, 0x81F8, 0x4038, 0x0028, 0xC1E8, 0x81E9, 0x4029, 0x01EB, 0xC02B, 0x802A, 0x41EA, 0x01EE,
-    0xC02E, 0x802F, 0x41EF, 0x002D, 0xC1ED, 0x81EC, 0x402C, 0x01E4, 0xC024, 0x8025, 0x41E5, 0x0027, 0xC1E7, 0x81E6, 0x4026,
-    0x0022, 0xC1E2, 0x81E3, 0x4023, 0x01E1, 0xC021, 0x8020, 0x41E0, 0x01A0, 0xC060, 0x8061, 0x41A1, 0x0063, 0xC1A3, 0x81A2,
-    0x4062, 0x0066, 0xC1A6, 0x81A7, 0x4067, 0x01A5, 0xC065, 0x8064, 0x41A4, 0x006C, 0xC1AC, 0x81AD, 0x406D, 0x01AF, 0xC06F,
-    0x806E, 0x41AE, 0x01AA, 0xC06A, 0x806B, 0x41AB, 0x0069, 0xC1A9, 0x81A8, 0x4068, 0x0078, 0xC1B8, 0x81B9, 0x4079, 0x01BB,
-    0xC07B, 0x807A, 0x41BA, 0x01BE, 0xC07E, 0x807F, 0x41BF, 0x007D, 0xC1BD, 0x81BC, 0x407C, 0x01B4, 0xC074, 0x8075, 0x41B5,
-    0x0077, 0xC1B7, 0x81B6, 0x4076, 0x0072, 0xC1B2, 0x81B3, 0x4073, 0x01B1, 0xC071, 0x8070, 0x41B0, 0x0050, 0xC190, 0x8191,
-    0x4051, 0x0193, 0xC053, 0x8052, 0x4192, 0x0196, 0xC056, 0x8057, 0x4197, 0x0055, 0xC195, 0x8194, 0x4054, 0x019C, 0xC05C,
-    0x805D, 0x419D, 0x005F, 0xC19F, 0x819E, 0x405E, 0x005A, 0xC19A, 0x819B, 0x405B, 0x0199, 0xC059, 0x8058, 0x4198, 0x0188,
-    0xC048, 0x8049, 0x4189, 0x004B, 0xC18B, 0x818A, 0x404A, 0x004E, 0xC18E, 0x818F, 0x404F, 0x018D, 0xC04D, 0x804C, 0x418C,
-    0x0044, 0xC184, 0x8185, 0x4045, 0x0187, 0xC047, 0x8046, 0x4186, 0x0182, 0xC042, 0x8043, 0x4183, 0x0041, 0xC181, 0x8180,
-    0x4040
-};
-
 /* class Options */
 static mrb_value mrb_opt_initialize(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_opt_get(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_opt_size(mrb_state * mrb, mrb_value self);
 
 /* class Clac */
-static mrb_value mrb_calc_crc(mrb_state* mrb, mrb_value self)
+static mrb_value mrb_core_crc16(mrb_state* mrb, mrb_value self)
 {
-    char result[5] = {0};
+    static const unsigned short modbusCRC[256] =
+    {
+        0x0000, 0xC1C0, 0x81C1, 0x4001, 0x01C3, 0xC003, 0x8002, 0x41C2, 0x01C6, 0xC006, 0x8007, 0x41C7, 0x0005, 0xC1C5, 0x81C4,
+        0x4004, 0x01CC, 0xC00C, 0x800D, 0x41CD, 0x000F, 0xC1CF, 0x81CE, 0x400E, 0x000A, 0xC1CA, 0x81CB, 0x400B, 0x01C9, 0xC009,
+        0x8008, 0x41C8, 0x01D8, 0xC018, 0x8019, 0x41D9, 0x001B, 0xC1DB, 0x81DA, 0x401A, 0x001E, 0xC1DE, 0x81DF, 0x401F, 0x01DD,
+        0xC01D, 0x801C, 0x41DC, 0x0014, 0xC1D4, 0x81D5, 0x4015, 0x01D7, 0xC017, 0x8016, 0x41D6, 0x01D2, 0xC012, 0x8013, 0x41D3,
+        0x0011, 0xC1D1, 0x81D0, 0x4010, 0x01F0, 0xC030, 0x8031, 0x41F1, 0x0033, 0xC1F3, 0x81F2, 0x4032, 0x0036, 0xC1F6, 0x81F7,
+        0x4037, 0x01F5, 0xC035, 0x8034, 0x41F4, 0x003C, 0xC1FC, 0x81FD, 0x403D, 0x01FF, 0xC03F, 0x803E, 0x41FE, 0x01FA, 0xC03A,
+        0x803B, 0x41FB, 0x0039, 0xC1F9, 0x81F8, 0x4038, 0x0028, 0xC1E8, 0x81E9, 0x4029, 0x01EB, 0xC02B, 0x802A, 0x41EA, 0x01EE,
+        0xC02E, 0x802F, 0x41EF, 0x002D, 0xC1ED, 0x81EC, 0x402C, 0x01E4, 0xC024, 0x8025, 0x41E5, 0x0027, 0xC1E7, 0x81E6, 0x4026,
+        0x0022, 0xC1E2, 0x81E3, 0x4023, 0x01E1, 0xC021, 0x8020, 0x41E0, 0x01A0, 0xC060, 0x8061, 0x41A1, 0x0063, 0xC1A3, 0x81A2,
+        0x4062, 0x0066, 0xC1A6, 0x81A7, 0x4067, 0x01A5, 0xC065, 0x8064, 0x41A4, 0x006C, 0xC1AC, 0x81AD, 0x406D, 0x01AF, 0xC06F,
+        0x806E, 0x41AE, 0x01AA, 0xC06A, 0x806B, 0x41AB, 0x0069, 0xC1A9, 0x81A8, 0x4068, 0x0078, 0xC1B8, 0x81B9, 0x4079, 0x01BB,
+        0xC07B, 0x807A, 0x41BA, 0x01BE, 0xC07E, 0x807F, 0x41BF, 0x007D, 0xC1BD, 0x81BC, 0x407C, 0x01B4, 0xC074, 0x8075, 0x41B5,
+        0x0077, 0xC1B7, 0x81B6, 0x4076, 0x0072, 0xC1B2, 0x81B3, 0x4073, 0x01B1, 0xC071, 0x8070, 0x41B0, 0x0050, 0xC190, 0x8191,
+        0x4051, 0x0193, 0xC053, 0x8052, 0x4192, 0x0196, 0xC056, 0x8057, 0x4197, 0x0055, 0xC195, 0x8194, 0x4054, 0x019C, 0xC05C,
+        0x805D, 0x419D, 0x005F, 0xC19F, 0x819E, 0x405E, 0x005A, 0xC19A, 0x819B, 0x405B, 0x0199, 0xC059, 0x8058, 0x4198, 0x0188,
+        0xC048, 0x8049, 0x4189, 0x004B, 0xC18B, 0x818A, 0x404A, 0x004E, 0xC18E, 0x818F, 0x404F, 0x018D, 0xC04D, 0x804C, 0x418C,
+        0x0044, 0xC184, 0x8185, 0x4045, 0x0187, 0xC047, 0x8046, 0x4186, 0x0182, 0xC042, 0x8043, 0x4183, 0x0041, 0xC181, 0x8180,
+        0x4040
+    };
     char * arg;
     mrb_get_args(mrb, "z", &arg);
     std::string data(arg);
-    if((data.size()%2) == 0)
+    auto max = data.size();
+    if(0 == (max % 2))
     {
         MyEntity::CalcCRC16 crc(modbusCRC);
-        unsigned int size = 0;
-        for(unsigned int idx=0, max=data.size();idx<max; idx += 2)
+        for(unsigned int idx = 0; idx < max; idx += 2)
         {
             std::stringstream ss;
             ss << std::hex << data.substr(idx, 2);
             int val;
             ss >> val;
             crc << val;
-            size ++;
         }
-        sprintf(result, "%04x", *crc);
+        char temp[5] = { 0 };
+        sprintf(temp, "%04x", *crc);
+        return mrb_str_new_cstr(mrb, temp);
     }
-    return mrb_str_new_cstr(mrb, result);
+    return mrb_nil_value();
 }
-static mrb_value mrb_calc_sum(mrb_state* mrb, mrb_value self)
+static mrb_value mrb_core_crc8(mrb_state* mrb, mrb_value self)
 {
-    char result[3] = {0};
+    static const unsigned char crctab8[16] = { 0x00,0x9B,0xAD,0x36,0xC1,0x5A,0x6C,0xF7, 0x19,0x82,0xB4,0x2F,0xD8,0x43,0x75,0xEE };
     char * arg;
     mrb_get_args(mrb, "z", &arg);
     std::string data(arg);
-    if((data.size()%2) == 0)
+    auto max = data.size();
+    if(0 == ( max % 2 ))
+    {
+        unsigned char crc = 0;
+        unsigned char high = 0;
+        for(unsigned int idx = 0; idx < max; idx += 2)
+        {
+            std::stringstream ss;
+            ss << std::hex << data.substr(idx, 2);
+            int val;
+            ss >> val;
+
+            unsigned char data = static_cast<unsigned char>(val);
+            high = crc >> 4;
+            crc <<= 4;
+            crc ^= crctab8[ high ^ (data >> 4) ];
+
+            high = crc >> 4;
+            crc <<= 4;
+            crc ^= crctab8[ high ^ (data & 0x0f) ];
+        }
+        char temp[3] = { 0 };
+        sprintf(temp, "%02x", crc);
+        return mrb_str_new_cstr(mrb, temp);
+    }
+    return mrb_nil_value();
+}
+static mrb_value mrb_core_sum(mrb_state* mrb, mrb_value self)
+{
+    char * arg;
+    mrb_get_args(mrb, "z", &arg);
+    std::string data(arg);
+    auto max = data.size();
+    if(0 == (max % 2))
     {
         unsigned char sum = 0;
-        for(unsigned int idx=0, max=data.size();idx<max; idx += 2)
+        for(unsigned int idx = 0; idx < max; idx += 2)
         {
             std::stringstream ss;
             ss << std::hex << data.substr(idx, 2);
@@ -113,16 +145,18 @@ static mrb_value mrb_calc_sum(mrb_state* mrb, mrb_value self)
             ss >> val;
             sum ^= static_cast<unsigned char>(val);
         }
-        sprintf(result, "%02x", sum);
+        char temp[3] = {0};
+        sprintf(temp, "%02x", sum);
+        return mrb_str_new_cstr(mrb, temp);
     }
-    return mrb_str_new_cstr(mrb, result);
+    return mrb_nil_value();
 }
-static mrb_value mrb_calc_float(mrb_state* mrb, mrb_value self)
+static mrb_value mrb_core_float(mrb_state* mrb, mrb_value self)
 {
     char * arg;
     mrb_get_args(mrb, "z", &arg);
     std::string data(arg);
-    if(data.size() == 8)
+    if(8 == data.size())
     {
         union
         {
@@ -144,7 +178,7 @@ static mrb_value mrb_calc_float(mrb_state* mrb, mrb_value self)
     }
     return mrb_nil_value();
 }
-static mrb_value mrb_calc_float_l(mrb_state* mrb, mrb_value self)
+static mrb_value mrb_core_float_l(mrb_state* mrb, mrb_value self)
 {
     char * arg;
     mrb_get_args(mrb, "z", &arg);
@@ -175,6 +209,24 @@ static mrb_value mrb_calc_float_l(mrb_state* mrb, mrb_value self)
         return mrb_float_value( mrb, fval.f );
     }
     return mrb_nil_value();
+}
+static mrb_value mrb_core_reg_match(mrb_state* mrb, mrb_value self)
+{
+    char * org_ptr, * reg_ptr;
+    mrb_get_args(mrb, "zz", &org_ptr, &reg_ptr);
+    if( std::regex_search(org_ptr, std::regex(reg_ptr)))
+    {
+        return mrb_bool_value(true);
+    }
+    return mrb_bool_value(false);
+}
+
+static mrb_value mrb_core_reg_replace(mrb_state* mrb, mrb_value self)
+{
+    char * org_ptr, * reg_ptr, * rep_ptr;
+    mrb_get_args(mrb, "zzz", &org_ptr, &reg_ptr, &rep_ptr);
+    auto result = std::regex_replace(org_ptr, std::regex(reg_ptr), rep_ptr);
+    return mrb_str_new_cstr( mrb, result.c_str() );
 }
 
 /* class thread */
@@ -238,23 +290,34 @@ protected:
     mrb_state *                                 mrb;
     mrb_value                                   proc;
 public:
-    CppThread(void) { }
+    CppThread(void) : mrb(nullptr)  { }
     virtual ~CppThread(void)
     {
-        mrb_close(mrb);
+        std::lock_guard<std::mutex> lock(mtx);
+        if(nullptr != this->mrb)
+        {
+            mrb_close(this->mrb);
+        }
     }
     bool run(mrb_state * mrb, mrb_value self)
     {
-//        this->mrb = mrb;
-        this->mrb = mrb_open();
-        mrb_get_args(mrb, "&", &proc);
-        if (!mrb_nil_p(proc))
+        bool result = false;
         {
-            std::thread temp(&CppThread::run_context, this, 0);
-            th_ctrl.swap(temp);
-            return true;
+            std::lock_guard<std::mutex> lock(mtx);
+            this->mrb = mrb_open();
         }
-        return false;
+        if(nullptr != this->mrb)
+        {
+            mrb_get_args(mrb, "&", &proc);
+            if (!mrb_nil_p(proc))
+            {
+                std::thread temp(&CppThread::run_context, this, 0);
+                th_ctrl.swap(temp);
+                result = true;
+            }
+        }
+        std::lock_guard<std::mutex> lock(mtx);
+        return result;
     }
     void run_context(size_t id)
     {
@@ -609,7 +672,7 @@ public:
                 }
                 break;
         }
-        return mrb_str_new_cstr( mrb, "" );
+        return mrb_nil_value();
     }
     mrb_value thread_init(mrb_state * mrb, mrb_value self)
     {
@@ -958,82 +1021,92 @@ public:
             unsigned int val = opts["timer3"].as<unsigned int>();
             timer[3] = val;
         }
-        if(opts.count("mruby-script"))
+        mrb_state * mrb = mrb_open();
+        if( nullptr != mrb )
         {
-            bool noerror(true);
-            std::string code("");
-            std::string mruby_fnames = opts["mruby-script"].as<std::string>();
-            for( auto&& fname : split( mruby_fnames, "," ) )
+            /* Class Core */
+            struct RClass * calc_class = mrb_define_class_under( mrb, mrb->kernel_module, "Core", mrb->object_class );
+            mrb_define_module_function(mrb, calc_class, "crc16",    mrb_core_crc16,         MRB_ARGS_ARG( 1, 1 )    );
+            mrb_define_module_function(mrb, calc_class, "crc8",     mrb_core_crc8,          MRB_ARGS_ARG( 1, 1 )    );
+            mrb_define_module_function(mrb, calc_class, "sum",      mrb_core_sum,           MRB_ARGS_ARG( 1, 1 )    );
+            mrb_define_module_function(mrb, calc_class, "float",    mrb_core_float,         MRB_ARGS_ARG( 1, 1 )    );
+            mrb_define_module_function(mrb, calc_class, "float_l",  mrb_core_float_l,       MRB_ARGS_ARG( 1, 1 )    );
+            mrb_define_module_function(mrb, calc_class, "reg_match",   mrb_core_reg_match,   MRB_ARGS_ARG( 2, 1 )    );
+            mrb_define_module_function(mrb, calc_class, "reg_replace", mrb_core_reg_replace, MRB_ARGS_ARG( 3, 1 )    );
+
+            /* Class options */
+            struct RClass * opt_class = mrb_define_class_under( mrb, mrb->kernel_module, "Args", mrb->object_class );
+            mrb_define_method( mrb, opt_class, "initialize",    mrb_opt_initialize,         MRB_ARGS_ANY()          );
+            mrb_define_method( mrb, opt_class, "size",          mrb_opt_size,               MRB_ARGS_NONE()         );
+            mrb_define_method( mrb, opt_class, "[]",            mrb_opt_get,                MRB_ARGS_ARG( 1, 1 )    );
+
+            /* Class Thread */
+            struct RClass * thread_class = mrb_define_class_under( mrb, mrb->kernel_module, "CppThread", mrb->object_class );
+            mrb_define_method( mrb, thread_class, "initialize",     mrb_thread_initialize,  MRB_ARGS_ANY()          );
+            mrb_define_method( mrb, thread_class, "run",            mrb_thread_run,         MRB_ARGS_ANY()          );
+            mrb_define_method( mrb, thread_class, "join",           mrb_thread_join,        MRB_ARGS_ANY()          );
+            mrb_define_method( mrb, thread_class, "synchronize",    mrb_thread_sync,        MRB_ARGS_NONE()         );
+            mrb_define_method( mrb, thread_class, "wait",           mrb_thread_wait,        MRB_ARGS_NONE()         );
+            mrb_define_method( mrb, thread_class, "notify",         mrb_thread_notify,      MRB_ARGS_NONE()         );
+
+            /* Class Smon */
+            struct RClass * smon_class = mrb_define_class_under( mrb, mrb->kernel_module, "Smon", mrb->object_class );
+            mrb_define_const(  mrb, smon_class, "GAP",          mrb_fixnum_value(SerialMonitor::GAP)                );
+            mrb_define_const(  mrb, smon_class, "TO1",          mrb_fixnum_value(SerialMonitor::TIME_OUT_1)         );
+            mrb_define_const(  mrb, smon_class, "TO2",          mrb_fixnum_value(SerialMonitor::TIME_OUT_2)         );
+            mrb_define_const(  mrb, smon_class, "TO3",          mrb_fixnum_value(SerialMonitor::TIME_OUT_3)         );
+            mrb_define_const(  mrb, smon_class, "CLOSE",        mrb_fixnum_value(SerialMonitor::CLOSE)              );
+            mrb_define_const(  mrb, smon_class, "CACHE_FULL",   mrb_fixnum_value(SerialMonitor::CACHE_FULL)         );
+            mrb_define_const(  mrb, smon_class, "NONE",         mrb_fixnum_value(SerialMonitor::NONE)               );
+            mrb_define_method( mrb, smon_class, "initialize",   mrb_smon_initialize,        MRB_ARGS_REQ( 2 )       );
+            mrb_define_method( mrb, smon_class, "wait",         mrb_smon_wait,              MRB_ARGS_ARG( 2, 1 )    );
+            mrb_define_method( mrb, smon_class, "send",         mrb_smon_send,              MRB_ARGS_ARG( 2, 1 )    );
+
+            /* Class OpenXLSX */
+            struct RClass * xlsx_class = mrb_define_class_under( mrb, mrb->kernel_module, "OpenXLSX", mrb->object_class );
+            mrb_define_method( mrb, xlsx_class, "initialize",   mrb_xlsx_initialize,        MRB_ARGS_REQ( 2 )       );
+            mrb_define_method( mrb, xlsx_class, "create",       mrb_xlsx_create,            MRB_ARGS_ARG( 1, 1 )    );
+            mrb_define_method( mrb, xlsx_class, "open",         mrb_xlsx_open,              MRB_ARGS_ARG( 1, 1 )    );
+            mrb_define_method( mrb, xlsx_class, "workbook",     mrb_xlsx_workbook,          MRB_ARGS_NONE()         );
+            mrb_define_method( mrb, xlsx_class, "sheet",        mrb_xlsx_worksheet,         MRB_ARGS_ARG( 1, 1 )    );
+            mrb_define_method( mrb, xlsx_class, "setSheetName", mrb_xlsx_set_seet_name,     MRB_ARGS_ARG( 1, 1 )    );
+            mrb_define_method( mrb, xlsx_class, "set_value",    mrb_xlsx_set_value,         MRB_ARGS_ARG( 2, 1 )    );
+            mrb_define_method( mrb, xlsx_class, "cell",         mrb_xlsx_cell,              MRB_ARGS_ARG( 1, 1 )    );
+
+            /* exec mRuby Script */
+            extern const uint8_t default_options[];
+            mrb_load_irep(mrb, default_options);
+            if(opts.count("mruby-script"))
             {
-                std::ifstream fin(fname);
-                if(fin.is_open())
+                bool noerror(true);
+                std::string code("");
+                std::string mruby_fnames = opts["mruby-script"].as<std::string>();
+                for( auto&& fname : split( mruby_fnames, "," ) )
                 {
-                    std::string script((std::istreambuf_iterator<char>(fin)), std::istreambuf_iterator<char>());
-                    code += script;
+                    std::ifstream fin(fname);
+                    if(fin.is_open())
+                    {
+                        std::string script((std::istreambuf_iterator<char>(fin)), std::istreambuf_iterator<char>());
+                        code += script;
+                    }
+                    else
+                    {
+                        noerror = false;
+                        printf("file open error: %s\n", fname.c_str());
+                        break;
+                    }
                 }
-                else
+                if(noerror)
                 {
-                    noerror = false;
-                    printf("file open error: %s\n", fname.c_str());
-                    break;
-                }
-            }
-            if(noerror)
-            {
-                mrb_state * mrb = mrb_open();
-                if( nullptr != mrb )
-                {
-                    /* Class options */
-                    struct RClass * opt_class = mrb_define_class_under( mrb, mrb->kernel_module, "Options", mrb->object_class );
-                    mrb_define_method( mrb, opt_class, "initialize",    mrb_opt_initialize,         MRB_ARGS_ANY()          );
-                    mrb_define_method( mrb, opt_class, "size",          mrb_opt_size,               MRB_ARGS_NONE()         );
-                    mrb_define_method( mrb, opt_class, "[]",            mrb_opt_get,                MRB_ARGS_ARG( 1, 1 )    );
-
-                    /* Class Calc */
-                    struct RClass * calc_class = mrb_define_class_under( mrb, mrb->kernel_module, "Clac", mrb->object_class );
-                    mrb_define_module_function(mrb, calc_class, "crc",      mrb_calc_crc,           MRB_ARGS_ARG( 1, 1 )    );
-                    mrb_define_module_function(mrb, calc_class, "sum",      mrb_calc_sum,           MRB_ARGS_ARG( 1, 1 )    );
-                    mrb_define_module_function(mrb, calc_class, "float",    mrb_calc_float,         MRB_ARGS_ARG( 1, 1 )    );
-                    mrb_define_module_function(mrb, calc_class, "float_l",  mrb_calc_float_l,       MRB_ARGS_ARG( 1, 1 )    );
-
-                    /* Class Thread */
-                    struct RClass * thread_class = mrb_define_class_under( mrb, mrb->kernel_module, "CppThread", mrb->object_class );
-                    mrb_define_method( mrb, thread_class, "initialize",     mrb_thread_initialize,  MRB_ARGS_ANY()          );
-                    mrb_define_method( mrb, thread_class, "run",            mrb_thread_run,         MRB_ARGS_ANY()          );
-                    mrb_define_method( mrb, thread_class, "join",           mrb_thread_join,        MRB_ARGS_ANY()          );
-                    mrb_define_method( mrb, thread_class, "synchronize",    mrb_thread_sync,        MRB_ARGS_NONE()         );
-                    mrb_define_method( mrb, thread_class, "wait",           mrb_thread_wait,        MRB_ARGS_NONE()         );
-                    mrb_define_method( mrb, thread_class, "notify",         mrb_thread_notify,      MRB_ARGS_NONE()         );
-
-                    /* Class Smon */
-                    struct RClass * smon_class = mrb_define_class_under( mrb, mrb->kernel_module, "Smon", mrb->object_class );
-                    mrb_define_const(  mrb, smon_class, "GAP",          mrb_fixnum_value(SerialMonitor::GAP)                );
-                    mrb_define_const(  mrb, smon_class, "TO1",          mrb_fixnum_value(SerialMonitor::TIME_OUT_1)         );
-                    mrb_define_const(  mrb, smon_class, "TO2",          mrb_fixnum_value(SerialMonitor::TIME_OUT_2)         );
-                    mrb_define_const(  mrb, smon_class, "TO3",          mrb_fixnum_value(SerialMonitor::TIME_OUT_3)         );
-                    mrb_define_const(  mrb, smon_class, "CLOSE",        mrb_fixnum_value(SerialMonitor::CLOSE)              );
-                    mrb_define_const(  mrb, smon_class, "CACHE_FULL",   mrb_fixnum_value(SerialMonitor::CACHE_FULL)         );
-                    mrb_define_const(  mrb, smon_class, "NONE",         mrb_fixnum_value(SerialMonitor::NONE)               );
-                    mrb_define_method( mrb, smon_class, "initialize",   mrb_smon_initialize,        MRB_ARGS_REQ( 2 )       );
-                    mrb_define_method( mrb, smon_class, "wait",         mrb_smon_wait,              MRB_ARGS_ARG( 2, 1 )    );
-                    mrb_define_method( mrb, smon_class, "send",         mrb_smon_send,              MRB_ARGS_ARG( 2, 1 )    );
-
-                    /* Class OpenXLSX */
-                    struct RClass * xlsx_class = mrb_define_class_under( mrb, mrb->kernel_module, "OpenXLSX", mrb->object_class );
-                    mrb_define_method( mrb, xlsx_class, "initialize",   mrb_xlsx_initialize,        MRB_ARGS_REQ( 2 )       );
-                    mrb_define_method( mrb, xlsx_class, "create",       mrb_xlsx_create,            MRB_ARGS_ARG( 1, 1 )    );
-                    mrb_define_method( mrb, xlsx_class, "open",         mrb_xlsx_open,              MRB_ARGS_ARG( 1, 1 )    );
-                    mrb_define_method( mrb, xlsx_class, "workbook",     mrb_xlsx_workbook,          MRB_ARGS_NONE()         );
-                    mrb_define_method( mrb, xlsx_class, "sheet",        mrb_xlsx_worksheet,         MRB_ARGS_ARG( 1, 1 )    );
-                    mrb_define_method( mrb, xlsx_class, "setSheetName", mrb_xlsx_set_seet_name,     MRB_ARGS_ARG( 1, 1 )    );
-                    mrb_define_method( mrb, xlsx_class, "set_value",    mrb_xlsx_set_value,         MRB_ARGS_ARG( 2, 1 )    );
-                    mrb_define_method( mrb, xlsx_class, "cell",         mrb_xlsx_cell,              MRB_ARGS_ARG( 1, 1 )    );
-
-                    /* exec mRuby Script */
                     mrb_load_string(mrb, code.c_str());
-                    mrb_close(mrb);
                 }
             }
+            else
+            {
+                extern const uint8_t default_script[];
+                mrb_load_irep(mrb, default_script);
+            }
+            mrb_close(mrb);
         }
     }
 };
@@ -1103,35 +1176,47 @@ int main(int argc, char * argv[])
         boost::program_options::options_description desc("smon.exe [Options]");
         desc.add_options()
             ("baud,b",          boost::program_options::value<std::string>(),   "baud rate ex) -b 9600E1")
-            ("gap,g",           boost::program_options::value<unsigned int>(),  "time out tick. Default 3   ( 30 [ms])")
-            ("timer,t",         boost::program_options::value<unsigned int>(),  "time out tick. Default 30  (300 [ms])")
-            ("timer2",          boost::program_options::value<unsigned int>(),  "time out tick. Default 50  (500 [ms])")
-            ("timer3",          boost::program_options::value<unsigned int>(),  "time out tick. Default 100 (  1 [s])")
+            ("gap,g",           boost::program_options::value<unsigned int>(),  "time out tick. Default   30 ( 30 [ms])")
+            ("timer,t",         boost::program_options::value<unsigned int>(),  "time out tick. Default  300 (300 [ms])")
+            ("timer2",          boost::program_options::value<unsigned int>(),  "time out tick. Default  500 (500 [ms])")
+            ("timer3",          boost::program_options::value<unsigned int>(),  "time out tick. Default 1000 (  1 [s])")
             ("no-rts",                                                          "no control RTS signal")
             ("crc,c",          boost::program_options::value<std::string>(),    "calclate modbus RTU CRC")
+            ("crc8",           boost::program_options::value<std::string>(),    "calclate CRC8")
             ("sum,s",          boost::program_options::value<std::string>(),    "calclate checksum of XOR")
             ("float,f",        boost::program_options::value<std::string>(),    "hex to float value")
             ("floatl,F",       boost::program_options::value<std::string>(),    "litle endian hex to float value")
             ("mruby-script,m", boost::program_options::value<std::string>(),    "execute mruby script")
             ("help,h",                                                          "help");
-        boost::program_options::variables_map argmap;
-        auto const parsing_result = parse_command_line( argc, argv, desc );
-        store( parsing_result, argmap );
-        notify( argmap );
-        if(argmap.count("help"))
+        try
+        {
+            boost::program_options::variables_map argmap;
+            std::vector<std::string> arg;
+
+            auto const parsing_result = parse_command_line( argc, argv, desc );
+            store( parsing_result, argmap );
+            notify( argmap );
+            for(auto const& str : collect_unrecognized(parsing_result.options, boost::program_options::include_positional))
+            {
+                arg.push_back(str);
+            }
+
+            if(argmap.count("help"))
+            {
+                std::cout << "smon Software revision 0.9.0" << std::endl;
+                std::cout << std::endl;
+                std::cout << desc << std::endl;
+                return 0;
+            }
+            Application app( argmap, arg );
+            app.main();
+        }
+        catch(...)
         {
             std::cout << "smon Software revision 0.9.0" << std::endl;
             std::cout << std::endl;
             std::cout << desc << std::endl;
-            return 0;
         }
-        std::vector<std::string> arg;
-        for(auto const& str : collect_unrecognized(parsing_result.options, boost::program_options::include_positional))
-        {
-            arg.push_back(str);
-        }
-        Application app( argmap, arg );
-        app.main();
     }
     catch(...)
     {
