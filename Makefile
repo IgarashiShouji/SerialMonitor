@@ -5,22 +5,10 @@ AR=ar
 CFLAGS_COMMON=-I ./Include -I ./MyUtilities/Include -I ./mruby/include -I ./OpenXLSX/OpenXLSX -I ./OpenXLSX/OpenXLSX/headers -I ./OpenXLSX/build/OpenXLSX -I ./OpenXLSX/Examples/external/nowide/include
 LIBS_COMMON=-L ./Objects -L ./MyUtilities -L OpenXLSX/build/output/ -lSerialMonitor -lUtilities -lmruby -lboost_program_options -lboost_system -lOpenXLSX
 # on Linux
-ifdef CROSSDEV
-# x86_64-w64-mingw32
-#CFLAGS=-g -I /usr/x86_64-w64-mingw32/include $(CFLAGS_COMMON) -pipe -O3 -march=native
-#LIBS=-static -L ./Objects -L ./MyUtilities -L ./mruby/build/cross-mingw-winetest/lib -lSerialMonitor -lUtilities -lmruby -lboost_program_options -lboost_system -lws2_32 -L OpenXLSX/build-mingw/output/ -lOpenXLSX
-CFLAGS=-g -I /usr/x86_64-w64-mingw32/include $(CFLAGS_COMMON) -I ./mruby/build/cross-mingw-winetest/include -pipe -O3 -march=native
-LIBS=-static -L ./mruby/build/cross-mingw-winetest/lib $(LIBS_COMMON) -lws2_32
-AR_OBJS=Objects/SerialControl.o Objects/RTSControl-mingw.o
-MAIN_DEPS=MyUtilities/libUtilities.a mruby/build/cross-mingw-winetest/lib/libmruby.a OpenXLSX/build/output/libOpenXLSX.a Objects/libSerialMonitor.a Objects
-CPP=x86_64-w64-mingw32-g++
-AR=x86_64-w64-mingw32-ar
-else
 CFLAGS=-g $(CFLAGS_COMMON) -I ./mruby/build/host/include -pipe -O3 -march=native
 LIBS=-L ./mruby/build/host/lib $(LIBS_COMMON) -lpthread
-AR_OBJS=Objects/SerialControl.o Objects/RTSControl-linux.o
+AR_OBJS=Objects/SerialControl.o Objects/RTSControl-linux.o Objects/default_options.o Objects/default_script.o
 MAIN_DEPS=Objects/main.o MyUtilities/libUtilities.a mruby/build/host/lib/libmruby.a OpenXLSX/build/output/libOpenXLSX.a Objects/libSerialMonitor.a Objects
-endif
 CPPFLAGS=-std=c++17 $(CFLAGS)
 
 all: $(Objects) $(TARGET)
@@ -54,27 +42,27 @@ Doxygen/html/index.html: Doxyfile Doxygen \
 MyUtilities/libUtilities.a: MyUtilities
 	cd MyUtilities; make -f Makefile lib
 
-ifdef CROSSDEV
-mruby/build/cross-mingw-winetest/lib/libmruby.a: mruby
-	/bin/bash ./build-mruby-cross.sh
-mruby/include/mruby.h: mruby/build/cross-mingw-winetest/lib/libmruby.a
-OpenXLSX/build/output/libOpenXLSX.a:
-	/bin/bash build-OpenXLSX-cross.sh
-else
 mruby/build/host/lib/libmruby.a: mruby
 	/bin/bash ./build-mruby.sh
 mruby/include/mruby.h: mruby/build/host/lib/libmruby.a
 OpenXLSX/build/output/libOpenXLSX.a:
 	/bin/bash build-OpenXLSX.sh
-endif
 
 Objects/libSerialMonitor.a: $(AR_OBJS)
 	$(AR) rcs $@ $^
 
 Objects/%.o: Source/%.cpp
 	$(CPP) $(CPPFLAGS) -c -o $@ $<
+Objects/%.o: Source/%.c
+	$(CPP) $(CFLAGS) -c -o $@ $<
 
 MyUtilities/Include/Entity.hpp: MyUtilities
 Objects/main.o: Source/main.cpp Include/SerialControl.hpp MyUtilities/Include/Entity.hpp mruby/include/mruby.h OpenXLSX/build/output/libOpenXLSX.a
 Objects/SerialControl.o: Source/SerialControl.cpp Include/SerialControl.hpp MyUtilities/Include/Entity.hpp
 Objects/RTSControl-linux.o: Source/RTSControl-linux.cpp Include/SerialControl.hpp MyUtilities/Include/Entity.hpp
+Objects/default_options.o: Source/default_options.c
+Objects/default_script.o: Source/default_script.c
+Source/default_options.c: Source/default_options.rb mruby/build/host/lib/libmruby.a
+	./mruby/bin/mrbc -Bdefault_options $<
+Source/default_script.c: Source/default_script.rb   mruby/build/host/lib/libmruby.a
+	./mruby/bin/mrbc -Bdefault_script $<

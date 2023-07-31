@@ -1078,8 +1078,6 @@ public:
             mrb_load_irep(mrb, default_options);
             if(opts.count("mruby-script"))
             {
-                bool noerror(true);
-                std::string code("");
                 std::string mruby_fnames = opts["mruby-script"].as<std::string>();
                 for( auto&& fname : split( mruby_fnames, "," ) )
                 {
@@ -1087,18 +1085,13 @@ public:
                     if(fin.is_open())
                     {
                         std::string script((std::istreambuf_iterator<char>(fin)), std::istreambuf_iterator<char>());
-                        code += script;
+                        mrb_load_string(mrb, script.c_str());
                     }
                     else
                     {
-                        noerror = false;
                         printf("file open error: %s\n", fname.c_str());
                         break;
                     }
-                }
-                if(noerror)
-                {
-                    mrb_load_string(mrb, code.c_str());
                 }
             }
             else
