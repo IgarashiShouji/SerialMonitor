@@ -11,7 +11,7 @@ end
 def test_thead
   print "thread test 1\n"
   list = Array.new
-  th = CppThread.new
+  th = WorkerThread.new
   th.run do
     print "  run thrad\n"
     th.notify do

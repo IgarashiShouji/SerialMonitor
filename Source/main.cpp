@@ -1042,42 +1042,42 @@ public:
 
             /* Class options */
             struct RClass * opt_class = mrb_define_class_under( mrb, mrb->kernel_module, "Args", mrb->object_class );
-            mrb_define_method( mrb, opt_class, "initialize",    mrb_opt_initialize,         MRB_ARGS_ANY()          );
-            mrb_define_method( mrb, opt_class, "size",          mrb_opt_size,               MRB_ARGS_NONE()         );
-            mrb_define_method( mrb, opt_class, "[]",            mrb_opt_get,                MRB_ARGS_ARG( 1, 1 )    );
+            mrb_define_method( mrb, opt_class, "initialize",            mrb_opt_initialize,     MRB_ARGS_ANY()          );
+            mrb_define_method( mrb, opt_class, "size",                  mrb_opt_size,           MRB_ARGS_NONE()         );
+            mrb_define_method( mrb, opt_class, "[]",                    mrb_opt_get,            MRB_ARGS_ARG( 1, 1 )    );
 
             /* Class Thread */
-            struct RClass * thread_class = mrb_define_class_under( mrb, mrb->kernel_module, "CppThread", mrb->object_class );
-            mrb_define_method( mrb, thread_class, "initialize",     mrb_thread_initialize,  MRB_ARGS_ANY()          );
-            mrb_define_method( mrb, thread_class, "run",            mrb_thread_run,         MRB_ARGS_ANY()          );
-            mrb_define_method( mrb, thread_class, "join",           mrb_thread_join,        MRB_ARGS_ANY()          );
-            mrb_define_method( mrb, thread_class, "synchronize",    mrb_thread_sync,        MRB_ARGS_NONE()         );
-            mrb_define_method( mrb, thread_class, "wait",           mrb_thread_wait,        MRB_ARGS_NONE()         );
-            mrb_define_method( mrb, thread_class, "notify",         mrb_thread_notify,      MRB_ARGS_NONE()         );
+            struct RClass * thread_class = mrb_define_class_under( mrb, mrb->kernel_module, "WorkerThread", mrb->object_class );
+            mrb_define_method( mrb, thread_class, "initialize",         mrb_thread_initialize,  MRB_ARGS_ANY()          );
+            mrb_define_method( mrb, thread_class, "run",                mrb_thread_run,         MRB_ARGS_ANY()          );
+            mrb_define_method( mrb, thread_class, "join",               mrb_thread_join,        MRB_ARGS_ANY()          );
+            mrb_define_method( mrb, thread_class, "synchronize",        mrb_thread_sync,        MRB_ARGS_NONE()         );
+            mrb_define_method( mrb, thread_class, "wait",               mrb_thread_wait,        MRB_ARGS_NONE()         );
+            mrb_define_method( mrb, thread_class, "notify",             mrb_thread_notify,      MRB_ARGS_NONE()         );
 
             /* Class Smon */
             struct RClass * smon_class = mrb_define_class_under( mrb, mrb->kernel_module, "Smon", mrb->object_class );
-            mrb_define_const(  mrb, smon_class, "GAP",          mrb_fixnum_value(SerialMonitor::GAP)                );
-            mrb_define_const(  mrb, smon_class, "TO1",          mrb_fixnum_value(SerialMonitor::TIME_OUT_1)         );
-            mrb_define_const(  mrb, smon_class, "TO2",          mrb_fixnum_value(SerialMonitor::TIME_OUT_2)         );
-            mrb_define_const(  mrb, smon_class, "TO3",          mrb_fixnum_value(SerialMonitor::TIME_OUT_3)         );
-            mrb_define_const(  mrb, smon_class, "CLOSE",        mrb_fixnum_value(SerialMonitor::CLOSE)              );
-            mrb_define_const(  mrb, smon_class, "CACHE_FULL",   mrb_fixnum_value(SerialMonitor::CACHE_FULL)         );
-            mrb_define_const(  mrb, smon_class, "NONE",         mrb_fixnum_value(SerialMonitor::NONE)               );
-            mrb_define_method( mrb, smon_class, "initialize",   mrb_smon_initialize,        MRB_ARGS_REQ( 2 )       );
-            mrb_define_method( mrb, smon_class, "wait",         mrb_smon_wait,              MRB_ARGS_ARG( 2, 1 )    );
-            mrb_define_method( mrb, smon_class, "send",         mrb_smon_send,              MRB_ARGS_ARG( 2, 1 )    );
+            mrb_define_const(  mrb, smon_class, "GAP",                  mrb_fixnum_value(SerialMonitor::GAP)            );
+            mrb_define_const(  mrb, smon_class, "TO1",                  mrb_fixnum_value(SerialMonitor::TIME_OUT_1)     );
+            mrb_define_const(  mrb, smon_class, "TO2",                  mrb_fixnum_value(SerialMonitor::TIME_OUT_2)     );
+            mrb_define_const(  mrb, smon_class, "TO3",                  mrb_fixnum_value(SerialMonitor::TIME_OUT_3)     );
+            mrb_define_const(  mrb, smon_class, "CLOSE",                mrb_fixnum_value(SerialMonitor::CLOSE)          );
+            mrb_define_const(  mrb, smon_class, "CACHE_FULL",           mrb_fixnum_value(SerialMonitor::CACHE_FULL)     );
+            mrb_define_const(  mrb, smon_class, "NONE",                 mrb_fixnum_value(SerialMonitor::NONE)           );
+            mrb_define_method( mrb, smon_class, "initialize",           mrb_smon_initialize,    MRB_ARGS_REQ( 2 )       );
+            mrb_define_method( mrb, smon_class, "wait",                 mrb_smon_wait,          MRB_ARGS_ARG( 2, 1 )    );
+            mrb_define_method( mrb, smon_class, "send",                 mrb_smon_send,          MRB_ARGS_ARG( 2, 1 )    );
 
             /* Class OpenXLSX */
             struct RClass * xlsx_class = mrb_define_class_under( mrb, mrb->kernel_module, "OpenXLSX", mrb->object_class );
-            mrb_define_method( mrb, xlsx_class, "initialize",   mrb_xlsx_initialize,        MRB_ARGS_REQ( 2 )       );
-            mrb_define_method( mrb, xlsx_class, "create",       mrb_xlsx_create,            MRB_ARGS_ARG( 1, 1 )    );
-            mrb_define_method( mrb, xlsx_class, "open",         mrb_xlsx_open,              MRB_ARGS_ARG( 1, 1 )    );
-            mrb_define_method( mrb, xlsx_class, "workbook",     mrb_xlsx_workbook,          MRB_ARGS_NONE()         );
-            mrb_define_method( mrb, xlsx_class, "sheet",        mrb_xlsx_worksheet,         MRB_ARGS_ARG( 1, 1 )    );
-            mrb_define_method( mrb, xlsx_class, "setSheetName", mrb_xlsx_set_seet_name,     MRB_ARGS_ARG( 1, 1 )    );
-            mrb_define_method( mrb, xlsx_class, "set_value",    mrb_xlsx_set_value,         MRB_ARGS_ARG( 2, 1 )    );
-            mrb_define_method( mrb, xlsx_class, "cell",         mrb_xlsx_cell,              MRB_ARGS_ARG( 1, 1 )    );
+            mrb_define_method( mrb, xlsx_class, "initialize",       mrb_xlsx_initialize,        MRB_ARGS_REQ( 2 )       );
+            mrb_define_method( mrb, xlsx_class, "create",           mrb_xlsx_create,            MRB_ARGS_ARG( 1, 1 )    );
+            mrb_define_method( mrb, xlsx_class, "open",             mrb_xlsx_open,              MRB_ARGS_ARG( 1, 1 )    );
+            mrb_define_method( mrb, xlsx_class, "workbook",         mrb_xlsx_workbook,          MRB_ARGS_NONE()         );
+            mrb_define_method( mrb, xlsx_class, "sheet",            mrb_xlsx_worksheet,         MRB_ARGS_ARG( 1, 1 )    );
+            mrb_define_method( mrb, xlsx_class, "setSheetName",     mrb_xlsx_set_seet_name,     MRB_ARGS_ARG( 1, 1 )    );
+            mrb_define_method( mrb, xlsx_class, "set_value",        mrb_xlsx_set_value,         MRB_ARGS_ARG( 2, 1 )    );
+            mrb_define_method( mrb, xlsx_class, "cell",             mrb_xlsx_cell,              MRB_ARGS_ARG( 1, 1 )    );
 
             /* exec mRuby Script */
             extern const uint8_t default_options[];

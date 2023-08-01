@@ -1,12 +1,12 @@
 def test_smon()
-  th_prn = CppThread.new
+  th_prn = WorkerThread.new
   th_s = Array.new
   opts = Args.new()
   (opts.size()).times do |idx|
     arg  = opts[idx]
     timer  = 30
     smon = Smon.new( arg )
-    th   = CppThread.new
+    th   = WorkerThread.new
     th_s.push( [ th, smon ] )
     th.run() do
       smon.send('0102030405060708090a0b0C0D0E0F', 0)

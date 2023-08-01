@@ -1,6 +1,6 @@
 print "mruby test script 2\n"
 
-th = CppThread.new
+th = WorkerThread.new
 th.run do
 xls = OpenXLSX.new
 xls.create('スプレッドシート.xlsx') do
