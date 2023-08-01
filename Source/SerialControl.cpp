@@ -9,6 +9,7 @@
  */
 
 #include "Entity.hpp"
+#include "RtsControl.hpp"
 #include "SerialControl.hpp"
 #include <boost/asio.hpp>
 #include <thread>
@@ -37,13 +38,17 @@ public:
         virtual void setRTS(void);
         virtual void clearRTS(void);
         virtual void close(void);
+        inline boost::asio::serial_port & ref_port(void)
+        {
+            return port;
+        }
 };
 
 SerialControlBoost::SerialControlBoost(const char * name, BaudRate bd, Parity pt, StopBit st, bool rts_ctrl)
   : port(io, name), _baudrate(bd), bit_num(1 + 8 + st)
 {
     if(pt != none) bit_num ++;
-    rts = createRtsControl(port.native_handle(), rts_ctrl);
+    rts = createRtsControl(rts_ctrl);
 
     port.set_option(serial_port_base::baud_rate(_baudrate));
     port.set_option(serial_port_base::character_size(8));
@@ -148,3 +153,10 @@ bool SerialControl::hasBaudRate(std::string & baud, Profile & info)
     }
     return false;
 }
+
+boost::asio::serial_port & getPortObject(SerialControl * obj)
+{
+    SerialControlBoost * ctrl = static_cast<SerialControlBoost *>(obj);
+    return ctrl->ref_port();
+}
+

@@ -11,6 +11,7 @@
 #ifndef __SerialControl_cpp__
 #define __SerialControl_cpp__
 
+#include "RtsControl.hpp"
 #include <string>
 #include <stdlib.h>
 
@@ -42,20 +43,12 @@ public:
         enum Parity     parity;
         enum StopBit    stop;
     };
-    class RtsContorl
-    {
-    public:
-        virtual void set(void) = 0;
-        virtual void clear(void) = 0;
-        virtual bool status(void) const = 0;
-    };
 
 protected:
-    virtual RtsContorl * createRtsControl(unsigned long int fd, bool ctrl);
+    virtual RtsContorl * createRtsControl(bool ctrl);
 public:
     static bool hasBaudRate(std::string & baud, Profile & info);
     static SerialControl * createObject(const std::string & name, SerialControl::BaudRate baud, SerialControl::Parity pt, SerialControl::StopBit st, bool rts);
-//    virtual ~SerialControl(void) = 0;
     virtual std::size_t read(unsigned char * data, std::size_t size) = 0;
     virtual std::size_t send(unsigned char * data, std::size_t size) = 0;
     virtual void setRTS(void) = 0;

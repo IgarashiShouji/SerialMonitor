@@ -220,13 +220,18 @@ static mrb_value mrb_core_reg_match(mrb_state* mrb, mrb_value self)
     }
     return mrb_bool_value(false);
 }
-
 static mrb_value mrb_core_reg_replace(mrb_state* mrb, mrb_value self)
 {
     char * org_ptr, * reg_ptr, * rep_ptr;
     mrb_get_args(mrb, "zzz", &org_ptr, &reg_ptr, &rep_ptr);
     auto result = std::regex_replace(org_ptr, std::regex(reg_ptr), rep_ptr);
     return mrb_str_new_cstr( mrb, result.c_str() );
+}
+static mrb_value mrb_core_gets(mrb_state* mrb, mrb_value self)
+{
+    std::string str;
+    std::getline(std::cin, str);
+    return mrb_str_new_cstr( mrb, str.c_str() );
 }
 
 /* class thread */
@@ -1026,13 +1031,14 @@ public:
         {
             /* Class Core */
             struct RClass * calc_class = mrb_define_class_under( mrb, mrb->kernel_module, "Core", mrb->object_class );
-            mrb_define_module_function(mrb, calc_class, "crc16",    mrb_core_crc16,         MRB_ARGS_ARG( 1, 1 )    );
-            mrb_define_module_function(mrb, calc_class, "crc8",     mrb_core_crc8,          MRB_ARGS_ARG( 1, 1 )    );
-            mrb_define_module_function(mrb, calc_class, "sum",      mrb_core_sum,           MRB_ARGS_ARG( 1, 1 )    );
-            mrb_define_module_function(mrb, calc_class, "float",    mrb_core_float,         MRB_ARGS_ARG( 1, 1 )    );
-            mrb_define_module_function(mrb, calc_class, "float_l",  mrb_core_float_l,       MRB_ARGS_ARG( 1, 1 )    );
-            mrb_define_module_function(mrb, calc_class, "reg_match",   mrb_core_reg_match,   MRB_ARGS_ARG( 2, 1 )    );
-            mrb_define_module_function(mrb, calc_class, "reg_replace", mrb_core_reg_replace, MRB_ARGS_ARG( 3, 1 )    );
+            mrb_define_module_function(mrb, calc_class, "crc16",        mrb_core_crc16,         MRB_ARGS_ARG( 1, 1 )    );
+            mrb_define_module_function(mrb, calc_class, "crc8",         mrb_core_crc8,          MRB_ARGS_ARG( 1, 1 )    );
+            mrb_define_module_function(mrb, calc_class, "sum",          mrb_core_sum,           MRB_ARGS_ARG( 1, 1 )    );
+            mrb_define_module_function(mrb, calc_class, "float",        mrb_core_float,         MRB_ARGS_ARG( 1, 1 )    );
+            mrb_define_module_function(mrb, calc_class, "float_l",      mrb_core_float_l,       MRB_ARGS_ARG( 1, 1 )    );
+            mrb_define_module_function(mrb, calc_class, "reg_match",    mrb_core_reg_match,     MRB_ARGS_ARG( 2, 1 )    );
+            mrb_define_module_function(mrb, calc_class, "reg_replace",  mrb_core_reg_replace,   MRB_ARGS_ARG( 3, 1 )    );
+            mrb_define_module_function(mrb, calc_class, "gets",         mrb_core_gets,          MRB_ARGS_ANY()          );
 
             /* Class options */
             struct RClass * opt_class = mrb_define_class_under( mrb, mrb->kernel_module, "Args", mrb->object_class );

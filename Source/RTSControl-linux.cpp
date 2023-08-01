@@ -8,15 +8,14 @@
  * (c) 2018 Shouji, Igarashi.
  */
 
+#include "RtsControl.hpp"
 #include "SerialControl.hpp"
-#include <boost/thread.hpp>
 #include <boost/asio.hpp>
 #include <sys/ioctl.h>
 
-using namespace boost;
-using namespace boost::asio;
+extern boost::asio::serial_port & getPortObject(SerialControl * obj);
 
-class RTSContorlLinux : public SerialControl::RtsContorl 
+class RTSContorlLinux : public RtsContorl
 {
 protected:
     int     fd;
@@ -39,7 +38,9 @@ void RTSContorlLinux::set(void)             { if(ctrl) { int data = TIOCM_RTS; i
 void RTSContorlLinux::clear(void)           { if(ctrl) { int data = TIOCM_RTS; ioctl(fd, TIOCMBIC, &data); } rts = false;  }
 bool RTSContorlLinux::status(void) const    { return rts; }
 
-SerialControl::RtsContorl * SerialControl::createRtsControl(unsigned long int fd, bool ctrl)
+RtsContorl * SerialControl::createRtsControl(bool ctrl)
 {
-    return new RTSContorlLinux(static_cast<int>(fd), ctrl);
+    boost::asio::serial_port & port = getPortObject(this);
+    auto fd = port.native_handle();
+    return new RTSContorlLinux(fd, ctrl);
 }
