@@ -93,6 +93,7 @@ std::size_t SerialControlBoost::read(unsigned char * data, std::size_t size)
     }
     catch(...)
     {
+        len = 0;
     }
     return len;
 }

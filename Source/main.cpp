@@ -227,12 +227,8 @@ static mrb_value mrb_core_reg_replace(mrb_state* mrb, mrb_value self)
     auto result = std::regex_replace(org_ptr, std::regex(reg_ptr), rep_ptr);
     return mrb_str_new_cstr( mrb, result.c_str() );
 }
-static mrb_value mrb_core_gets(mrb_state* mrb, mrb_value self)
-{
-    std::string str;
-    std::getline(std::cin, str);
-    return mrb_str_new_cstr( mrb, str.c_str() );
-}
+static mrb_value mrb_core_gets(mrb_state* mrb, mrb_value self);
+
 
 /* class thread */
 static mrb_value mrb_thread_initialize(mrb_state * mrb, mrb_value self);
@@ -247,6 +243,7 @@ static void mrb_thread_context_free(mrb_state * mrb, void * ptr);
 static mrb_value mrb_smon_initialize(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_smon_wait(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_smon_send(mrb_state * mrb, mrb_value self);
+static mrb_value mrb_smon_close(mrb_state * mrb, mrb_value self);
 static void mrb_smon_context_free(mrb_state * mrb, void * ptr);
 
 /* class OpenXLSX */
@@ -385,6 +382,7 @@ protected:
     std::vector<size_t>                         timer;
     std::map<SerialMonitor *, std::string> &    res_list;
     SerialControl *                             com;
+    MyEntity::OneShotTimerEventer<size_t> *     tevter;
     unsigned int                                cache_size;
     bool                                        enable;
     ReciveInfo                                  cache;
@@ -394,7 +392,7 @@ protected:
     std::list<ReciveInfo>                       rcv_cache;
 public:
     SerialMonitor(mrb_value & self, const char * arg_, std::vector<size_t> & timer_default, std::map<SerialMonitor *, std::string> & list, std::string def_boud, bool rts_ctrl)
-      : arg(arg_), timer(timer_default), res_list(list), com(nullptr), cache_size(1024), enable(false)
+      : arg(arg_), timer(timer_default), res_list(list), com(nullptr), tevter(nullptr), cache_size(1024), enable(false)
     {   /* split */
         std::vector<std::string> args;
         for( auto&& item : split( arg, "," ) )
@@ -405,7 +403,34 @@ public:
         std::string baud(def_boud);
         if(1 < args.size())
         {
-            baud = args[1];
+            for(auto idx = 1; idx < args.size(); idx ++)
+            {
+                auto & arg = args[idx];
+                if( std::regex_match(arg, std::regex("GAP=[0-9]+")))
+                {
+                    auto str_num = std::regex_replace(arg, std::regex("GAP=([0-9]+)"), "$1");
+                    timer[0] = stoi(str_num);
+                }
+                else if( std::regex_match(arg, std::regex("TO1=[0-9]+")))
+                {
+                    auto str_num = std::regex_replace(arg, std::regex("TO1=([0-9]+)"), "$1");
+                    timer[1] = stoi(str_num);
+                }
+                else if( std::regex_match(arg, std::regex("TO2=[0-9]+")))
+                {
+                    auto str_num = std::regex_replace(arg, std::regex("TO2=([0-9]+)"), "$1");
+                    timer[2] = stoi(str_num);
+                }
+                else if( std::regex_match(arg, std::regex("TO3=[0-9]+")))
+                {
+                    auto str_num = std::regex_replace(arg, std::regex("TO3=([0-9]+)"), "$1");
+                    timer[3] = stoi(str_num);
+                }
+                else
+                {
+                    baud = arg;
+                }
+            }
         }
         SerialControl::Profile info;
         if( SerialControl::hasBaudRate(baud, info) )
@@ -429,27 +454,42 @@ public:
         }
         rcv_cache.clear();
         res_list.erase(this);
+        th_recive.join();
     }
     void rts_ctrl( bool state )
     {
     }
+    void close(void)
+    {
+        com->close();
+        delete com;
+        com = nullptr;
+    }
     void send(const std::string data, unsigned int timer)
     {
-        auto s_len = data.size();
-        if( ( 1 < s_len ) && !( 1 & s_len ) )
-        {   /* even charactor count and more size of 1 byte */
-            auto max = s_len / 2;
-            auto len = 0;
-            auto bin = new unsigned  char [max];
-            for(auto idx = 0; len < max; len ++)
-            {
-                unsigned char val = (toValue(data.at(idx ++)) << 4);
-                val |= toValue(data.at(idx ++));
-                bin[len] = val;
+        if( nullptr != com)
+        {
+            auto s_len = data.size();
+            if( ( 1 < s_len ) && !( 1 & s_len ) )
+            {   /* even charactor count and more size of 1 byte */
+                auto max = s_len / 2;
+                auto len = 0;
+                auto bin = new unsigned  char [max];
+                for(auto idx = 0; len < max; len ++)
+                {
+                    unsigned char val = (toValue(data.at(idx ++)) << 4);
+                    val |= toValue(data.at(idx ++));
+                    bin[len] = val;
+                }
+                com->send(bin, len);
+                std::this_thread::sleep_for(std::chrono::milliseconds(timer));
+                if( nullptr != tevter)
+                {
+                    std::lock_guard<std::mutex> lock(mtx);
+                    tevter->restart();
+                }
+                delete [] bin;
             }
-            com->send(bin, len);
-            std::this_thread::sleep_for(std::chrono::milliseconds(timer));
-            delete [] bin;
         }
     }
     SerialMonitor::State recive_wait(std::string & data)
@@ -481,12 +521,21 @@ public:
     {
         enable = true;
         MyEntity::OneShotTimerEventer timeout_evter(timer, *this);
+        tevter = &timeout_evter;
         while(enable)
         {
+            if(nullptr == com)
+            {
+                break;
+            }
             unsigned char data;
             size_t len = com->read(&(data), 1);
-            timeout_evter.restart();
+            if(0 == len)
+            {
+                break;
+            }
             std::lock_guard<std::mutex> lock(mtx);
+            timeout_evter.restart();
             if(0 < len)
             {
                 cache.buff[cache.cnt] = data;
@@ -502,6 +551,12 @@ public:
             }
         }
         enable = false;
+        std::lock_guard<std::mutex> lock(mtx);
+        cache.state = CLOSE;
+        rcv_cache.push_back(cache);
+        cache.buff  = new unsigned char [cache_size];
+        cache.cnt   = 0;
+        cond.notify_one();
     }
     virtual void handler(unsigned int idx)
     {
@@ -638,6 +693,22 @@ public:
         std::list<SerialMonitor *> keys;
         for( auto & p : res_list )  keys.push_back(p.first);
         for( auto & ptr : keys )    delete ptr;
+    }
+    void exit(int code)
+    {
+    }
+    mrb_value core_gets(mrb_state* mrb, mrb_value self)
+    {
+        std::string str("");
+        try
+        {
+            std::getline(std::cin, str);
+        }
+        catch(...)
+        {
+            exit(0);
+        }
+        return mrb_str_new_cstr( mrb, str.c_str() );
     }
     mrb_value opt_init(mrb_state * mrb, mrb_value self)
     {
@@ -831,6 +902,15 @@ public:
         if(nullptr != smon)
         {
             smon->send(msg, timer);
+        }
+        return self;
+    }
+    mrb_value smon_close(mrb_state * mrb, mrb_value self)
+    {
+        SerialMonitor * smon = static_cast<SerialMonitor * >(DATA_PTR(self));
+        if(nullptr != smon)
+        {
+            smon->close();
         }
         return self;
     }
@@ -1067,6 +1147,7 @@ public:
             mrb_define_method( mrb, smon_class, "initialize",           mrb_smon_initialize,    MRB_ARGS_REQ( 2 )       );
             mrb_define_method( mrb, smon_class, "wait",                 mrb_smon_wait,          MRB_ARGS_ARG( 2, 1 )    );
             mrb_define_method( mrb, smon_class, "send",                 mrb_smon_send,          MRB_ARGS_ARG( 2, 1 )    );
+            mrb_define_method( mrb, smon_class, "close",                mrb_smon_close,         MRB_ARGS_NONE()         );
 
             /* Class OpenXLSX */
             struct RClass * xlsx_class = mrb_define_class_under( mrb, mrb->kernel_module, "OpenXLSX", mrb->object_class );
@@ -1115,6 +1196,8 @@ Application * Application::getObject(void)
     return Application::obj;
 }
 
+mrb_value mrb_core_gets(mrb_state* mrb, mrb_value self)             { Application * app = Application::getObject(); return app->core_gets(mrb, self);           }
+
 mrb_value mrb_opt_initialize(mrb_state * mrb, mrb_value self)       { Application * app = Application::getObject(); return app->opt_init(mrb, self);            }
 mrb_value mrb_opt_size(mrb_state * mrb, mrb_value self)             { Application * app = Application::getObject(); return app->opt_size(mrb, self);            }
 mrb_value mrb_opt_get(mrb_state * mrb, mrb_value self)              { Application * app = Application::getObject(); return app->opt_get(mrb, self);             }
@@ -1129,6 +1212,7 @@ mrb_value mrb_thread_notify(mrb_state * mrb, mrb_value self)        { Applicatio
 mrb_value mrb_smon_initialize(mrb_state * mrb, mrb_value self)      { Application * app = Application::getObject(); return app->smon_init(mrb, self);           }
 mrb_value mrb_smon_wait(mrb_state * mrb, mrb_value self)            { Application * app = Application::getObject(); return app->smon_wait(mrb, self);           }
 mrb_value mrb_smon_send(mrb_state * mrb, mrb_value self)            { Application * app = Application::getObject(); return app->smon_send(mrb, self);           }
+mrb_value mrb_smon_close(mrb_state * mrb, mrb_value self)           { Application * app = Application::getObject(); return app->smon_close(mrb, self);          }
 
 mrb_value mrb_xlsx_initialize(mrb_state * mrb, mrb_value self)      { Application * app = Application::getObject(); return app->xlsx_init(mrb, self);           }
 mrb_value mrb_xlsx_create(mrb_state * mrb, mrb_value self)          { Application * app = Application::getObject(); return app->xlsx_create(mrb, self);         }
@@ -1174,7 +1258,7 @@ int main(int argc, char * argv[])
     {
         boost::program_options::options_description desc("smon.exe [Options]");
         desc.add_options()
-            ("baud,b",          boost::program_options::value<std::string>(),   "baud rate ex) -b 9600E1")
+            ("baud,b",          boost::program_options::value<std::string>(),   "baud rate      Default 1200O1 ex) -b 9600E1")
             ("gap,g",           boost::program_options::value<unsigned int>(),  "time out tick. Default   30 ( 30 [ms])")
             ("timer,t",         boost::program_options::value<unsigned int>(),  "time out tick. Default  300 (300 [ms])")
             ("timer2",          boost::program_options::value<unsigned int>(),  "time out tick. Default  500 (500 [ms])")
