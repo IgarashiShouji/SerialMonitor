@@ -11,7 +11,6 @@
 #ifndef __SerialControl_cpp__
 #define __SerialControl_cpp__
 
-#include "RtsControl.hpp"
 #include <string>
 #include <stdlib.h>
 
@@ -44,8 +43,6 @@ public:
         enum StopBit    stop;
     };
 
-protected:
-    virtual RtsContorl * createRtsControl(bool ctrl);
 public:
     static bool hasBaudRate(std::string & baud, Profile & info);
     static SerialControl * createObject(const std::string & name, SerialControl::BaudRate baud, SerialControl::Parity pt, SerialControl::StopBit st, bool rts);

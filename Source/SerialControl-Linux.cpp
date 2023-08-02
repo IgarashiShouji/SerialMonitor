@@ -9,17 +9,32 @@
  */
 
 #include "Entity.hpp"
-#include "RtsControl.hpp"
 #include "SerialControl.hpp"
 #include <boost/asio.hpp>
 #include <thread>
 #include <chrono>
 #include <stdio.h>
 
+#include <unistd.h>
+
 using namespace MyEntity;
 using namespace boost::asio;
 using namespace std;
 
+
+class RtsContorl
+{
+protected:
+    int     fd;
+    bool    ctrl;
+    bool    rts;
+public:
+    RtsContorl(int _fd, bool _ctrl) : fd(_fd), ctrl(_ctrl), rts(false) { }
+    virtual ~RtsContorl(void)                                          { }
+    virtual void set(void)              { if(ctrl) { int data = TIOCM_RTS; ioctl(fd, TIOCMBIS, &data); } rts = true;   }
+    virtual void clear(void)            { if(ctrl) { int data = TIOCM_RTS; ioctl(fd, TIOCMBIC, &data); } rts = false;  }
+    virtual bool status(void) const     { return rts; }
+};
 
 class SerialControlBoost : public SerialControl
 {
@@ -28,28 +43,24 @@ protected:
         boost::asio::serial_port    port;
         BaudRate                    _baudrate;
         unsigned char               bit_num;
-        RtsContorl *                rts;
+        RtsContorl                  rts;
+        int                         fd_pipe[2];
 
 public:
-        SerialControlBoost(const char * name, BaudRate bd, Parity pt, StopBit st, bool rts);
+        SerialControlBoost(const char * name, BaudRate bd, Parity pt, StopBit st, bool rts_ctrl);
         virtual ~SerialControlBoost(void);
         virtual std::size_t read(unsigned char * data, std::size_t size);
         virtual std::size_t send(unsigned char * data, std::size_t size);
         virtual void setRTS(void);
         virtual void clearRTS(void);
         virtual void close(void);
-        inline boost::asio::serial_port & ref_port(void)
-        {
-            return port;
-        }
 };
 
 SerialControlBoost::SerialControlBoost(const char * name, BaudRate bd, Parity pt, StopBit st, bool rts_ctrl)
-  : port(io, name), _baudrate(bd), bit_num(1 + 8 + st)
+  : port(io, name), _baudrate(bd), bit_num(1 + 8 + st), rts(port.native_handle(), rts_ctrl)
 {
+    auto result =  pipe(fd_pipe);
     if(pt != none) bit_num ++;
-    rts = createRtsControl(rts_ctrl);
-
     port.set_option(serial_port_base::baud_rate(_baudrate));
     port.set_option(serial_port_base::character_size(8));
     port.set_option(serial_port_base::flow_control(serial_port_base::flow_control::none));
@@ -69,12 +80,21 @@ SerialControlBoost::SerialControlBoost(const char * name, BaudRate bd, Parity pt
     clearRTS();
 }
 
-void SerialControlBoost::close(void)
+static void fdclose(int fd)
 {
-    port.close();
+    close(fd);
 }
 SerialControlBoost::~SerialControlBoost(void)
 {
+    close();
+    fdclose(fd_pipe[0]);
+    fdclose(fd_pipe[1]);
+}
+
+void SerialControlBoost::close(void)
+{
+    static const uint8_t cmd = 1;
+    auto w_size = write(fd_pipe[1], &cmd, sizeof(cmd));
     port.close();
 }
 
@@ -85,16 +105,18 @@ std::size_t SerialControlBoost::read(unsigned char * data, std::size_t size)
     {
         if( port.is_open() )
         {
-            len = port.read_some(buffer(data, size));
-#if 0
-    Resteart Response timer
-#endif
+            auto fd = port.native_handle();
+            fd_set fds;
+            FD_ZERO(&fds);
+            FD_SET(fd, &fds);
+            FD_SET(fd_pipe[0], &fds);
+            auto max =fd; 
+            if( max < fd_pipe[0] ) { max = fd_pipe[0]; }
+            auto result = select( max+1, &fds, NULL, NULL, NULL );
+            if( FD_ISSET(fd_pipe[0], &fds) )    { return 0; }
+            if( FD_ISSET(fd, &fds) )            { len = port.read_some(buffer(data, size)); }
         }
-    }
-    catch(...)
-    {
-        len = 0;
-    }
+    } catch(...) { }
     return len;
 }
 
@@ -107,16 +129,13 @@ std::size_t SerialControlBoost::send(unsigned char * data, std::size_t size)
         std::size_t     wlen      = port.write_some(buffer(data, size));
         std::this_thread::sleep_for(std::chrono::milliseconds(send_time));
         clearRTS();
-#if 0
-    Start Response Timer
-#endif
         return wlen;
     }
     return 0;
 }
 
-void SerialControlBoost::setRTS(void)   { rts->set();   }
-void SerialControlBoost::clearRTS(void) { rts->clear(); }
+void SerialControlBoost::setRTS(void)   { rts.set();   }
+void SerialControlBoost::clearRTS(void) { rts.clear(); }
 
 SerialControl * SerialControl::createObject(const string & name, BaudRate baud, Parity pt, StopBit st, bool rts)
 {
@@ -154,10 +173,3 @@ bool SerialControl::hasBaudRate(std::string & baud, Profile & info)
     }
     return false;
 }
-
-boost::asio::serial_port & getPortObject(SerialControl * obj)
-{
-    SerialControlBoost * ctrl = static_cast<SerialControlBoost *>(obj);
-    return ctrl->ref_port();
-}
-

@@ -2,13 +2,12 @@ TARGET=smon
 CPP=x86_64-w64-mingw32-g++-posix
 AR=x86_64-w64-mingw32-gcc-ar-posix
 
-CFLAGS_COMMON=-I ./Include -I ./MyUtilities/Include -I ./boost-x64/include -I ./mruby/include -I ./OpenXLSX/OpenXLSX -I ./OpenXLSX/OpenXLSX/headers -I ./OpenXLSX/build/OpenXLSX -I ./OpenXLSX/Examples/external/nowide/include
-LIBS_COMMON=-L ./Objects -L ./boost-x64/lib -L ./MyUtilities -L OpenXLSX/build/output/ -lSerialMonitor -lUtilities -lmruby -lboost_program_options -lOpenXLSX
+CFLAGS_COMMON=-I ./Include -I ./MyUtilities/Include -I ./mruby/include -I ./OpenXLSX/OpenXLSX -I ./OpenXLSX/OpenXLSX/headers -I ./OpenXLSX/build/OpenXLSX -I ./OpenXLSX/Examples/external/nowide/include
+LIBS_COMMON=-L ./Objects -L ./MyUtilities -L OpenXLSX/build/output/ -L ./lz4/lib/ -lSerialMonitor -lUtilities -lmruby -lOpenXLSX -llz4
 
-CFLAGS=-g -I /usr/x86_64-w64-mingw32/include $(CFLAGS_COMMON) -I ./mruby/build/cross-mingw-winetest/include -pipe -O3 -march=native
-LIBS=-static -L ./mruby/build/cross-mingw-winetest/lib $(LIBS_COMMON) -lws2_32
-AR_OBJS=Objects/SerialControl.o Objects/RTSControl-mingw.o Objects/default_options.o Objects/default_script.o
-#MAIN_DEPS=MyUtilities/libUtilities.a mruby/build/cross-mingw-winetest/lib/libmruby.a OpenXLSX/build/output/libOpenXLSX.a Objects/libSerialMonitor.a Objects
+CFLAGS=-g -I /usr/x86_64-w64-mingw32/include -I ./boost-x64/include $(CFLAGS_COMMON) -I ./mruby/build/cross-mingw-winetest/include -pipe -O3 -march=native
+LIBS=-static -L ./mruby/build/cross-mingw-winetest/lib -L ./boost-x64/lib $(LIBS_COMMON) -lboost_program_options -lws2_32
+AR_OBJS=Objects/SerialControl-mingw.o Objects/default_options.o Objects/default_script.o
 MAIN_DEPS=mruby/build/cross-mingw-winetest/lib/libmruby.a OpenXLSX/build/output/libOpenXLSX.a Objects/libSerialMonitor.a boost-x64/lib/libboost_program_options.a Objects
 CPPFLAGS=-std=c++17 $(CFLAGS)
 
@@ -28,10 +27,7 @@ document: Doxygen/html/index.html
 Doxygen:
 	mkdir -p Doxygen
 
-Doxygen/html/index.html: Doxyfile Doxygen \
-							Source/main.cpp Include/SerialControl.hpp \
-							Source/SerialControl.cpp Include/SerialControl.hpp \
-							Source/RTSControl-mingw.cpp Include/SerialControl.hpp
+Doxygen/html/index.html: Doxygen Doxyfile Source/main.cpp Source/SerialControl-mingw.cpp Include/SerialControl.hpp
 	doxygen Doxyfile
 
 boost-x64/lib/libboost_program_options.a:
@@ -39,9 +35,11 @@ boost-x64/lib/libboost_program_options.a:
 MyUtilities/libUtilities.a:
 	/bin/bash build-cross-wsl-MyUtilities.sh
 mruby/build/cross-mingw-winetest/lib/libmruby.a:
-	/bin/bash --norc build-cross-wsl-mruby.sh
+	/bin/bash build-cross-wsl-mruby.sh
 OpenXLSX/build/output/libOpenXLSX.a:
 	/bin/bash build-cross-wsl-OpenXLSX.sh
+lz4/lib/liblz4.a:
+	/bin/bash build-cross-wsl-lz4.sh
 
 Objects/libSerialMonitor.a: $(AR_OBJS)
 	$(AR) rcs $@ $^
@@ -51,9 +49,8 @@ Objects/%.o: Source/%.cpp
 Objects/%.o: Source/%.c
 	$(CPP) $(CFLAGS) -c -o $@ $<
 
-Objects/main.o: Source/main.cpp Include/SerialControl.hpp MyUtilities/libUtilities.a mruby/build/cross-mingw-winetest/lib/libmruby.a OpenXLSX/build/output/libOpenXLSX.a boost-x64/lib/libboost_program_options.a
-Objects/SerialControl.o: Source/SerialControl.cpp         MyUtilities/libUtilities.a mruby/build/cross-mingw-winetest/lib/libmruby.a OpenXLSX/build/output/libOpenXLSX.a boost-x64/lib/libboost_program_options.a
-Objects/RTSControl-mingw.o: Source/RTSControl-mingw.cpp   MyUtilities/libUtilities.a mruby/build/cross-mingw-winetest/lib/libmruby.a OpenXLSX/build/output/libOpenXLSX.a boost-x64/lib/libboost_program_options.a
+Objects/main.o:                Source/main.cpp                Include/SerialControl.hpp MyUtilities/libUtilities.a mruby/build/cross-mingw-winetest/lib/libmruby.a OpenXLSX/build/output/libOpenXLSX.a boost-x64/lib/libboost_program_options.a lz4/lib/liblz4.a
+Objects/SerialControl-mingw.o: Source/SerialControl-mingw.cpp Include/SerialControl.hpp MyUtilities/libUtilities.a mruby/build/cross-mingw-winetest/lib/libmruby.a OpenXLSX/build/output/libOpenXLSX.a boost-x64/lib/libboost_program_options.a lz4/lib/liblz4.a
 Objects/default_options.o: Source/default_options.c
 Objects/default_script.o: Source/default_script.c
 Source/default_options.c: Source/default_options.rb mruby/build/cross-mingw-winetest/lib/libmruby.a
