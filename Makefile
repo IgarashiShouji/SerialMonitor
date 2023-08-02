@@ -8,7 +8,7 @@ LIBS_COMMON=-L ./Objects -L ./MyUtilities -L OpenXLSX/build/output/ -lSerialMoni
 # on Linux
 CFLAGS=-g $(CFLAGS_COMMON) -I ./mruby/build/host/include -pipe -O3 -march=native
 LIBS=-L ./mruby/build/host/lib $(LIBS_COMMON) -lpthread
-AR_OBJS=Objects/SerialControl.o Objects/RTSControl-linux.o Objects/default_options.o Objects/default_script.o
+AR_OBJS=Objects/SerialControlLinux.o Objects/default_options.o Objects/default_script.o
 MAIN_DEPS=Objects/main.o MyUtilities/libUtilities.a mruby/build/host/lib/libmruby.a OpenXLSX/build/output/libOpenXLSX.a Objects/libSerialMonitor.a Objects
 CPPFLAGS=-std=c++17 $(CFLAGS)
 
@@ -36,8 +36,8 @@ Doxygen:
 
 Doxygen/html/index.html: Doxyfile Doxygen \
 							Source/main.cpp Include/SerialControl.hpp \
-							Source/SerialControl.cpp Include/SerialControl.hpp \
-							Source/RTSControl-mingw.cpp Include/SerialControl.hpp
+							Source/SerialControlLinux.cpp Include/SerialControl.hpp \
+							Include/SerialControl.hpp
 	doxygen Doxyfile
 
 MyUtilities/libUtilities.a: MyUtilities
@@ -59,8 +59,7 @@ Objects/%.o: Source/%.c
 
 MyUtilities/Include/Entity.hpp: MyUtilities
 Objects/main.o: Source/main.cpp Include/SerialControl.hpp MyUtilities/Include/Entity.hpp mruby/include/mruby.h OpenXLSX/build/output/libOpenXLSX.a
-Objects/SerialControl.o: Source/SerialControl.cpp Include/SerialControl.hpp MyUtilities/Include/Entity.hpp
-Objects/RTSControl-linux.o: Source/RTSControl-linux.cpp Include/SerialControl.hpp MyUtilities/Include/Entity.hpp
+Objects/SerialControlLinux.o: Source/SerialControlLinux.cpp Include/SerialControl.hpp MyUtilities/Include/Entity.hpp
 Objects/default_options.o: Source/default_options.c
 Objects/default_script.o: Source/default_script.c
 Source/default_options.c: Source/default_options.rb mruby/build/host/lib/libmruby.a
