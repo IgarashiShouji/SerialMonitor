@@ -33,7 +33,7 @@ public:
     virtual ~RtsContorl(void)                                          { }
     virtual void set(void)              { if(ctrl) { int data = TIOCM_RTS; ioctl(fd, TIOCMBIS, &data); } rts = true;   }
     virtual void clear(void)            { if(ctrl) { int data = TIOCM_RTS; ioctl(fd, TIOCMBIC, &data); } rts = false;  }
-    virtual bool status(void) const     { return rts; }
+    virtual bool status(void) const     { if(ctrl) { return rts; } return false; }
 };
 
 class SerialControlBoost : public SerialControl
@@ -51,6 +51,7 @@ public:
         virtual ~SerialControlBoost(void);
         virtual std::size_t read(unsigned char * data, std::size_t size);
         virtual std::size_t send(unsigned char * data, std::size_t size);
+        virtual bool rts_status(void) const;
         virtual void setRTS(void);
         virtual void clearRTS(void);
         virtual void close(void);
@@ -134,8 +135,9 @@ std::size_t SerialControlBoost::send(unsigned char * data, std::size_t size)
     return 0;
 }
 
-void SerialControlBoost::setRTS(void)   { rts.set();   }
-void SerialControlBoost::clearRTS(void) { rts.clear(); }
+bool SerialControlBoost::rts_status(void) const { return rts.status(); }
+void SerialControlBoost::setRTS(void)           { rts.set();   }
+void SerialControlBoost::clearRTS(void)         { rts.clear(); }
 
 SerialControl * SerialControl::createObject(const string & name, BaudRate baud, Parity pt, StopBit st, bool rts)
 {

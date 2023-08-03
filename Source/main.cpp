@@ -563,12 +563,15 @@ public:
         static const enum State evt_state[] = { GAP, TIME_OUT_1, TIME_OUT_2, TIME_OUT_3 };
         if(idx < __ArrayCount(evt_state))
         {
-            std::lock_guard<std::mutex> lock(mtx);
-            cache.state = evt_state[idx];
-            rcv_cache.push_back(cache);
-            cache.buff  = new unsigned char [cache_size];
-            cache.cnt   = 0;
-            cond.notify_one();
+            if( !com->rts_status() )
+            {
+                std::lock_guard<std::mutex> lock(mtx);
+                cache.state = evt_state[idx];
+                rcv_cache.push_back(cache);
+                cache.buff = new unsigned char [cache_size];
+                cache.cnt  = 0;
+                cond.notify_one();
+            }
         }
     }
 };
