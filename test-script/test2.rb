@@ -2,9 +2,8 @@ print "mruby test script 2\n"
 
 th = WorkerThread.new
 th.run do
-xls = OpenXLSX.new
-xls.create('スプレッドシート.xlsx') do
-  xls.workbook do
+  xls = OpenXLSX.new
+  xls.create('スプレッドシート.xlsx') do
     xls.sheet("Sheet1") do
       xls.setSheetName("test sheet")
       xls.set_value('A3', 'test data')
@@ -12,16 +11,13 @@ xls.create('スプレッドシート.xlsx') do
       xls.set_value('A5', 0.1)
     end
   end
-end
-xls.open('スプレッドシート.xlsx') do
-  xls.workbook do
+  xls.open('スプレッドシート.xlsx') do
     xls.sheet("test sheet") do
       printf("A3: %s\n", xls.cell('A3'));
       printf("A4: %d\n", xls.cell('A4'));
       printf("A5: %f\n", xls.cell('A5'));
     end
   end
-end
 end
 th.join
 

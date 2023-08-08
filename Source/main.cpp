@@ -210,6 +210,34 @@ static mrb_value mrb_core_float_l(mrb_state* mrb, mrb_value self)
     }
     return mrb_nil_value();
 }
+static mrb_value mrb_core_to_hex(mrb_state* mrb, mrb_value self)
+{
+    union
+    {
+        float       f;
+        mrb_int     val;
+        uint8_t     data[4];
+        uint16_t    data16[2];
+        uint32_t    data32;
+    } num;
+    char str_data[8+1];
+    char * type_ptr;
+    mrb_get_args(mrb, "zi", &type_ptr, &num);
+    std::string type(type_ptr);
+    if(("int16" == type) || ("uint16" == type))
+    {
+        sprintf(str_data, "%04X", num.data16[0]);
+        return mrb_str_new_cstr( mrb, str_data );
+    }
+    if("float" == type)
+    {
+        mrb_float mrb_f;
+        mrb_get_args(mrb, "zf", &type_ptr, &mrb_f);
+        num.f = mrb_f;
+    }
+    sprintf(str_data, "%08X", num.data32);
+    return mrb_str_new_cstr( mrb, str_data );
+}
 static mrb_value mrb_core_reg_match(mrb_state* mrb, mrb_value self)
 {
     char * org_ptr, * reg_ptr;
@@ -250,7 +278,6 @@ static void mrb_smon_context_free(mrb_state * mrb, void * ptr);
 static mrb_value mrb_xlsx_initialize(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_xlsx_create(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_xlsx_open(mrb_state * mrb, mrb_value self);
-static mrb_value mrb_xlsx_workbook(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_xlsx_worksheet(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_xlsx_set_seet_name(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_xlsx_set_value(mrb_state * mrb, mrb_value self);
@@ -940,6 +967,7 @@ public:
             {
                 struct RString * s = mrb_str_ptr(argv[0]);
                 xlsx->create(RSTR_PTR(s));
+                xlsx->workbook();
                 mrb_value ret = mrb_yield_argv(mrb, proc, 0, nullptr);
                 xlsx->save();
                 xlsx->close();
@@ -961,28 +989,12 @@ public:
             {
                 struct RString * s = mrb_str_ptr(argv[0]);
                 xlsx->open(RSTR_PTR(s));
-                mrb_value ret = mrb_yield_argv(mrb, proc, 0, nullptr);
-                return ret;
-            }
-        }
-        return mrb_nil_value();
-        return mrb_nil_value();
-    }
-    mrb_value xlsx_workbook(mrb_state * mrb, mrb_value self)
-    {
-        mrb_value ret  = mrb_nil_value();
-        mrb_value proc = mrb_nil_value();
-        mrb_get_args(mrb, "&", &proc);
-        if (!mrb_nil_p(proc))
-        {
-            OpenXLSXCtrl * xlsx = static_cast< OpenXLSXCtrl * >(DATA_PTR(self));
-            if(nullptr != xlsx)
-            {
                 xlsx->workbook();
                 mrb_value ret = mrb_yield_argv(mrb, proc, 0, nullptr);
                 return ret;
             }
         }
+        return mrb_nil_value();
         return mrb_nil_value();
     }
     mrb_value xlsx_worksheet(mrb_state * mrb, mrb_value self)
@@ -1119,6 +1131,7 @@ public:
             mrb_define_module_function(mrb, calc_class, "sum",          mrb_core_sum,           MRB_ARGS_ARG( 1, 1 )    );
             mrb_define_module_function(mrb, calc_class, "float",        mrb_core_float,         MRB_ARGS_ARG( 1, 1 )    );
             mrb_define_module_function(mrb, calc_class, "float_l",      mrb_core_float_l,       MRB_ARGS_ARG( 1, 1 )    );
+            mrb_define_module_function(mrb, calc_class, "to_hex",       mrb_core_to_hex,        MRB_ARGS_ARG( 2, 1 )    );
             mrb_define_module_function(mrb, calc_class, "reg_match",    mrb_core_reg_match,     MRB_ARGS_ARG( 2, 1 )    );
             mrb_define_module_function(mrb, calc_class, "reg_replace",  mrb_core_reg_replace,   MRB_ARGS_ARG( 3, 1 )    );
             mrb_define_module_function(mrb, calc_class, "gets",         mrb_core_gets,          MRB_ARGS_ANY()          );
@@ -1157,7 +1170,6 @@ public:
             mrb_define_method( mrb, xlsx_class, "initialize",       mrb_xlsx_initialize,        MRB_ARGS_REQ( 2 )       );
             mrb_define_method( mrb, xlsx_class, "create",           mrb_xlsx_create,            MRB_ARGS_ARG( 1, 1 )    );
             mrb_define_method( mrb, xlsx_class, "open",             mrb_xlsx_open,              MRB_ARGS_ARG( 1, 1 )    );
-            mrb_define_method( mrb, xlsx_class, "workbook",         mrb_xlsx_workbook,          MRB_ARGS_NONE()         );
             mrb_define_method( mrb, xlsx_class, "sheet",            mrb_xlsx_worksheet,         MRB_ARGS_ARG( 1, 1 )    );
             mrb_define_method( mrb, xlsx_class, "setSheetName",     mrb_xlsx_set_seet_name,     MRB_ARGS_ARG( 1, 1 )    );
             mrb_define_method( mrb, xlsx_class, "set_value",        mrb_xlsx_set_value,         MRB_ARGS_ARG( 2, 1 )    );
@@ -1220,7 +1232,6 @@ mrb_value mrb_smon_close(mrb_state * mrb, mrb_value self)           { Applicatio
 mrb_value mrb_xlsx_initialize(mrb_state * mrb, mrb_value self)      { Application * app = Application::getObject(); return app->xlsx_init(mrb, self);           }
 mrb_value mrb_xlsx_create(mrb_state * mrb, mrb_value self)          { Application * app = Application::getObject(); return app->xlsx_create(mrb, self);         }
 mrb_value mrb_xlsx_open(mrb_state * mrb, mrb_value self)            { Application * app = Application::getObject(); return app->xlsx_open(mrb, self);           }
-mrb_value mrb_xlsx_workbook(mrb_state * mrb, mrb_value self)        { Application * app = Application::getObject(); return app->xlsx_workbook(mrb, self);       }
 mrb_value mrb_xlsx_worksheet(mrb_state * mrb, mrb_value self)       { Application * app = Application::getObject(); return app->xlsx_worksheet(mrb, self);      }
 mrb_value mrb_xlsx_set_seet_name(mrb_state * mrb, mrb_value self)   { Application * app = Application::getObject(); return app->xlsx_set_sheet_name(mrb, self); }
 mrb_value mrb_xlsx_set_value(mrb_state * mrb, mrb_value self)       { Application * app = Application::getObject(); return app->xlsx_set_value(mrb, self);      }

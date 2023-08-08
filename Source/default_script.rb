@@ -44,14 +44,16 @@ while true do
   if 'quit' == str then
     break;
   end
-  idx = 0
-  if Core.reg_match(str, ':') then
-    idx = (Core.reg_replace(str, ':.*$', '')).to_i
+  if 0 < str.length then
+    idx = 0
+    if Core.reg_match(str, ':') then
+      idx = (Core.reg_replace(str, ':.*$', '')).to_i
+    end
+    msg = Core.reg_replace(str, '^.*:', '')
+    ( smon, th_ctrl, idx_, arg ) = objs[idx]
+    smon.send(msg, 0)
+    printf("%d:%s: send('%s')\n", idx, arg, msg)
   end
-  msg = Core.reg_replace(str, '^.*:', '')
-  ( smon, th_ctrl, idx_, arg ) = objs[idx]
-  smon.send(msg, 0)
-  printf("%d:%s: send('%s')\n", idx, arg, msg)
 end
 
 objs.each do |items|
