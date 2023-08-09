@@ -272,7 +272,7 @@ static mrb_value mrb_core_file_timestamp(mrb_state* mrb, mrb_value self)
     auto time = ( std::chrono::duration_cast<std::chrono::seconds>(ftime.time_since_epoch()) ).count();
     const std::tm * ltime = std::localtime(&time);
     std::ostringstream timestamp;
-    timestamp << std::put_time(ltime, "%Y/%m/%d");
+    timestamp << std::put_time(ltime, "%c");
     return mrb_str_new_cstr( mrb, (timestamp.str()).c_str() );
 }
 
@@ -284,6 +284,13 @@ static mrb_value mrb_thread_join(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_thread_sync(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_thread_wait(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_thread_notify(mrb_state * mrb, mrb_value self);
+static mrb_value mrb_thread_ms_sleep(mrb_state * mrb, mrb_value self)
+{
+    mrb_int tick;
+    mrb_get_args(mrb, "i", &tick);
+    std::this_thread::sleep_for(std::chrono::milliseconds(tick));
+    return mrb_nil_value();
+}
 static void mrb_thread_context_free(mrb_state * mrb, void * ptr);
 
 /* class SerialMonitor */
@@ -1166,6 +1173,7 @@ public:
 
             /* Class Thread */
             struct RClass * thread_class = mrb_define_class_under( mrb, mrb->kernel_module, "WorkerThread", mrb->object_class );
+            mrb_define_module_function( mrb, thread_class, "ms_sleep",  mrb_thread_ms_sleep,    MRB_ARGS_ARG( 1, 1 )    );
             mrb_define_method( mrb, thread_class, "initialize",         mrb_thread_initialize,  MRB_ARGS_ANY()          );
             mrb_define_method( mrb, thread_class, "run",                mrb_thread_run,         MRB_ARGS_ANY()          );
             mrb_define_method( mrb, thread_class, "join",               mrb_thread_join,        MRB_ARGS_ANY()          );
