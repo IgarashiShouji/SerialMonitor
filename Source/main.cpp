@@ -22,6 +22,7 @@
 #include <sstream>
 #include <stdio.h>
 #include <regex>
+#include <filesystem>
 
 #include <thread>
 #include <mutex>
@@ -256,6 +257,24 @@ static mrb_value mrb_core_reg_replace(mrb_state* mrb, mrb_value self)
     return mrb_str_new_cstr( mrb, result.c_str() );
 }
 static mrb_value mrb_core_gets(mrb_state* mrb, mrb_value self);
+static mrb_value mrb_core_exists(mrb_state* mrb, mrb_value self)
+{
+    char * arg;
+    mrb_get_args(mrb, "z", &arg);
+    return mrb_bool_value(std::filesystem::exists(arg));
+}
+static mrb_value mrb_core_file_timestamp(mrb_state* mrb, mrb_value self)
+{
+    char * arg;
+    mrb_get_args(mrb, "z", &arg);
+    std::filesystem::path path(arg);
+    auto ftime = std::filesystem::last_write_time(path);
+    auto time = ( std::chrono::duration_cast<std::chrono::seconds>(ftime.time_since_epoch()) ).count();
+    const std::tm * ltime = std::localtime(&time);
+    std::ostringstream timestamp;
+    timestamp << std::put_time(ltime, "%Y/%m/%d");
+    return mrb_str_new_cstr( mrb, (timestamp.str()).c_str() );
+}
 
 
 /* class thread */
@@ -1135,6 +1154,9 @@ public:
             mrb_define_module_function(mrb, calc_class, "reg_match",    mrb_core_reg_match,     MRB_ARGS_ARG( 2, 1 )    );
             mrb_define_module_function(mrb, calc_class, "reg_replace",  mrb_core_reg_replace,   MRB_ARGS_ARG( 3, 1 )    );
             mrb_define_module_function(mrb, calc_class, "gets",         mrb_core_gets,          MRB_ARGS_ANY()          );
+            mrb_define_module_function(mrb, calc_class, "exists",       mrb_core_exists,        MRB_ARGS_ARG( 1, 1 )    );
+            mrb_define_module_function(mrb, calc_class, "timestamp",    mrb_core_file_timestamp,MRB_ARGS_ARG( 1, 1 )    );
+
 
             /* Class options */
             struct RClass * opt_class = mrb_define_class_under( mrb, mrb->kernel_module, "Args", mrb->object_class );
