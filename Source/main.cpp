@@ -12,6 +12,7 @@
 #include "SerialControl.hpp"
 
 #include <boost/program_options.hpp>
+#include <boost/filesystem.hpp>
 #include <sstream>
 #include <string>
 #include <list>
@@ -23,6 +24,7 @@
 #include <stdio.h>
 #include <regex>
 #include <filesystem>
+#include <time.h>
 
 #include <thread>
 #include <mutex>
@@ -267,6 +269,7 @@ static mrb_value mrb_core_file_timestamp(mrb_state* mrb, mrb_value self)
 {
     char * arg;
     mrb_get_args(mrb, "z", &arg);
+#if 0
     std::filesystem::path path(arg);
     auto ftime = std::filesystem::last_write_time(path);
     auto time = ( std::chrono::duration_cast<std::chrono::seconds>(ftime.time_since_epoch()) ).count();
@@ -274,6 +277,13 @@ static mrb_value mrb_core_file_timestamp(mrb_state* mrb, mrb_value self)
     std::ostringstream timestamp;
     timestamp << std::put_time(ltime, "%c");
     return mrb_str_new_cstr( mrb, (timestamp.str()).c_str() );
+#else
+    boost::filesystem::path path(arg);
+    auto ftime = boost::filesystem::last_write_time(path);
+    std::ostringstream timestamp;
+    timestamp << ctime(&ftime);
+    return mrb_str_new_cstr( mrb, (timestamp.str()).c_str() );
+#endif
 }
 
 
@@ -1017,6 +1027,7 @@ public:
                 xlsx->open(RSTR_PTR(s));
                 xlsx->workbook();
                 mrb_value ret = mrb_yield_argv(mrb, proc, 0, nullptr);
+                xlsx->close();
                 return ret;
             }
         }

@@ -3,10 +3,10 @@ CPP=g++
 AR=ar
 
 CFLAGS_COMMON=-I ./Include -I ./MyUtilities/Include -I ./mruby/include -I ./OpenXLSX/OpenXLSX -I ./OpenXLSX/OpenXLSX/headers -I ./OpenXLSX/build/OpenXLSX -I ./OpenXLSX/Examples/external/nowide/include
-LIBS_COMMON=-L ./Objects -L ./MyUtilities -L OpenXLSX/build/output/ -L ./lz4/lib/ -lSerialMonitor -lUtilities -lmruby -lboost_program_options -lOpenXLSX -llz4
+LIBS_COMMON=-L ./Objects -L ./MyUtilities -L OpenXLSX/build/output/ -L ./lz4/lib/ -lSerialMonitor -lUtilities -lmruby -lOpenXLSX -llz4
 
 CFLAGS=-g $(CFLAGS_COMMON) -I ./mruby/build/host/include -pipe -O3 -march=native
-LIBS=-L ./mruby/build/host/lib $(LIBS_COMMON) -lpthread
+LIBS=-L ./mruby/build/host/lib $(LIBS_COMMON) -lboost_program_options -lboost_filesystem -lpthread
 AR_OBJS=Objects/SerialControl-linux.o Objects/default_options.o Objects/default_script.o
 MAIN_DEPS=Objects/main.o MyUtilities/libUtilities.a mruby/build/host/lib/libmruby.a OpenXLSX/build/output/libOpenXLSX.a Objects/libSerialMonitor.a Objects
 CPPFLAGS=-std=c++17 $(CFLAGS)
