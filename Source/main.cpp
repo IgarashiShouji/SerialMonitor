@@ -315,6 +315,7 @@ static mrb_value mrb_xlsx_initialize(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_xlsx_create(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_xlsx_open(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_xlsx_worksheet(mrb_state * mrb, mrb_value self);
+static mrb_value mrb_xlsx_sheet_names(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_xlsx_set_seet_name(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_xlsx_set_value(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_xlsx_cell(mrb_state * mrb, mrb_value self);
@@ -430,13 +431,14 @@ public:
 class WorkerThread
 {
 protected:
-    std::thread                                 th_ctrl;
-    std::mutex                                  mtx;
-    std::condition_variable                     cond;
-    mrb_state *                                 mrb;
-    mrb_value                                   proc;
+    std::thread             th_ctrl;
+    std::mutex              mtx;
+    std::condition_variable cond;
+    mrb_state *             mrb;
+    bool                    run_enable;
+    mrb_value               proc;
 public:
-    WorkerThread(void) : mrb(nullptr)  { }
+    WorkerThread(void) : mrb(nullptr), run_enable(false) { }
     virtual ~WorkerThread(void)
     {
         std::lock_guard<std::mutex> lock(mtx);
@@ -457,6 +459,7 @@ public:
             mrb_get_args(mrb, "&", &proc);
             if (!mrb_nil_p(proc))
             {
+                run_enable = true;
                 std::thread temp(&WorkerThread::run_context, this, 0);
                 th_ctrl.swap(temp);
                 result = true;
@@ -471,7 +474,7 @@ public:
     }
     void join(void)
     {
-        th_ctrl.join();
+        if(run_enable) { th_ctrl.join(); }
     }
     mrb_value sync(mrb_state * mrb, mrb_value & proc)
     {
@@ -762,17 +765,23 @@ public:
     {
         book = xlsx.workbook();
     }
+    std::vector<std::string> getWorkSheetNames(void)
+    {
+        return book.worksheetNames();
+    }
     void worksheet(char * sheet_name)
     {
-        try
+        auto list = book.worksheetNames();
+        for(auto & name: list)
         {
-            sheet = book.worksheet(sheet_name);
+            if( name == sheet_name )
+            {
+                sheet = book.worksheet(sheet_name);
+                return;
+            }
         }
-        catch(...)
-        {
-            book.addWorksheet(sheet_name);
-            sheet = book.worksheet(sheet_name);
-        }
+        book.addWorksheet(sheet_name);
+        sheet = book.worksheet(sheet_name);
     }
     void set_sheet_name(char * sheet_name)
     {
@@ -1140,10 +1149,33 @@ public:
             OpenXLSXCtrl * xlsx = static_cast< OpenXLSXCtrl * >(DATA_PTR(self));
             if(nullptr != xlsx)
             {
-                struct RString * s = mrb_str_ptr(argv[0]);
-                xlsx->worksheet(RSTR_PTR(s));
+                struct RString * sheet_name = mrb_str_ptr(argv[0]);
+                xlsx->worksheet(RSTR_PTR(sheet_name ));
                 mrb_value ret = mrb_yield_argv(mrb, proc, 0, nullptr);
                 return ret;
+            }
+        }
+        return mrb_nil_value();
+    }
+    mrb_value xlsx_work_sheet_names(mrb_state * mrb, mrb_value self)
+    {
+        mrb_int     argc;
+        mrb_value * argv;
+        mrb_value   proc = mrb_nil_value();
+        mrb_get_args(mrb, "&*", &proc, &argv, &argc);
+        if((0 == argc) && (!mrb_nil_p(proc)))
+        {
+            OpenXLSXCtrl * xlsx = static_cast< OpenXLSXCtrl * >(DATA_PTR(self));
+            if(nullptr != xlsx)
+            {
+                auto list = xlsx->getWorkSheetNames();
+                for( auto & name: list)
+                {
+                    mrb_value argv[1];
+                    argv[0] = mrb_str_new_cstr(mrb, name.c_str());
+                    auto ret = mrb_yield_argv(mrb, proc, 1, argv);
+                    if(mrb_type(ret) == MRB_TT_FALSE) { return ret; }
+                }
             }
         }
         return mrb_nil_value();
@@ -1307,6 +1339,7 @@ public:
             mrb_define_method( mrb, xlsx_class, "create",           mrb_xlsx_create,            MRB_ARGS_ARG( 1, 1 )    );
             mrb_define_method( mrb, xlsx_class, "open",             mrb_xlsx_open,              MRB_ARGS_ARG( 1, 1 )    );
             mrb_define_method( mrb, xlsx_class, "sheet",            mrb_xlsx_worksheet,         MRB_ARGS_ARG( 1, 1 )    );
+            mrb_define_method( mrb, xlsx_class, "sheet_names",      mrb_xlsx_sheet_names,       MRB_ARGS_NONE()         );
             mrb_define_method( mrb, xlsx_class, "setSheetName",     mrb_xlsx_set_seet_name,     MRB_ARGS_ARG( 1, 1 )    );
             mrb_define_method( mrb, xlsx_class, "set_value",        mrb_xlsx_set_value,         MRB_ARGS_ARG( 2, 1 )    );
             mrb_define_method( mrb, xlsx_class, "cell",             mrb_xlsx_cell,              MRB_ARGS_ARG( 1, 1 )    );
@@ -1369,6 +1402,8 @@ mrb_value mrb_xlsx_initialize(mrb_state * mrb, mrb_value self)      { Applicatio
 mrb_value mrb_xlsx_create(mrb_state * mrb, mrb_value self)          { Application * app = Application::getObject(); return app->xlsx_create(mrb, self);         }
 mrb_value mrb_xlsx_open(mrb_state * mrb, mrb_value self)            { Application * app = Application::getObject(); return app->xlsx_open(mrb, self);           }
 mrb_value mrb_xlsx_worksheet(mrb_state * mrb, mrb_value self)       { Application * app = Application::getObject(); return app->xlsx_worksheet(mrb, self);      }
+mrb_value mrb_xlsx_sheet_names(mrb_state * mrb, mrb_value self)     { Application * app = Application::getObject(); return app->xlsx_work_sheet_names(mrb, self);   }
+
 mrb_value mrb_xlsx_set_seet_name(mrb_state * mrb, mrb_value self)   { Application * app = Application::getObject(); return app->xlsx_set_sheet_name(mrb, self); }
 mrb_value mrb_xlsx_set_value(mrb_state * mrb, mrb_value self)       { Application * app = Application::getObject(); return app->xlsx_set_value(mrb, self);      }
 mrb_value mrb_xlsx_cell(mrb_state * mrb, mrb_value self)            { Application * app = Application::getObject(); return app->xlsx_cell(mrb, self);           }
