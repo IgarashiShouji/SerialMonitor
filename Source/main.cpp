@@ -346,7 +346,88 @@ static unsigned char toValue(unsigned char data)
     return val;
 }
 
-class CppThread
+class BinaryControl
+{
+protected:
+    size_t      length;
+    char *      data;
+    std::mutex  mtx;
+public:
+    BinaryControl(void) : length(0), data(nullptr)  { }
+    virtual ~BinaryControl(void)
+    {
+        std::lock_guard<std::mutex> lock(mtx);
+        if(nullptr!=data)
+        {
+            delete [] data;
+        }
+    }
+    size_t loadBinaryFile(std::string & fname)
+    {
+        std::lock_guard<std::mutex> lock(mtx);
+        std::filesystem::path path(fname);
+        length = std::filesystem::file_size(path);
+        if(nullptr != data) { delete [] data; }
+        data = new char[length];
+        std::ifstream fin(fname);
+        if(fin.is_open())
+        {
+            fin.read(data, length);
+            return length;
+        }
+        return 0;
+    }
+    void saveBinaryFile(std::string & fname)
+    {
+        std::lock_guard<std::mutex> lock(mtx);
+        std::ofstream fout(fname);
+        fout.write(data, length);
+    }
+    void alloc(size_t size)
+    {
+        std::lock_guard<std::mutex> lock(mtx);
+        length = size;
+        data = new char [size];
+    }
+    size_t size(void) const
+    {
+        return length;
+    }
+    bool write(uint32_t address, size_t size, std::string & in_data)
+    {
+        std::lock_guard<std::mutex> lock(mtx);
+        if(((address + size) <= length) && (0 == (length % 2)))
+        {
+            char * temp = new char[in_data.size()];
+            for(auto idx = 0, pos = 0; idx < size; idx ++, pos += 2)
+            {
+                auto temp = in_data.substr(pos, 2);
+                auto val  = stoi(temp, 0, 16);
+                data[address + idx] = static_cast<char>(val);
+            }
+            delete temp;
+            return true;
+        }
+        return false;
+    }
+    bool dump(uint32_t address, size_t size,  std::string & output)
+    {
+        std::lock_guard<std::mutex> lock(mtx);
+        if((address + size) <= length)
+        {
+            for( auto idx = 0; idx < size; idx ++)
+            {
+                char temp[3];
+                sprintf(temp, "%02X", data[address + idx]);
+                output += temp;
+            }
+            return true;
+        }
+        return false;
+    }
+};
+
+class WorkerThread
 {
 protected:
     std::thread                                 th_ctrl;
@@ -355,8 +436,8 @@ protected:
     mrb_state *                                 mrb;
     mrb_value                                   proc;
 public:
-    CppThread(void) : mrb(nullptr)  { }
-    virtual ~CppThread(void)
+    WorkerThread(void) : mrb(nullptr)  { }
+    virtual ~WorkerThread(void)
     {
         std::lock_guard<std::mutex> lock(mtx);
         if(nullptr != this->mrb)
@@ -376,7 +457,7 @@ public:
             mrb_get_args(mrb, "&", &proc);
             if (!mrb_nil_p(proc))
             {
-                std::thread temp(&CppThread::run_context, this, 0);
+                std::thread temp(&WorkerThread::run_context, this, 0);
                 th_ctrl.swap(temp);
                 result = true;
             }
@@ -677,7 +758,15 @@ public:
     }
     void worksheet(char * sheet_name)
     {
-        sheet = book.worksheet(sheet_name);
+        try
+        {
+            sheet = book.worksheet(sheet_name);
+        }
+        catch(...)
+        {
+            book.addWorksheet(sheet_name);
+            sheet = book.worksheet(sheet_name);
+        }
     }
     void set_sheet_name(char * sheet_name)
     {
@@ -826,7 +915,7 @@ public:
         mrb_int         argc;
         mrb_value *     argv;
         mrb_get_args(mrb, "&*", &proc, &argv, &argc);
-        CppThread * th_ctrl = new CppThread();
+        WorkerThread * th_ctrl = new WorkerThread();
         mrb_data_init(self, th_ctrl, &mrb_thread_context_type);
         return self;
     }
@@ -837,7 +926,7 @@ public:
         mrb_get_args(mrb, "&", &proc);
         if (!mrb_nil_p(proc))
         {
-            CppThread * th_ctrl = static_cast<CppThread * >(DATA_PTR(self));
+            WorkerThread * th_ctrl = static_cast<WorkerThread * >(DATA_PTR(self));
             if(nullptr != th_ctrl )
             {
                 th_ctrl->run(mrb, self);
@@ -848,7 +937,7 @@ public:
     mrb_value thread_join(mrb_state * mrb, mrb_value self)
     {
         mrb_value ret = mrb_nil_value();
-        CppThread * th_ctrl = static_cast<CppThread * >(DATA_PTR(self));
+        WorkerThread * th_ctrl = static_cast<WorkerThread * >(DATA_PTR(self));
         if(nullptr != th_ctrl)
         {
             th_ctrl->join();
@@ -861,7 +950,7 @@ public:
         mrb_get_args(mrb, "&", &proc);
         if (!mrb_nil_p(proc))
         {
-            CppThread * th_ctrl = static_cast<CppThread * >(DATA_PTR(self));
+            WorkerThread * th_ctrl = static_cast<WorkerThread * >(DATA_PTR(self));
             if(nullptr != th_ctrl)
             {
                 auto result = th_ctrl->sync(mrb, proc);
@@ -876,7 +965,7 @@ public:
         mrb_get_args(mrb, "&", &proc);
         if (!mrb_nil_p(proc))
         {
-            CppThread * th_ctrl = static_cast<CppThread * >(DATA_PTR(self));
+            WorkerThread * th_ctrl = static_cast<WorkerThread * >(DATA_PTR(self));
             if(nullptr != th_ctrl)
             {
                 th_ctrl->wait(mrb, proc);
@@ -890,7 +979,7 @@ public:
         mrb_get_args(mrb, "&", &proc);
         if (!mrb_nil_p(proc))
         {
-            CppThread * th_ctrl = static_cast<CppThread * >(DATA_PTR(self));
+            WorkerThread * th_ctrl = static_cast<WorkerThread * >(DATA_PTR(self));
             if(nullptr != th_ctrl)
             {
                 th_ctrl->notify(mrb, proc);
@@ -1283,7 +1372,7 @@ void mrb_thread_context_free(mrb_state * mrb, void * ptr)
     printf("%s:%d: %s\n", __FILE__, __LINE__, __FUNCTION__);
     if(nullptr != ptr)
     {
-        CppThread * th_ctrl = static_cast<CppThread *>(ptr);
+        WorkerThread * th_ctrl = static_cast<WorkerThread *>(ptr);
         delete th_ctrl;
     }
 }
@@ -1356,9 +1445,7 @@ int main(int argc, char * argv[])
             std::cout << desc << std::endl;
         }
     }
-    catch(...)
-    {
-        printf("Other Error\n");
-    }
+    catch(std::exception & exp)    { std::cerr << "exeption: " << exp.what() << std::endl;       }
+    catch(...)                     { std::cerr << "unknown exeption" << std::endl;               }
     return 0;
 }
