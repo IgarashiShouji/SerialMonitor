@@ -93,7 +93,7 @@ static mrb_value mrb_core_crc16(mrb_state* mrb, mrb_value self)
             crc << val;
         }
         char temp[5] = { 0 };
-        sprintf(temp, "%04x", *crc);
+        sprintf(temp, "%04X", *crc);
         return mrb_str_new_cstr(mrb, temp);
     }
     return mrb_nil_value();
@@ -528,7 +528,7 @@ protected:
     SerialControl *                             com;
     MyEntity::OneShotTimerEventer<size_t> *     tevter;
     unsigned int                                cache_size;
-    bool                                        enable;
+    bool                                        rcv_enable;
     ReciveInfo                                  cache;
     std::thread                                 th_recive;
     std::mutex                                  mtx;
@@ -536,7 +536,7 @@ protected:
     std::list<ReciveInfo>                       rcv_cache;
 public:
     SerialMonitor(mrb_value & self, const char * arg_, std::vector<size_t> & timer_default, std::map<SerialMonitor *, std::string> & list, std::string def_boud, bool rts_ctrl)
-      : arg(arg_), timer(timer_default), res_list(list), com(nullptr), tevter(nullptr), cache_size(1024), enable(false)
+      : arg(arg_), timer(timer_default), res_list(list), com(nullptr), tevter(nullptr), cache_size(1024), rcv_enable(true)
     {   /* split */
         std::vector<std::string> args;
         for( auto&& item : split( arg, "," ) )
@@ -641,6 +641,13 @@ public:
         ReciveInfo rcv_info;
         auto lamda = [this, &rcv_info]
         {
+            if(!rcv_enable)
+            {
+                cache.state = CLOSE;
+                cache.cnt   = 0;
+                cache.buff  = nullptr;
+                return true;
+            }
             if(0 < rcv_cache.size())
             {
                 rcv_info = *(rcv_cache.begin());
@@ -663,10 +670,9 @@ public:
     }
     void recive(size_t id)
     {
-        enable = true;
         MyEntity::OneShotTimerEventer timeout_evter(timer, *this);
         tevter = &timeout_evter;
-        while(enable)
+        while(rcv_enable)
         {
             if(nullptr == com)
             {
@@ -694,8 +700,8 @@ public:
                 }
             }
         }
-        enable = false;
         std::lock_guard<std::mutex> lock(mtx);
+        rcv_enable = false;
         cache.state = CLOSE;
         rcv_cache.push_back(cache);
         cache.buff  = new unsigned char [cache_size];
