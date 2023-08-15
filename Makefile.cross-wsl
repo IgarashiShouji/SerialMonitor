@@ -1,4 +1,4 @@
-TARGET=smon
+TARGET=smon.exe
 CPP=x86_64-w64-mingw32-g++-posix
 AR=x86_64-w64-mingw32-gcc-ar-posix
 
