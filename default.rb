@@ -14,7 +14,7 @@ MRuby::Build.new do |conf|
 #  conf.gem :mgem => 'mruby-thread'
   #conf.gem :github => 'mattn/mruby-onig-regexp'
   #conf.gem :git => 'git@github.com:mattn/mruby-onig-regexp.git', :branch => 'master', :options => '-v'
-  conf.cc.defines << %w(MRB_USE_THREAD_API MRB_USE_MUTEX_API MRB_USE_GVL_API MRB_USE_ATOMIC_API)
+  conf.cc.defines << %w(MRB_UTF8_STRING MRB_USE_THREAD_API MRB_USE_MUTEX_API MRB_USE_GVL_API MRB_USE_ATOMIC_API)
 
   # include the GEM box
   conf.gembox 'default'

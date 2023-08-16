@@ -67,6 +67,7 @@ MRuby::CrossBuild.new("cross-mingw-winetest") do |conf|
 
   # Ubuntu 20
   conf.cc.command = "#{conf.host_target}-gcc-posix"
+  conf.cc.defines << %w(MRB_USE_THREAD_API MRB_USE_MUTEX_API MRB_USE_GVL_API MRB_USE_ATOMIC_API)
 
   # macOS+Wine from brew
   #conf.cc.command = "#{conf.host_target}-gcc"
