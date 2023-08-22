@@ -666,8 +666,11 @@ public:
         cond.wait(lock, lamda);
         for(unsigned int idx = 0; idx < rcv_info.cnt; idx ++)
         {
-            char temp[4];
-            sprintf(temp, "%02X", rcv_info.buff[idx]);
+            char temp[8];
+            if(nullptr != rcv_info.buff)
+            {
+                sprintf(temp, "%02X", rcv_info.buff[idx]);
+            }
             temp[2] = '\0';
             data += temp;
         }
