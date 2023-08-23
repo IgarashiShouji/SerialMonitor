@@ -294,12 +294,14 @@ class ModbusSlave
   end
   def main
     str = Core.gets()
-    @update_trand = false
-    @smon.close()
+
     @enable_check_file = false
-    @th_smon.join()
-    @th_check.join
-    @th_trd.join
+    @update_trand      = false
+    @smon.close
+
+#    @th_check.join
+#    @th_trd.join
+#    @th_smon.join
   end
 end
 
@@ -352,7 +354,6 @@ if 0 < opts.size() then
     fname = 'test-modbus.xlsx'
     if !Core.exists(fname) then
       createTestFile(fname)
-      exit 0
     end
   end
   mslave = ModbusSlave.new(port, fname)
@@ -360,4 +361,9 @@ if 0 < opts.size() then
   mslave.updateTrand()
   mslave.wachSerialPort()
   mslave.main()
+else
+  fname = 'test-modbus.xlsx'
+  if !Core.exists(fname) then
+    createTestFile(fname)
+  end
 end

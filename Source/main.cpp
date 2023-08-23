@@ -292,6 +292,7 @@ static mrb_value mrb_thread_initialize(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_thread_run(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_thread_join(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_thread_is_run(mrb_state * mrb, mrb_value self);
+static mrb_value mrb_thread_state(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_thread_sync(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_thread_wait(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_thread_notify(mrb_state * mrb, mrb_value self);
@@ -431,15 +432,24 @@ public:
 
 class WorkerThread
 {
+public:
+    enum Status
+    {
+        Stop,
+        Wakeup,
+        Run,
+        Wait,
+        WaitJoin
+    };
 protected:
+    enum Status             state;
     std::thread             th_ctrl;
     std::mutex              mtx;
     std::condition_variable cond;
     mrb_state *             mrb;
-    bool                    run_enable;
     mrb_value               proc;
 public:
-    WorkerThread(void) : mrb(nullptr), run_enable(false) { }
+    WorkerThread(void) : state(Stop), mrb(nullptr) { }
     virtual ~WorkerThread(void)
     {
         std::lock_guard<std::mutex> lock(mtx);
@@ -451,19 +461,25 @@ public:
     bool run(mrb_state * mrb, mrb_value self)
     {
         bool result = false;
-        {
-            std::lock_guard<std::mutex> lock(mtx);
-            this->mrb = mrb_open();
-        }
+        this->mrb = mrb_open();
         if(nullptr != this->mrb)
         {
             mrb_get_args(mrb, "&", &proc);
             if (!mrb_nil_p(proc))
             {
-                run_enable = true;
+                std::unique_lock<std::mutex> lock(mtx);
+                result = true;
+                state = Wakeup;
                 std::thread temp(&WorkerThread::run_context, this, 0);
                 th_ctrl.swap(temp);
-                result = true;
+                auto lamda = [this]
+                {
+                    if(state == Wakeup) { return false; }
+                    return true;
+                };
+                state = Wakeup;
+                cond.wait(lock, lamda);
+                lock.unlock();
             }
         }
         std::lock_guard<std::mutex> lock(mtx);
@@ -471,32 +487,43 @@ public:
     }
     void run_context(size_t id)
     {
+        { std::lock_guard<std::mutex> lock(mtx); state = Run;       cond.notify_one(); }
         mrb_yield_argv(mrb, proc, 0, NULL);
+        { std::lock_guard<std::mutex> lock(mtx); state = WaitJoin;  cond.notify_one(); }
     }
     void join(void)
     {
-        if(run_enable) { th_ctrl.join(); }
-        run_enable = false;
+        auto lamda = [this]
+        {
+            switch(state)
+            {
+            case WaitJoin:
+            case Stop:
+                return true;
+            default:
+                break;
+            }
+            return false;
+        };
+        std::unique_lock<std::mutex> lock(mtx);
+        cond.wait(lock, lamda);
+        if(state == WaitJoin ) { th_ctrl.join(); }
+        state = Stop;
     }
-    bool is_run(void) const
-    {
-        return run_enable;
-    }
-    mrb_value sync(mrb_state * mrb, mrb_value & proc)
-    {
-        std::lock_guard<std::mutex> lock(mtx);
-        auto result = mrb_yield_argv(mrb, proc, 0, NULL);
-        return result;
-    }
+    enum Status get_state(void) const { return state;      }
     void wait(mrb_state * mrb, mrb_value & proc)
     {
         auto lamda = [this, &mrb, &proc]
         {
+            if(Stop == state)     { return true; }
+            if(WaitJoin == state) { return true; }
             auto result = mrb_yield_argv(mrb, proc, 0, NULL);
             if(mrb_bool(result))
             {
+                state = Run;
                 return true;
             }
+            state = Wait;
             return false;
         };
         std::unique_lock<std::mutex> lock(mtx);
@@ -507,6 +534,12 @@ public:
         std::lock_guard<std::mutex> lock(mtx);
         auto result = mrb_yield_argv(mrb, proc, 0, NULL);
         cond.notify_one();
+        return result;
+    }
+    mrb_value sync(mrb_state * mrb, mrb_value & proc)
+    {
+        std::lock_guard<std::mutex> lock(mtx);
+        auto result = mrb_yield_argv(mrb, proc, 0, NULL);
         return result;
     }
 };
@@ -644,7 +677,7 @@ public:
     }
     SerialMonitor::State recive_wait(std::string & data)
     {
-        ReciveInfo rcv_info;
+        ReciveInfo rcv_info = { NONE, 0, nullptr };
         auto lamda = [this, &rcv_info]
         {
             if(!rcv_enable)
@@ -666,11 +699,8 @@ public:
         cond.wait(lock, lamda);
         for(unsigned int idx = 0; idx < rcv_info.cnt; idx ++)
         {
-            char temp[8];
-            if(nullptr != rcv_info.buff)
-            {
-                sprintf(temp, "%02X", rcv_info.buff[idx]);
-            }
+            char temp[4];
+            sprintf(temp, "%02X", rcv_info.buff[idx]);
             temp[2] = '\0';
             data += temp;
         }
@@ -706,6 +736,7 @@ public:
         std::lock_guard<std::mutex> lock(mtx);
         rcv_enable = false;
         cache.state = CLOSE;
+        cache.cnt   = 0;
         rcv_cache.push_back(cache);
         cache.buff  = new unsigned char [cache_size];
         cache.cnt   = 0;
@@ -922,31 +953,13 @@ public:
         }
         return ret;
     }
-    mrb_value thread_is_run(mrb_state * mrb, mrb_value self)
+    mrb_value thread_state(mrb_state * mrb, mrb_value self)
     {
         mrb_value ret = mrb_nil_value();
         WorkerThread * th_ctrl = static_cast<WorkerThread * >(DATA_PTR(self));
         if(nullptr != th_ctrl)
         {
-            if(th_ctrl->is_run())
-            {
-                return mrb_bool_value(true);
-            }
-        }
-        return mrb_bool_value(false);
-    }
-    mrb_value thread_sync(mrb_state * mrb, mrb_value self)
-    {
-        mrb_value proc = mrb_nil_value();
-        mrb_get_args(mrb, "&", &proc);
-        if (!mrb_nil_p(proc))
-        {
-            WorkerThread * th_ctrl = static_cast<WorkerThread * >(DATA_PTR(self));
-            if(nullptr != th_ctrl)
-            {
-                auto result = th_ctrl->sync(mrb, proc);
-                return result;
-            }
+            return mrb_fixnum_value(th_ctrl->get_state());
         }
         return mrb_nil_value();
     }
@@ -974,6 +987,21 @@ public:
             if(nullptr != th_ctrl)
             {
                 th_ctrl->notify(mrb, proc);
+            }
+        }
+        return mrb_nil_value();
+    }
+    mrb_value thread_sync(mrb_state * mrb, mrb_value self)
+    {
+        mrb_value proc = mrb_nil_value();
+        mrb_get_args(mrb, "&", &proc);
+        if (!mrb_nil_p(proc))
+        {
+            WorkerThread * th_ctrl = static_cast<WorkerThread * >(DATA_PTR(self));
+            if(nullptr != th_ctrl)
+            {
+                auto result = th_ctrl->sync(mrb, proc);
+                return result;
             }
         }
         return mrb_nil_value();
@@ -1287,13 +1315,17 @@ public:
 
             /* Class Thread */
             struct RClass * thread_class = mrb_define_class_under( mrb, mrb->kernel_module, "WorkerThread", mrb->object_class );
+            mrb_define_const(  mrb, thread_class, "STOP",               mrb_fixnum_value(WorkerThread::Stop)            );
+            mrb_define_const(  mrb, thread_class, "WAKEUP",             mrb_fixnum_value(WorkerThread::Wakeup)          );
+            mrb_define_const(  mrb, thread_class, "RUN",                mrb_fixnum_value(WorkerThread::Run)             );
+            mrb_define_const(  mrb, thread_class, "WAIT_JOIN",          mrb_fixnum_value(WorkerThread::WaitJoin)        );
             mrb_define_module_function( mrb, thread_class, "ms_sleep",  mrb_thread_ms_sleep,    MRB_ARGS_ARG( 1, 1 )    );
             mrb_define_method( mrb, thread_class, "initialize",         mrb_thread_initialize,  MRB_ARGS_ANY()          );
             mrb_define_method( mrb, thread_class, "run",                mrb_thread_run,         MRB_ARGS_ANY()          );
             mrb_define_method( mrb, thread_class, "join",               mrb_thread_join,        MRB_ARGS_ANY()          );
-            mrb_define_method( mrb, thread_class, "is_run",             mrb_thread_is_run,      MRB_ARGS_ANY()          );
-            mrb_define_method( mrb, thread_class, "synchronize",        mrb_thread_sync,        MRB_ARGS_NONE()         );
+            mrb_define_method( mrb, thread_class, "state",              mrb_thread_state,       MRB_ARGS_ANY()          );
             mrb_define_method( mrb, thread_class, "wait",               mrb_thread_wait,        MRB_ARGS_NONE()         );
+            mrb_define_method( mrb, thread_class, "synchronize",        mrb_thread_sync,        MRB_ARGS_NONE()         );
             mrb_define_method( mrb, thread_class, "notify",             mrb_thread_notify,      MRB_ARGS_NONE()         );
 
             /* Class Smon */
@@ -1366,10 +1398,10 @@ mrb_value mrb_opt_get(mrb_state * mrb, mrb_value self)              { Applicatio
 mrb_value mrb_thread_initialize(mrb_state * mrb, mrb_value self)    { Application * app = Application::getObject(); return app->thread_init(mrb, self);         }
 mrb_value mrb_thread_run(mrb_state * mrb, mrb_value self)           { Application * app = Application::getObject(); return app->thread_run(mrb, self);          }
 mrb_value mrb_thread_join(mrb_state * mrb, mrb_value self)          { Application * app = Application::getObject(); return app->thread_join(mrb, self);         }
-mrb_value mrb_thread_is_run(mrb_state * mrb, mrb_value self)        { Application * app = Application::getObject(); return app->thread_is_run(mrb, self);       }
-mrb_value mrb_thread_sync(mrb_state * mrb, mrb_value self)          { Application * app = Application::getObject(); return app->thread_sync(mrb, self);         }
+mrb_value mrb_thread_state(mrb_state * mrb, mrb_value self)         { Application * app = Application::getObject(); return app->thread_state(mrb, self);        }
 mrb_value mrb_thread_wait(mrb_state * mrb, mrb_value self)          { Application * app = Application::getObject(); return app->thread_wait(mrb, self);         }
 mrb_value mrb_thread_notify(mrb_state * mrb, mrb_value self)        { Application * app = Application::getObject(); return app->thread_notiry(mrb, self);       }
+mrb_value mrb_thread_sync(mrb_state * mrb, mrb_value self)          { Application * app = Application::getObject(); return app->thread_sync(mrb, self);         }
 
 mrb_value mrb_smon_initialize(mrb_state * mrb, mrb_value self)      { Application * app = Application::getObject(); return app->smon_init(mrb, self);           }
 mrb_value mrb_smon_wait(mrb_state * mrb, mrb_value self)            { Application * app = Application::getObject(); return app->smon_wait(mrb, self);           }

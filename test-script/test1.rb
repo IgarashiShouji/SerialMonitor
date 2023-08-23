@@ -8,7 +8,7 @@ def test_options()
   end
 end
 
-def test_thead
+def test_thead_1
   print "thread test 1\n"
   list = Array.new
   th = WorkerThread.new
@@ -33,7 +33,7 @@ def test_thead
   end
   print "  thread join\n"
   th.join
-  print "thead test end\n"
+  print "thead test 1 end\n"
 end
 
 def test_calc()
@@ -50,7 +50,7 @@ end
 
 print "mruby test script 1\n"
 test_options()
-test_thead()
+test_thead_1()
 test_calc()
 print "mruby test script 1 end\n"
 print "\n"
