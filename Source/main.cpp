@@ -461,7 +461,7 @@ public:
     bool run(mrb_state * mrb, mrb_value self)
     {
         bool result = false;
-        this->mrb = mrb_open();
+        if(nullptr == this->mrb) { this->mrb = mrb_open(); }
         if(nullptr != this->mrb)
         {
             mrb_get_args(mrb, "&", &proc);
