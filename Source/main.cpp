@@ -10,6 +10,7 @@
 
 #include "Entity.hpp"
 #include "SerialControl.hpp"
+#include "Comlist.hpp"
 
 #include <boost/program_options.hpp>
 #include <boost/filesystem.hpp>
@@ -284,6 +285,24 @@ static mrb_value mrb_core_file_timestamp(mrb_state* mrb, mrb_value self)
     timestamp << ctime(&ftime);
     return mrb_str_new_cstr( mrb, (timestamp.str()).c_str() );
 #endif
+}
+static mrb_value mrb_core_comlist(mrb_state* mrb, mrb_value self)
+{
+    mrb_value proc;
+    mrb_get_args(mrb, "&", &proc);
+    if (!mrb_nil_p(proc))
+    {
+        ComList com;
+        std::vector<std::string> & list = com.ref();
+        for(auto & com_name: list)
+        {
+            mrb_value argv[1];
+            argv[0] = mrb_str_new_cstr(mrb, com_name.c_str());
+            mrb_yield_argv(mrb, proc, 1, &(argv[0]));
+        }
+        return mrb_int_value(mrb, list.size());
+    }
+    return mrb_int_value(mrb, 0);
 }
 
 
@@ -1305,7 +1324,7 @@ public:
             mrb_define_module_function(mrb, calc_class, "gets",         mrb_core_gets,          MRB_ARGS_ANY()          );
             mrb_define_module_function(mrb, calc_class, "exists",       mrb_core_exists,        MRB_ARGS_ARG( 1, 1 )    );
             mrb_define_module_function(mrb, calc_class, "timestamp",    mrb_core_file_timestamp,MRB_ARGS_ARG( 1, 1 )    );
-
+            mrb_define_module_function(mrb, calc_class, "comlist",      mrb_core_comlist,       MRB_ARGS_ANY()          );
 
             /* Class options */
             struct RClass * opt_class = mrb_define_class_under( mrb, mrb->kernel_module, "Args", mrb->object_class );
