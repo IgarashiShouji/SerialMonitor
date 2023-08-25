@@ -175,3 +175,29 @@ bool SerialControl::hasBaudRate(std::string & baud, Profile & info)
     }
     return false;
 }
+
+
+/* ------------------------------< dummy methods >------------------------------ */
+#include "ComList.hpp"
+/**
+ * constractor on ComList: create COM list
+ */
+ComList::ComList(void)
+  : list(0)
+{
+}
+
+/**
+ * destractor on comlist
+ */
+ComList::~ComList(void)
+{
+}
+
+/**
+ * reference of COM list
+ */
+vector<string> & ComList::ref(void)
+{
+    return list;
+}

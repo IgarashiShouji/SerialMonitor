@@ -10,7 +10,7 @@
 
 #include "Entity.hpp"
 #include "SerialControl.hpp"
-#include "Comlist.hpp"
+#include "ComList.hpp"
 
 #include <boost/program_options.hpp>
 #include <boost/filesystem.hpp>
@@ -1493,7 +1493,7 @@ int main(int argc, char * argv[])
 
         if(argmap.count("help"))
         {
-            std::cout << "smon Software revision 0.9.0b" << std::endl;
+            std::cout << "smon Software revision 0.9.0c" << std::endl;
             std::cout << std::endl;
             std::cout << desc << std::endl;
             return 0;
