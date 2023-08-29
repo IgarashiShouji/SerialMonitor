@@ -26,6 +26,7 @@
 #include <regex>
 #include <filesystem>
 #include <time.h>
+#include <algorithm>
 
 #include <thread>
 #include <mutex>
@@ -667,10 +668,14 @@ public:
         delete com;
         com = nullptr;
     }
-    void send(const std::string data, unsigned int timer)
+    void send(std::string data, unsigned int timer)
     {
         if( nullptr != com)
         {
+            for(auto pos = data.find_first_of(" "); pos != std::string::npos; pos = data.find_first_of(" "))
+            {
+                data.erase(pos, 1);
+            }
             auto s_len = data.size();
             if( ( 1 < s_len ) && !( 1 & s_len ) )
             {   /* even charactor count and more size of 1 byte */
