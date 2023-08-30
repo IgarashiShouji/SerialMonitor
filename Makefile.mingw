@@ -5,8 +5,8 @@ AR=ar
 CFLAGS_COMMON=-I ./Include -I ./MyUtilities/Include -I ./mruby/include -I ./OpenXLSX/OpenXLSX -I ./OpenXLSX/OpenXLSX/headers -I ./OpenXLSX/build/OpenXLSX -I ./OpenXLSX/Examples/external/nowide/include --input-charset=UTF-8 --exec-charset=UTF-8
 LIBS_COMMON=-L ./Objects -L ./MyUtilities -L OpenXLSX/build/output/ -L ./lz4/lib/ -lSerialMonitor -lUtilities -lmruby -lOpenXLSX -llz4
 
-CFLAGS=-g $(CFLAGS_COMMON) -I ./mruby/build/host/include -pipe -O3 -march=native
-LIBS=-static -L ./mruby/build/host/lib $(LIBS_COMMON) -lboost_program_options -lboost_filesystem -lws2_32 -lsetupapi -lksguid -lole32 -lwinmm -ldsound -liconv
+CFLAGS=-g -I ./boost-x64/include $(CFLAGS_COMMON) -I ./mruby/build/host/include -pipe -O3 -march=native
+LIBS=-static -L ./mruby/build/host/lib -L ./boost-x64/lib $(LIBS_COMMON) -lboost_program_options -lboost_filesystem -lws2_32 -lsetupapi -lksguid -lole32 -lwinmm -ldsound -liconv
 AR_OBJS=Objects/SerialControl-mingw.o Objects/default_options.o Objects/default_script.o Objects/ComList.o
 MAIN_DEPS=Objects/main.o MyUtilities/libUtilities.a mruby/build/host/lib/libmruby.a OpenXLSX/build/output/libOpenXLSX.a Objects/libSerialMonitor.a Objects
 CPPFLAGS=-std=c++17 $(CFLAGS)

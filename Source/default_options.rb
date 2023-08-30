@@ -37,15 +37,15 @@ class SendWaitEventer
     true
   end
   def timeout1(send_msg)
-    printf("%s -> TO1\n", send_msg)
+    printf("TO1\n", send_msg)
     true
   end
   def timeout2(send_msg)
-    printf("%s -> TO2\n", send_msg)
+    printf("TO2\n", send_msg)
     true
   end
   def timeout3(send_msg)
-    printf("%s -> TO3\n", send_msg)
+    printf("TO3\n", send_msg)
     false
   end
 end

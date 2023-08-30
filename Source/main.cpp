@@ -476,40 +476,51 @@ public:
         if(nullptr != this->mrb)
         {
             mrb_close(this->mrb);
+            this->mrb = nullptr;
         }
     }
     bool run(mrb_state * mrb, mrb_value self)
     {
         bool result = false;
-        if(nullptr == this->mrb) { this->mrb = mrb_open(); }
-        if(nullptr != this->mrb)
+        std::unique_lock<std::mutex> lock(mtx);
+        if(nullptr == this->mrb)
         {
-            mrb_get_args(mrb, "&", &proc);
-            if (!mrb_nil_p(proc))
+            this->mrb = mrb_open();
+            if(nullptr != this->mrb)
             {
-                std::unique_lock<std::mutex> lock(mtx);
-                result = true;
-                state = Wakeup;
-                std::thread temp(&WorkerThread::run_context, this, 0);
-                th_ctrl.swap(temp);
-                auto lamda = [this]
+                mrb_get_args(mrb, "&", &proc);
+                if (!mrb_nil_p(proc))
                 {
-                    if(state == Wakeup) { return false; }
-                    return true;
-                };
-                state = Wakeup;
-                cond.wait(lock, lamda);
-                lock.unlock();
+                    result = true;
+                    state = Wakeup;
+                    std::thread temp(&WorkerThread::run_context, this, 0);
+                    th_ctrl.swap(temp);
+                    auto lamda = [this]
+                    {
+                        if(state == Wakeup) { return false; }
+                        return true;
+                    };
+                    state = Wakeup;
+                    cond.wait(lock, lamda);
+                }
             }
         }
-        std::lock_guard<std::mutex> lock(mtx);
+        lock.unlock();
         return result;
     }
     void run_context(size_t id)
     {
-        { std::lock_guard<std::mutex> lock(mtx); state = Run;       cond.notify_one(); }
+        {
+            std::lock_guard<std::mutex> lock(mtx);
+            state = Run;
+            cond.notify_all();
+        }
         mrb_yield_argv(mrb, proc, 0, NULL);
-        { std::lock_guard<std::mutex> lock(mtx); state = WaitJoin;  cond.notify_one(); }
+        {
+            std::lock_guard<std::mutex> lock(mtx);
+            state = WaitJoin;
+            cond.notify_all();
+        }
     }
     void join(void)
     {
@@ -529,6 +540,11 @@ public:
         cond.wait(lock, lamda);
         if(state == WaitJoin ) { th_ctrl.join(); }
         state = Stop;
+        if(nullptr != this->mrb)
+        {
+            mrb_close(this->mrb);
+            this->mrb = nullptr;
+        }
     }
     enum Status get_state(void) const { return state;      }
     void wait(mrb_state * mrb, mrb_value & proc)
@@ -553,7 +569,7 @@ public:
     {
         std::lock_guard<std::mutex> lock(mtx);
         auto result = mrb_yield_argv(mrb, proc, 0, NULL);
-        cond.notify_one();
+        cond.notify_all();
         return result;
     }
     mrb_value sync(mrb_state * mrb, mrb_value & proc)
@@ -753,7 +769,7 @@ public:
                     rcv_cache.push_back(cache);
                     cache.buff  = new unsigned char [cache_size];
                     cache.cnt   = 0;
-                    cond.notify_one();
+                    cond.notify_all();
                 }
             }
         }
@@ -764,7 +780,7 @@ public:
         rcv_cache.push_back(cache);
         cache.buff  = new unsigned char [cache_size];
         cache.cnt   = 0;
-        cond.notify_one();
+        cond.notify_all();
     }
     virtual void handler(unsigned int idx)
     {
@@ -778,7 +794,7 @@ public:
                 rcv_cache.push_back(cache);
                 cache.buff = new unsigned char [cache_size];
                 cache.cnt  = 0;
-                cond.notify_one();
+                cond.notify_all();
             }
         }
     }
@@ -865,7 +881,6 @@ protected:
     std::map<SerialMonitor *, std::string>  res_list;
     std::mutex                              mtx;
     std::condition_variable                 cond;
-    mrb_state *                             mrb;
     std::mutex                              com_wait_mtx;
 public:
     static Application * getObject(void);
