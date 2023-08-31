@@ -867,15 +867,15 @@ public:
         }
         return false;
     }
-    bool dump(DWord address, DWord size, std::string & output)
+    bool dump(mrb_int address, mrb_int size, std::string & output)
     {
         std::lock_guard<std::mutex> lock(mtx);
-        if((address.data + size.data) <= length)
+        if((address + size) <= length)
         {
-            for( auto idx = 0; idx < size.data; idx ++)
+            for( auto idx = 0; idx < size; idx ++)
             {
                 char temp[4] = { 0 };
-                sprintf(temp, "%02X", data[address.data + idx]);
+                sprintf(temp, "%02X", data[address + idx]);
                 output += temp;
             }
             return true;
@@ -909,12 +909,12 @@ public:
                     break;
                 case 'h':
                     {
-                        DWord addr = { .data = address };
-                        DWord size = { .data = static_cast<unsigned int>(stoi(num)) };
+                        mrb_int addr = address;
+                        mrb_int size = static_cast<unsigned int>(stoi(num));
                         std::string hex;
                         dump(addr, size, hex);
                         mrb_ary_push(mrb, array, mrb_str_new_cstr(mrb, hex.c_str()));
-                        address += size.data;
+                        address += size;
                     }
                     break;
                 default:
@@ -1405,9 +1405,9 @@ public:
         BinaryControl * bedit = static_cast<BinaryControl *>(DATA_PTR(self));
         if(nullptr != bedit)
         {
-            DWord size;
+            mrb_int size;
             mrb_get_args(mrb, "i", &size);
-            bedit->alloc(size.data);
+            bedit->alloc(size);
         }
         return mrb_nil_value();
     }
@@ -1458,9 +1458,9 @@ public:
         BinaryControl * bedit = static_cast<BinaryControl *>(DATA_PTR(self));
         if(nullptr != bedit)
         {
-            DWord address;
-            DWord size;
-            std::string output("");
+            mrb_int address;
+            mrb_int size;
+            std::string output;
             mrb_get_args(mrb, "ii", &address, &size);
             if( bedit->dump(address, size, output) )
             {
