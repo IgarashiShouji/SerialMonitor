@@ -343,6 +343,18 @@ static mrb_value mrb_xlsx_set_value(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_xlsx_cell(mrb_state * mrb, mrb_value self);
 static void mrb_xlsx_context_free(mrb_state * mrb, void * ptr);
 
+/* class BinEdit */
+static mrb_value mrb_bedit_initialize(mrb_state * mrb, mrb_value self);
+static mrb_value mrb_bedit_length(mrb_state * mrb, mrb_value self);
+static mrb_value mrb_bedit_create(mrb_state * mrb, mrb_value self);
+static mrb_value mrb_bedit_load(mrb_state * mrb, mrb_value self);
+static mrb_value mrb_bedit_save(mrb_state * mrb, mrb_value self);
+static mrb_value mrb_bedit_write(mrb_state * mrb, mrb_value self);
+static mrb_value mrb_bedit_dump(mrb_state * mrb, mrb_value self);
+static mrb_value mrb_bedit_toItems(mrb_state * mrb, mrb_value self);
+static void mrb_bedit_context_free(mrb_state * mrb, void * ptr);
+
+
 auto split = [](std::string & src, auto pat)
 {
     std::vector<std::string> result{};
@@ -368,87 +380,6 @@ static unsigned char toValue(unsigned char data)
     }
     return val;
 }
-
-class BinaryControl
-{
-protected:
-    size_t     length;
-    char *     data;
-    std::mutex mtx;
-public:
-    BinaryControl(void) : length(0), data(nullptr) { }
-    virtual ~BinaryControl(void)
-    {
-        std::lock_guard<std::mutex> lock(mtx);
-        if(nullptr!=data)
-        {
-            delete [] data;
-        }
-    }
-    size_t loadBinaryFile(std::string & fname)
-    {
-        std::lock_guard<std::mutex> lock(mtx);
-        std::filesystem::path path(fname);
-        length = std::filesystem::file_size(path);
-        if(nullptr != data) { delete [] data; }
-        data = new char[length];
-        std::ifstream fin(fname);
-        if(fin.is_open())
-        {
-            fin.read(data, length);
-            return length;
-        }
-        return 0;
-    }
-    void saveBinaryFile(std::string & fname)
-    {
-        std::lock_guard<std::mutex> lock(mtx);
-        std::ofstream fout(fname);
-        fout.write(data, length);
-    }
-    void alloc(size_t size)
-    {
-        std::lock_guard<std::mutex> lock(mtx);
-        length = size;
-        data = new char [size];
-    }
-    size_t size(void) const
-    {
-        return length;
-    }
-    bool write(uint32_t address, size_t size, std::string & in_data)
-    {
-        std::lock_guard<std::mutex> lock(mtx);
-        if(((address + size) <= length) && (0 == (length % 2)))
-        {
-            char * temp = new char[in_data.size()];
-            for(auto idx = 0, pos = 0; idx < size; idx ++, pos += 2)
-            {
-                auto temp = in_data.substr(pos, 2);
-                auto val  = stoi(temp, 0, 16);
-                data[address + idx] = static_cast<char>(val);
-            }
-            delete temp;
-            return true;
-        }
-        return false;
-    }
-    bool dump(uint32_t address, size_t size,  std::string & output)
-    {
-        std::lock_guard<std::mutex> lock(mtx);
-        if((address + size) <= length)
-        {
-            for( auto idx = 0; idx < size; idx ++)
-            {
-                char temp[3];
-                sprintf(temp, "%02X", data[address + idx]);
-                output += temp;
-            }
-            return true;
-        }
-        return false;
-    }
-};
 
 class WorkerThread
 {
@@ -871,6 +802,152 @@ public:
     void close(void) { xlsx.close(); }
 };
 
+class BinaryControl
+{
+protected:
+    size_t length;
+    unsigned char * data;
+    std::mutex mtx;
+public:
+    BinaryControl(void) : length(0), data(nullptr) { }
+    virtual ~BinaryControl(void)
+    {
+        std::lock_guard<std::mutex> lock(mtx);
+        if(nullptr!=data)
+        {
+            delete [] data;
+        }
+    }
+    size_t loadBinaryFile(std::string & fname)
+    {
+        std::lock_guard<std::mutex> lock(mtx);
+        std::filesystem::path path(fname);
+        length = std::filesystem::file_size(path);
+        if(nullptr != data) { delete [] data; }
+        data = new unsigned char[length];
+        std::ifstream fin(fname);
+        if(fin.is_open())
+        {
+            fin.read(reinterpret_cast<char *>(data), length);
+            return length;
+        }
+        return 0;
+    }
+    void saveBinaryFile(std::string & fname)
+    {
+        std::lock_guard<std::mutex> lock(mtx);
+        std::ofstream fout(fname);
+        fout.write(reinterpret_cast<char *>(data), length);
+    }
+    void alloc(size_t size)
+    {
+        std::lock_guard<std::mutex> lock(mtx);
+        if( nullptr != data ) { delete [] data; }
+        length = size;
+        data = new unsigned char [size];
+    }
+    size_t size(void) const
+    {
+        return length;
+    }
+    bool write(DWord address, DWord size, std::string & in_data)
+    {
+        std::lock_guard<std::mutex> lock(mtx);
+        if(((address.data + size.data) <= length) && (0 == (length % 2)))
+        {
+            char * temp = new char[in_data.size()];
+            for(auto idx = 0, pos = 0; idx < size.data; idx ++, pos += 2)
+            {
+                auto temp = in_data.substr(pos, 2);
+                auto val  = stoi(temp, 0, 16);
+                data[address.data + idx] = static_cast<unsigned char>(val);
+            }
+            delete temp;
+            return true;
+        }
+        return false;
+    }
+    bool dump(DWord address, DWord size, std::string & output)
+    {
+        std::lock_guard<std::mutex> lock(mtx);
+        if((address.data + size.data) <= length)
+        {
+            for( auto idx = 0; idx < size.data; idx ++)
+            {
+                char temp[4] = { 0 };
+                sprintf(temp, "%02X", data[address.data + idx]);
+                output += temp;
+            }
+            return true;
+        }
+        return false;
+    }
+    bool toItems(mrb_state * mrb, uint32_t address, std::string & format_, mrb_value & array)
+    {
+        auto state = ' ';
+        std::string num;
+        auto format = format_ + ' ';
+        for(auto t: format)
+        {
+            if(('0' <= t) && (t <= '9'))
+            {
+                num += t;
+            }
+            else
+            {
+                switch(state)
+                {
+                case 'A':
+                    {
+                        size_t size = stoi(num);
+                        char str[size + 1];
+                        str[size] = '\0';
+                        memcpy(str, &(data[address]), size);
+                        mrb_ary_push(mrb, array, mrb_str_new_cstr(mrb, str));
+                        address += size;
+                    }
+                    break;
+                case 'h':
+                    {
+                        DWord addr = { .data = address };
+                        DWord size = { .data = static_cast<unsigned int>(stoi(num)) };
+                        std::string hex;
+                        dump(addr, size, hex);
+                        mrb_ary_push(mrb, array, mrb_str_new_cstr(mrb, hex.c_str()));
+                        address += size.data;
+                    }
+                    break;
+                default:
+                    break;
+                }
+                num.clear();
+                state = ' ';
+                switch(t)
+                {
+                case 'b': {  Byte temp; temp.buff[0] = data[address]; mrb_ary_push(mrb, array, mrb_int_value(mrb, temp.data)); address += 1; } break;
+                case 'c': {  Byte temp; temp.buff[0] = data[address]; mrb_ary_push(mrb, array, mrb_int_value(mrb, temp.val));  address += 1; } break;
+                case 'w': {  Word temp; memcpy(&(temp.buff[0]), &(data[address]), 2); mrb_ary_push(mrb, array, mrb_int_value(mrb, temp.uint16)); address += 2; } break;
+                case 's': {  Word temp; memcpy(&(temp.buff[0]), &(data[address]), 2); mrb_ary_push(mrb, array, mrb_int_value(mrb, temp.int16));  address += 2; } break;
+                case 'd': { DWord temp; memcpy(&(temp.buff[0]), &(data[address]), 4); mrb_ary_push(mrb, array, mrb_int_value(mrb, temp.uint32));  address += 4; } break;
+                case 'i': { DWord temp; memcpy(&(temp.buff[0]), &(data[address]), 4); mrb_ary_push(mrb, array, mrb_int_value(mrb, temp.int32));   address += 4; } break;
+                case 'f': { DWord temp; memcpy(&(temp.buff[0]), &(data[address]), 4); mrb_ary_push(mrb, array, mrb_float_value(mrb, temp.value)); address += 4; } break;
+                case 'W': { Word temp;  for(auto idx = 0; idx < 2; idx ++) { temp.buff[idx] = data[address + (1-idx)]; } mrb_ary_push(mrb, array, mrb_int_value(mrb, temp.uint16));  address += 2; } break;
+                case 'S': { Word temp;  for(auto idx = 0; idx < 2; idx ++) { temp.buff[idx] = data[address + (1-idx)]; } mrb_ary_push(mrb, array, mrb_int_value(mrb, temp.int16));   address += 2; } break;
+                case 'D': { DWord temp; for(auto idx = 0; idx < 4; idx ++) { temp.buff[idx] = data[address + (3-idx)]; } mrb_ary_push(mrb, array, mrb_int_value(mrb, temp.uint32));  address += 4; } break;
+                case 'I': { DWord temp; for(auto idx = 0; idx < 4; idx ++) { temp.buff[idx] = data[address + (3-idx)]; } mrb_ary_push(mrb, array, mrb_int_value(mrb, temp.int32));   address += 4; } break;
+                case 'F': { DWord temp; for(auto idx = 0; idx < 4; idx ++) { temp.buff[idx] = data[address + (3-idx)]; } mrb_ary_push(mrb, array, mrb_float_value(mrb, temp.value)); address += 4; } break;
+                case 'A': state = t; break;
+                case 'H': state = 'h'; break;
+                case 'h': state = t; break;
+                default:
+                    break;
+                }
+            }
+        }
+        return true;
+    }
+};
+
 class Application
 {
 protected:
@@ -974,7 +1051,7 @@ public:
         mrb_get_args(mrb, "&", &proc);
         if (!mrb_nil_p(proc))
         {
-            WorkerThread * th_ctrl = static_cast<WorkerThread * >(DATA_PTR(self));
+            WorkerThread * th_ctrl = static_cast<WorkerThread *>(DATA_PTR(self));
             if(nullptr != th_ctrl )
             {
                 th_ctrl->run(mrb, self);
@@ -985,7 +1062,7 @@ public:
     mrb_value thread_join(mrb_state * mrb, mrb_value self)
     {
         mrb_value ret = mrb_nil_value();
-        WorkerThread * th_ctrl = static_cast<WorkerThread * >(DATA_PTR(self));
+        WorkerThread * th_ctrl = static_cast<WorkerThread *>(DATA_PTR(self));
         if(nullptr != th_ctrl)
         {
             th_ctrl->join();
@@ -995,7 +1072,7 @@ public:
     mrb_value thread_state(mrb_state * mrb, mrb_value self)
     {
         mrb_value ret = mrb_nil_value();
-        WorkerThread * th_ctrl = static_cast<WorkerThread * >(DATA_PTR(self));
+        WorkerThread * th_ctrl = static_cast<WorkerThread *>(DATA_PTR(self));
         if(nullptr != th_ctrl)
         {
             return mrb_fixnum_value(th_ctrl->get_state());
@@ -1008,7 +1085,7 @@ public:
         mrb_get_args(mrb, "&", &proc);
         if (!mrb_nil_p(proc))
         {
-            WorkerThread * th_ctrl = static_cast<WorkerThread * >(DATA_PTR(self));
+            WorkerThread * th_ctrl = static_cast<WorkerThread *>(DATA_PTR(self));
             if(nullptr != th_ctrl)
             {
                 th_ctrl->wait(mrb, proc);
@@ -1022,7 +1099,7 @@ public:
         mrb_get_args(mrb, "&", &proc);
         if (!mrb_nil_p(proc))
         {
-            WorkerThread * th_ctrl = static_cast<WorkerThread * >(DATA_PTR(self));
+            WorkerThread * th_ctrl = static_cast<WorkerThread *>(DATA_PTR(self));
             if(nullptr != th_ctrl)
             {
                 th_ctrl->notify(mrb, proc);
@@ -1074,7 +1151,7 @@ public:
         mrb_get_args(mrb, "&", &proc);
         if (!mrb_nil_p(proc))
         {
-            SerialMonitor * smon = static_cast<SerialMonitor * >(DATA_PTR(self));
+            SerialMonitor * smon = static_cast<SerialMonitor *>(DATA_PTR(self));
             if(nullptr != smon)
             {
                 std::string data;
@@ -1111,7 +1188,7 @@ public:
         mrb_int     timer;
         mrb_get_args(mrb, "zi", &msg, &timer);
 
-        SerialMonitor * smon = static_cast<SerialMonitor * >(DATA_PTR(self));
+        SerialMonitor * smon = static_cast<SerialMonitor *>(DATA_PTR(self));
         if(nullptr != smon)
         {
             smon->send(msg, timer);
@@ -1120,7 +1197,7 @@ public:
     }
     mrb_value smon_close(mrb_state * mrb, mrb_value self)
     {
-        SerialMonitor * smon = static_cast<SerialMonitor * >(DATA_PTR(self));
+        SerialMonitor * smon = static_cast<SerialMonitor *>(DATA_PTR(self));
         if(nullptr != smon)
         {
             smon->close();
@@ -1145,7 +1222,7 @@ public:
         mrb_get_args(mrb, "&*", &proc, &argv, &argc);
         if((1 == argc) && (!mrb_nil_p(proc)))
         {
-            OpenXLSXCtrl * xlsx = static_cast< OpenXLSXCtrl * >(DATA_PTR(self));
+            OpenXLSXCtrl * xlsx = static_cast<OpenXLSXCtrl *>(DATA_PTR(self));
             if(nullptr != xlsx)
             {
                 struct RString * s = mrb_str_ptr(argv[0]);
@@ -1167,7 +1244,7 @@ public:
         mrb_get_args(mrb, "&*", &proc, &argv, &argc);
         if((1 == argc) && (!mrb_nil_p(proc)))
         {
-            OpenXLSXCtrl * xlsx = static_cast< OpenXLSXCtrl * >(DATA_PTR(self));
+            OpenXLSXCtrl * xlsx = static_cast<OpenXLSXCtrl *>(DATA_PTR(self));
             if(nullptr != xlsx)
             {
                 struct RString * s = mrb_str_ptr(argv[0]);
@@ -1179,7 +1256,6 @@ public:
             }
         }
         return mrb_nil_value();
-        return mrb_nil_value();
     }
     mrb_value xlsx_worksheet(mrb_state * mrb, mrb_value self)
     {
@@ -1189,7 +1265,7 @@ public:
         mrb_get_args(mrb, "&*", &proc, &argv, &argc);
         if((1 == argc) && (!mrb_nil_p(proc)))
         {
-            OpenXLSXCtrl * xlsx = static_cast< OpenXLSXCtrl * >(DATA_PTR(self));
+            OpenXLSXCtrl * xlsx = static_cast<OpenXLSXCtrl *>(DATA_PTR(self));
             if(nullptr != xlsx)
             {
                 struct RString * sheet_name = mrb_str_ptr(argv[0]);
@@ -1208,7 +1284,7 @@ public:
         mrb_get_args(mrb, "&*", &proc, &argv, &argc);
         if((0 == argc) && (!mrb_nil_p(proc)))
         {
-            OpenXLSXCtrl * xlsx = static_cast< OpenXLSXCtrl * >(DATA_PTR(self));
+            OpenXLSXCtrl * xlsx = static_cast<OpenXLSXCtrl *>(DATA_PTR(self));
             if(nullptr != xlsx)
             {
                 auto list = xlsx->getWorkSheetNames();
@@ -1227,7 +1303,7 @@ public:
     {
         char * sheet_name;
         mrb_get_args(mrb, "z", &sheet_name);
-        OpenXLSXCtrl * xlsx = static_cast< OpenXLSXCtrl * >(DATA_PTR(self));
+        OpenXLSXCtrl * xlsx = static_cast<OpenXLSXCtrl *>(DATA_PTR(self));
         if(nullptr != xlsx )
         {
             xlsx->set_sheet_name(sheet_name);
@@ -1241,7 +1317,7 @@ public:
         mrb_get_args(mrb, "*", &argv, &argc);
         if(2 == argc)
         {
-            OpenXLSXCtrl * xlsx = static_cast< OpenXLSXCtrl * >(DATA_PTR(self));
+            OpenXLSXCtrl * xlsx = static_cast<OpenXLSXCtrl *>(DATA_PTR(self));
             if(nullptr != xlsx)
             {
                 struct RString * cell_name = mrb_str_ptr(argv[0]);
@@ -1280,7 +1356,7 @@ public:
     {
         char * cell_name;
         mrb_get_args(mrb, "z", &cell_name);
-        OpenXLSXCtrl * xlsx = static_cast< OpenXLSXCtrl * >(DATA_PTR(self));
+        OpenXLSXCtrl * xlsx = static_cast<OpenXLSXCtrl *>(DATA_PTR(self));
         if(nullptr != xlsx )
         {
             int         val_int;
@@ -1301,6 +1377,111 @@ public:
             case OpenXLSXCtrl::Error:
             default:
                 break;
+            }
+        }
+        return mrb_nil_value();
+    }
+    mrb_value bedit_init(mrb_state * mrb, mrb_value self)
+    {
+        static const struct mrb_data_type mrb_bedit_context_type =
+        {
+            "mrb_open_bedit_context", mrb_bedit_context_free,
+        };
+        BinaryControl * bedit = new BinaryControl();
+        mrb_data_init(self, bedit, &mrb_bedit_context_type);
+        return self;
+    }
+    mrb_value bedit_length(mrb_state * mrb, mrb_value self)
+    {
+        BinaryControl * bedit = static_cast<BinaryControl *>(DATA_PTR(self));
+        if(nullptr != bedit)
+        {
+            return mrb_int_value(mrb, bedit->size());
+        }
+        return mrb_nil_value();
+    }
+    mrb_value bedit_create(mrb_state * mrb, mrb_value self)
+    {
+        BinaryControl * bedit = static_cast<BinaryControl *>(DATA_PTR(self));
+        if(nullptr != bedit)
+        {
+            DWord size;
+            mrb_get_args(mrb, "i", &size);
+            bedit->alloc(size.data);
+        }
+        return mrb_nil_value();
+    }
+    mrb_value bedit_load(mrb_state * mrb, mrb_value self)
+    {
+        BinaryControl * bedit = static_cast<BinaryControl *>(DATA_PTR(self));
+        if(nullptr != bedit)
+        {
+            char * fname_ptr;
+            mrb_get_args(mrb, "z", &fname_ptr);
+            std::string fname(fname_ptr);
+            auto sz = bedit->loadBinaryFile(fname);
+            return mrb_int_value(mrb, sz);
+        }
+        return mrb_int_value(mrb, 0);
+    }
+    mrb_value bedit_save(mrb_state * mrb, mrb_value self)
+    {
+        BinaryControl * bedit = static_cast<BinaryControl *>(DATA_PTR(self));
+        if(nullptr != bedit)
+        {
+            char * fname_ptr;
+            mrb_get_args(mrb, "z", &fname_ptr);
+            std::string fname(fname_ptr);
+            bedit->saveBinaryFile(fname);
+        }
+        return self;
+    }
+    mrb_value bedit_write(mrb_state * mrb, mrb_value self)
+    {
+        BinaryControl * bedit = static_cast<BinaryControl *>(DATA_PTR(self));
+        if(nullptr != bedit)
+        {
+            DWord address;
+            DWord size;
+            char * data_ptr;
+            mrb_get_args(mrb, "iiz", &address, &size, &data_ptr);
+            std::string data(data_ptr);
+            if( bedit->write(address, size, data) )
+            {
+                return mrb_bool_value(true);
+            }
+        }
+        return mrb_bool_value(false);
+    }
+    mrb_value bedit_dump(mrb_state * mrb, mrb_value self)
+    {
+        BinaryControl * bedit = static_cast<BinaryControl *>(DATA_PTR(self));
+        if(nullptr != bedit)
+        {
+            DWord address;
+            DWord size;
+            std::string output("");
+            mrb_get_args(mrb, "ii", &address, &size);
+            if( bedit->dump(address, size, output) )
+            {
+                return mrb_str_new_cstr(mrb, output.c_str());
+            }
+        }
+        return mrb_nil_value();
+    }
+    mrb_value bedit_toItems(mrb_state * mrb, mrb_value self)
+    {
+        BinaryControl * bedit = static_cast<BinaryControl *>(DATA_PTR(self));
+        if(nullptr != bedit)
+        {
+            mrb_value arry = mrb_ary_new(mrb);
+            DWord address;
+            char * fmt_ptr;
+            mrb_get_args(mrb, "iz", &address, &fmt_ptr);
+            std::string fmt(fmt_ptr);
+            if( bedit->toItems(mrb, address.data, fmt, arry) )
+            {
+                return arry;
             }
         }
         return mrb_nil_value();
@@ -1392,6 +1573,17 @@ public:
             mrb_define_method( mrb, xlsx_class, "set_value",        mrb_xlsx_set_value,         MRB_ARGS_ARG( 2, 1 )    );
             mrb_define_method( mrb, xlsx_class, "cell",             mrb_xlsx_cell,              MRB_ARGS_ARG( 1, 1 )    );
 
+            /* Class BinEdit */
+            struct RClass * bedit_class = mrb_define_class_under( mrb, mrb->kernel_module, "BinEdit", mrb->object_class );
+            mrb_define_method( mrb, bedit_class, "initialize",      mrb_bedit_initialize,       MRB_ARGS_ANY()          );
+            mrb_define_method( mrb, bedit_class, "length",          mrb_bedit_length,           MRB_ARGS_ARG( 1, 1 )    );
+            mrb_define_method( mrb, bedit_class, "create",          mrb_bedit_create,           MRB_ARGS_ARG( 1, 1 )    );
+            mrb_define_method( mrb, bedit_class, "load",            mrb_bedit_load,             MRB_ARGS_ARG( 1, 1 )    );
+            mrb_define_method( mrb, bedit_class, "save",            mrb_bedit_save,             MRB_ARGS_ARG( 1, 1 )    );
+            mrb_define_method( mrb, bedit_class, "write",           mrb_bedit_write,            MRB_ARGS_ARG( 2, 1 )    );
+            mrb_define_method( mrb, bedit_class, "dump",            mrb_bedit_dump,             MRB_ARGS_ARG( 2, 1 )    );
+            mrb_define_method( mrb, bedit_class, "toItems",         mrb_bedit_toItems,          MRB_ARGS_ARG( 2, 1 )    );
+
             /* exec mRuby Script */
             extern const uint8_t default_options[];
             mrb_load_irep(mrb, default_options);
@@ -1452,14 +1644,23 @@ mrb_value mrb_xlsx_create(mrb_state * mrb, mrb_value self)          { Applicatio
 mrb_value mrb_xlsx_open(mrb_state * mrb, mrb_value self)            { Application * app = Application::getObject(); return app->xlsx_open(mrb, self);           }
 mrb_value mrb_xlsx_worksheet(mrb_state * mrb, mrb_value self)       { Application * app = Application::getObject(); return app->xlsx_worksheet(mrb, self);      }
 mrb_value mrb_xlsx_sheet_names(mrb_state * mrb, mrb_value self)     { Application * app = Application::getObject(); return app->xlsx_work_sheet_names(mrb, self); }
-
 mrb_value mrb_xlsx_set_seet_name(mrb_state * mrb, mrb_value self)   { Application * app = Application::getObject(); return app->xlsx_set_sheet_name(mrb, self); }
 mrb_value mrb_xlsx_set_value(mrb_state * mrb, mrb_value self)       { Application * app = Application::getObject(); return app->xlsx_set_value(mrb, self);      }
 mrb_value mrb_xlsx_cell(mrb_state * mrb, mrb_value self)            { Application * app = Application::getObject(); return app->xlsx_cell(mrb, self);           }
 
+mrb_value mrb_bedit_initialize(mrb_state * mrb, mrb_value self)     { Application * app = Application::getObject(); return app->bedit_init(mrb, self);          }
+mrb_value mrb_bedit_length(mrb_state * mrb, mrb_value self)         { Application * app = Application::getObject(); return app->bedit_length(mrb, self);        }
+mrb_value mrb_bedit_create(mrb_state * mrb, mrb_value self)         { Application * app = Application::getObject(); return app->bedit_create(mrb, self);        }
+mrb_value mrb_bedit_load(mrb_state * mrb, mrb_value self)           { Application * app = Application::getObject(); return app->bedit_load(mrb, self);          }
+mrb_value mrb_bedit_save(mrb_state * mrb, mrb_value self)           { Application * app = Application::getObject(); return app->bedit_save(mrb, self);          }
+mrb_value mrb_bedit_write(mrb_state * mrb, mrb_value self)          { Application * app = Application::getObject(); return app->bedit_write(mrb, self);         }
+mrb_value mrb_bedit_dump(mrb_state * mrb, mrb_value self)           { Application * app = Application::getObject(); return app->bedit_dump(mrb, self);          }
+mrb_value mrb_bedit_toItems(mrb_state * mrb, mrb_value self)        { Application * app = Application::getObject(); return app->bedit_toItems(mrb, self);       }
+
+
 void mrb_thread_context_free(mrb_state * mrb, void * ptr)
 {
-    printf("%s:%d: %s\n", __FILE__, __LINE__, __FUNCTION__);
+//    printf("%s:%d: %s\n", __FILE__, __LINE__, __FUNCTION__);
     if(nullptr != ptr)
     {
         WorkerThread * th_ctrl = static_cast<WorkerThread *>(ptr);
@@ -1469,7 +1670,7 @@ void mrb_thread_context_free(mrb_state * mrb, void * ptr)
 
 void mrb_smon_context_free(mrb_state * mrb, void * ptr)
 {
-    printf("%s:%d: %s\n", __FILE__, __LINE__, __FUNCTION__);
+//    printf("%s:%d: %s\n", __FILE__, __LINE__, __FUNCTION__);
     if(nullptr != ptr)
     {
         SerialMonitor * smon = static_cast<SerialMonitor *>(ptr);
@@ -1478,11 +1679,20 @@ void mrb_smon_context_free(mrb_state * mrb, void * ptr)
 }
 void mrb_xlsx_context_free(mrb_state * mrb, void * ptr)
 {
-    printf("%s:%d: %s\n", __FILE__, __LINE__, __FUNCTION__);
+//    printf("%s:%d: %s\n", __FILE__, __LINE__, __FUNCTION__);
     if(nullptr != ptr)
     {
         OpenXLSXCtrl * xlsx = static_cast<OpenXLSXCtrl *>(ptr);
         delete xlsx;
+    }
+}
+void mrb_bedit_context_free(mrb_state * mrb, void * ptr)
+{
+//    printf("%s:%d: %s\n", __FILE__, __LINE__, __FUNCTION__);
+    if(nullptr != ptr)
+    {
+        BinaryControl * bedit = static_cast<BinaryControl *>(ptr);
+        delete bedit;
     }
 }
 

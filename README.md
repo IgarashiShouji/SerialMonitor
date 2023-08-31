@@ -39,17 +39,29 @@ smon.exe [Device File] [Options]:
 
 ## Build
 
-* linux
+### linux
 ~~~
  # make -f Makefile.linux
 ~~~
 
-* Mingw
+### Mingw
+
+Step1 is build for boost on WSL. Step 2 is build for mruby and other sources.
+
+- step 1
+~~~
+ # build-cross-wsl-boost.sh
+~~~
+- step 2
 ~~~
  # make -f Makefile.mingw
 ~~~
 
-* RasPi
+WSL environment cannot handle the line feed code of the mruby library correctly.<br>
+boost on mingw cannot open of any USB Serial Driver.<br>
+Therefore, build for boost is WSL, build for mruby is mingw, it so.
+
+### RasPi
 ~~~
  # make -f Makefile.raspi
 ~~~
