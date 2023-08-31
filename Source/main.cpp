@@ -842,25 +842,25 @@ public:
     void alloc(size_t size)
     {
         std::lock_guard<std::mutex> lock(mtx);
-        if( nullptr != data ) { delete [] data; }
         length = size;
-        data = new unsigned char [size];
+        if( nullptr != data )   { delete [] data;                   data = nullptr; }
+        if( 0 < size )          { data = new unsigned char [size];                  }
     }
     size_t size(void) const
     {
         return length;
     }
-    bool write(DWord address, DWord size, std::string & in_data)
+    bool write(mrb_int address, mrb_int size, std::string & in_data)
     {
         std::lock_guard<std::mutex> lock(mtx);
-        if(((address.data + size.data) <= length) && (0 == (length % 2)))
+        if(((address + size) <= length) && (0 == (length % 2)))
         {
             char * temp = new char[in_data.size()];
-            for(auto idx = 0, pos = 0; idx < size.data; idx ++, pos += 2)
+            for(auto idx = 0, pos = 0; idx < size; idx ++, pos += 2)
             {
                 auto temp = in_data.substr(pos, 2);
                 auto val  = stoi(temp, 0, 16);
-                data[address.data + idx] = static_cast<unsigned char>(val);
+                data[address + idx] = static_cast<unsigned char>(val);
             }
             delete temp;
             return true;
@@ -1388,6 +1388,32 @@ public:
             "mrb_open_bedit_context", mrb_bedit_context_free,
         };
         BinaryControl * bedit = new BinaryControl();
+        mrb_int argc;
+        mrb_value * argv;
+        mrb_get_args(mrb, "*", &argv, &argc);
+        if(1 == argc)
+        {
+            switch( mrb_type( argv[0] ) )
+            {
+            case MRB_TT_INTEGER:
+                {
+                    int size = static_cast<int>(mrb_integer(argv[0]));
+                    bedit->alloc(size);
+                }
+                break;
+            case MRB_TT_STRING:
+                {
+                    struct RString * str = mrb_str_ptr(argv[0]);
+                    std::string data(RSTR_PTR(str));
+                    mrb_int size = (data.size() / 2);
+                    bedit->alloc(size);
+                    if( !bedit->write(0, size, data) ) { bedit->alloc(0); }
+                }
+                break;
+            default:
+                break;
+            }
+        }
         mrb_data_init(self, bedit, &mrb_bedit_context_type);
         return self;
     }
@@ -1441,17 +1467,40 @@ public:
         BinaryControl * bedit = static_cast<BinaryControl *>(DATA_PTR(self));
         if(nullptr != bedit)
         {
-            DWord address;
-            DWord size;
-            char * data_ptr;
-            mrb_get_args(mrb, "iiz", &address, &size, &data_ptr);
-            std::string data(data_ptr);
-            if( bedit->write(address, size, data) )
+            mrb_int address = 0;
+            mrb_int size    = 0;
+            char * data_ptr = nullptr;
+            mrb_int argc;
+            mrb_value * argv;
+            mrb_get_args(mrb, "*", &argv, &argc);
+            switch(argc)
             {
-                return mrb_bool_value(true);
+            case 1:
+                mrb_get_args(mrb, "z", &data_ptr);
+                break;
+            case 2:
+                mrb_get_args(mrb, "iz", &address, &data_ptr);
+                break;
+            case 3:
+                mrb_get_args(mrb, "iiz", &address, &size, &data_ptr);
+                break;
+            default:
+                break;
+            }
+            if(nullptr != data_ptr)
+            {
+                std::string data(data_ptr);
+                if(0 == size) { size = data.size() / 2; }
+                if(0 < size)
+                {
+                    if( bedit->write(address, size, data) )
+                    {
+                        return mrb_int_value(mrb, size);
+                    }
+                }
             }
         }
-        return mrb_bool_value(false);
+        return mrb_int_value(mrb, 0);
     }
     mrb_value bedit_dump(mrb_state * mrb, mrb_value self)
     {
