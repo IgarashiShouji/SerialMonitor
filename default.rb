@@ -9,8 +9,8 @@ MRuby::Build.new do |conf|
   # end
   # conf.gem 'examples/mrbgems/c_and_ruby_extension_example'
   # conf.gem :core => 'mruby-eval'
-  #conf.gem :mgem => 'mruby-onig-regexp'
-#  conf.gem :mgem => 'mruby-posix-regexp'
+#  conf.gem :mgem => 'mruby-onig-regexp'
+  conf.gem :mgem => 'mruby-posix-regexp'
 #  conf.gem :mgem => 'mruby-thread'
   #conf.gem :github => 'mattn/mruby-onig-regexp'
   #conf.gem :git => 'git@github.com:mattn/mruby-onig-regexp.git', :branch => 'master', :options => '-v'

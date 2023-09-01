@@ -1,13 +1,13 @@
 class Test1 < WaitReplyEventer
   def exec(smon, msg, reply)
     print msg, ' -> ', reply, "\n"
-    smon.send(reply, 0)
+    smon.send(reply)
   end
 end
 class Test2 < WaitReplyEventer
   def exec(smon, msg, reply)
     print msg, ' -> ', reply, "\n"
-    smon.send(reply, 0)
+    smon.send(reply)
   end
 end
 

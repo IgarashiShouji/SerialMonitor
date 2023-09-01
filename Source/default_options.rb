@@ -60,7 +60,8 @@ class WaitReplyEventer
   end
   def exec(smon, msg, reply)
     printf("%s -> %s\n", msg, reply)
-    smon.send(reply, 0)
+    #smon.send(reply, 0)
+    smon.send(reply)
   end
   def gaptimer(msg)
   end
@@ -82,7 +83,8 @@ class Smon
     if nil == cmd then
       cmd = SendWaitEventer.new
     end
-    smon.send(send_msg, 0)
+    #smon.send(send_msg, 0)
+    smon.send(send_msg)
     msg = ''
     loop_enable = true
     while loop_enable

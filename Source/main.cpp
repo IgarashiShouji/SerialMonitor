@@ -102,7 +102,7 @@ static mrb_value mrb_core_crc16(mrb_state* mrb, mrb_value self)
 }
 static mrb_value mrb_core_crc8(mrb_state* mrb, mrb_value self)
 {
-    static const unsigned char crctab8[16] = { 0x00,0x9B,0xAD,0x36,0xC1,0x5A,0x6C,0xF7, 0x19,0x82,0xB4,0x2F,0xD8,0x43,0x75,0xEE };
+    static const unsigned char crctab8[16] = { 0x00,0x9B,0xAD,0x36,0xC1,0x5A,0x6C,0xF7,0x19,0x82,0xB4,0x2F,0xD8,0x43,0x75,0xEE };
     char * arg;
     mrb_get_args(mrb, "z", &arg);
     std::string data(arg);
@@ -968,6 +968,7 @@ public:
         for( auto & ptr : keys )    delete ptr;
     }
     void exit(int code) { }
+
     mrb_value core_gets(mrb_state* mrb, mrb_value self)
     {
         try
@@ -1021,6 +1022,7 @@ public:
         }
         return mrb_nil_value();
     }
+
     mrb_value thread_init(mrb_state * mrb, mrb_value self)
     {
         static const struct mrb_data_type mrb_thread_context_type =
@@ -1175,14 +1177,39 @@ public:
     }
     mrb_value smon_send(mrb_state * mrb, mrb_value self)
     {
-        char *      msg;
-        mrb_int     timer;
-        mrb_get_args(mrb, "zi", &msg, &timer);
-
         SerialMonitor * smon = static_cast<SerialMonitor *>(DATA_PTR(self));
         if(nullptr != smon)
         {
-            smon->send(msg, timer);
+            char *      msg   = nullptr;
+            mrb_int     timer = 0;
+            mrb_int     argc;
+            mrb_value * argv;
+            mrb_get_args(mrb, "*", &argv, &argc);
+            switch(argc)
+            {
+            case 1:
+                if(MRB_TT_STRING == mrb_type(argv[0]))
+                {
+                    struct RString * str = mrb_str_ptr(argv[0]);
+                    msg = RSTR_PTR(str);
+                }
+                break;
+            case 2:
+                if(  (MRB_TT_STRING  == mrb_type(argv[0]))
+                   &&(MRB_TT_INTEGER == mrb_type(argv[1])))
+                {
+                    struct RString * str = mrb_str_ptr(argv[0]);
+                    msg = RSTR_PTR(str);
+                    timer = mrb_integer(argv[1]);
+                }
+                break;
+            default:
+                break;
+            }
+            if(nullptr != msg)
+            {
+                smon->send(msg, timer);
+            }
         }
         return self;
     }
@@ -1195,6 +1222,7 @@ public:
         }
         return self;
     }
+
     mrb_value xlsx_init(mrb_state * mrb, mrb_value self)
     {
         static const struct mrb_data_type mrb_xlsx_context_type =
@@ -1372,6 +1400,7 @@ public:
         }
         return mrb_nil_value();
     }
+
     mrb_value bedit_init(mrb_state * mrb, mrb_value self)
     {
         static const struct mrb_data_type mrb_bedit_context_type =
@@ -1402,7 +1431,6 @@ public:
                     }
                     mrb_int size = (data.size() / 2);
                     bedit->alloc(size);
-
                     if(0 == bedit->write(0, size, data)) { bedit->alloc(0); }
                 }
                 break;
@@ -1705,41 +1733,41 @@ Application * Application::getObject(void)
     return Application::obj;
 }
 
-mrb_value mrb_core_gets(mrb_state* mrb, mrb_value self)             { Application * app = Application::getObject(); return app->core_gets(mrb, self);           }
+mrb_value mrb_core_gets(mrb_state* mrb, mrb_value self)             { Application * app = Application::getObject(); return app->core_gets(mrb, self);               }
 
-mrb_value mrb_opt_initialize(mrb_state * mrb, mrb_value self)       { Application * app = Application::getObject(); return app->opt_init(mrb, self);            }
-mrb_value mrb_opt_size(mrb_state * mrb, mrb_value self)             { Application * app = Application::getObject(); return app->opt_size(mrb, self);            }
-mrb_value mrb_opt_get(mrb_state * mrb, mrb_value self)              { Application * app = Application::getObject(); return app->opt_get(mrb, self);             }
+mrb_value mrb_opt_initialize(mrb_state * mrb, mrb_value self)       { Application * app = Application::getObject(); return app->opt_init(mrb, self);                }
+mrb_value mrb_opt_size(mrb_state * mrb, mrb_value self)             { Application * app = Application::getObject(); return app->opt_size(mrb, self);                }
+mrb_value mrb_opt_get(mrb_state * mrb, mrb_value self)              { Application * app = Application::getObject(); return app->opt_get(mrb, self);                 }
 
-mrb_value mrb_thread_initialize(mrb_state * mrb, mrb_value self)    { Application * app = Application::getObject(); return app->thread_init(mrb, self);         }
-mrb_value mrb_thread_run(mrb_state * mrb, mrb_value self)           { Application * app = Application::getObject(); return app->thread_run(mrb, self);          }
-mrb_value mrb_thread_join(mrb_state * mrb, mrb_value self)          { Application * app = Application::getObject(); return app->thread_join(mrb, self);         }
-mrb_value mrb_thread_state(mrb_state * mrb, mrb_value self)         { Application * app = Application::getObject(); return app->thread_state(mrb, self);        }
-mrb_value mrb_thread_wait(mrb_state * mrb, mrb_value self)          { Application * app = Application::getObject(); return app->thread_wait(mrb, self);         }
-mrb_value mrb_thread_notify(mrb_state * mrb, mrb_value self)        { Application * app = Application::getObject(); return app->thread_notiry(mrb, self);       }
-mrb_value mrb_thread_sync(mrb_state * mrb, mrb_value self)          { Application * app = Application::getObject(); return app->thread_sync(mrb, self);         }
+mrb_value mrb_thread_initialize(mrb_state * mrb, mrb_value self)    { Application * app = Application::getObject(); return app->thread_init(mrb, self);             }
+mrb_value mrb_thread_run(mrb_state * mrb, mrb_value self)           { Application * app = Application::getObject(); return app->thread_run(mrb, self);              }
+mrb_value mrb_thread_join(mrb_state * mrb, mrb_value self)          { Application * app = Application::getObject(); return app->thread_join(mrb, self);             }
+mrb_value mrb_thread_state(mrb_state * mrb, mrb_value self)         { Application * app = Application::getObject(); return app->thread_state(mrb, self);            }
+mrb_value mrb_thread_wait(mrb_state * mrb, mrb_value self)          { Application * app = Application::getObject(); return app->thread_wait(mrb, self);             }
+mrb_value mrb_thread_notify(mrb_state * mrb, mrb_value self)        { Application * app = Application::getObject(); return app->thread_notiry(mrb, self);           }
+mrb_value mrb_thread_sync(mrb_state * mrb, mrb_value self)          { Application * app = Application::getObject(); return app->thread_sync(mrb, self);             }
 
-mrb_value mrb_smon_initialize(mrb_state * mrb, mrb_value self)      { Application * app = Application::getObject(); return app->smon_init(mrb, self);           }
-mrb_value mrb_smon_wait(mrb_state * mrb, mrb_value self)            { Application * app = Application::getObject(); return app->smon_wait(mrb, self);           }
-mrb_value mrb_smon_send(mrb_state * mrb, mrb_value self)            { Application * app = Application::getObject(); return app->smon_send(mrb, self);           }
-mrb_value mrb_smon_close(mrb_state * mrb, mrb_value self)           { Application * app = Application::getObject(); return app->smon_close(mrb, self);          }
+mrb_value mrb_smon_initialize(mrb_state * mrb, mrb_value self)      { Application * app = Application::getObject(); return app->smon_init(mrb, self);               }
+mrb_value mrb_smon_wait(mrb_state * mrb, mrb_value self)            { Application * app = Application::getObject(); return app->smon_wait(mrb, self);               }
+mrb_value mrb_smon_send(mrb_state * mrb, mrb_value self)            { Application * app = Application::getObject(); return app->smon_send(mrb, self);               }
+mrb_value mrb_smon_close(mrb_state * mrb, mrb_value self)           { Application * app = Application::getObject(); return app->smon_close(mrb, self);              }
 
-mrb_value mrb_xlsx_initialize(mrb_state * mrb, mrb_value self)      { Application * app = Application::getObject(); return app->xlsx_init(mrb, self);           }
-mrb_value mrb_xlsx_create(mrb_state * mrb, mrb_value self)          { Application * app = Application::getObject(); return app->xlsx_create(mrb, self);         }
-mrb_value mrb_xlsx_open(mrb_state * mrb, mrb_value self)            { Application * app = Application::getObject(); return app->xlsx_open(mrb, self);           }
-mrb_value mrb_xlsx_worksheet(mrb_state * mrb, mrb_value self)       { Application * app = Application::getObject(); return app->xlsx_worksheet(mrb, self);      }
-mrb_value mrb_xlsx_sheet_names(mrb_state * mrb, mrb_value self)     { Application * app = Application::getObject(); return app->xlsx_work_sheet_names(mrb, self); }
-mrb_value mrb_xlsx_set_seet_name(mrb_state * mrb, mrb_value self)   { Application * app = Application::getObject(); return app->xlsx_set_sheet_name(mrb, self); }
-mrb_value mrb_xlsx_set_value(mrb_state * mrb, mrb_value self)       { Application * app = Application::getObject(); return app->xlsx_set_value(mrb, self);      }
-mrb_value mrb_xlsx_cell(mrb_state * mrb, mrb_value self)            { Application * app = Application::getObject(); return app->xlsx_cell(mrb, self);           }
+mrb_value mrb_xlsx_initialize(mrb_state * mrb, mrb_value self)      { Application * app = Application::getObject(); return app->xlsx_init(mrb, self);               }
+mrb_value mrb_xlsx_create(mrb_state * mrb, mrb_value self)          { Application * app = Application::getObject(); return app->xlsx_create(mrb, self);             }
+mrb_value mrb_xlsx_open(mrb_state * mrb, mrb_value self)            { Application * app = Application::getObject(); return app->xlsx_open(mrb, self);               }
+mrb_value mrb_xlsx_worksheet(mrb_state * mrb, mrb_value self)       { Application * app = Application::getObject(); return app->xlsx_worksheet(mrb, self);          }
+mrb_value mrb_xlsx_sheet_names(mrb_state * mrb, mrb_value self)     { Application * app = Application::getObject(); return app->xlsx_work_sheet_names(mrb, self);   }
+mrb_value mrb_xlsx_set_seet_name(mrb_state * mrb, mrb_value self)   { Application * app = Application::getObject(); return app->xlsx_set_sheet_name(mrb, self);     }
+mrb_value mrb_xlsx_set_value(mrb_state * mrb, mrb_value self)       { Application * app = Application::getObject(); return app->xlsx_set_value(mrb, self);          }
+mrb_value mrb_xlsx_cell(mrb_state * mrb, mrb_value self)            { Application * app = Application::getObject(); return app->xlsx_cell(mrb, self);               }
 
-mrb_value mrb_bedit_initialize(mrb_state * mrb, mrb_value self)     { Application * app = Application::getObject(); return app->bedit_init(mrb, self);          }
-mrb_value mrb_bedit_length(mrb_state * mrb, mrb_value self)         { Application * app = Application::getObject(); return app->bedit_length(mrb, self);        }
-mrb_value mrb_bedit_load(mrb_state * mrb, mrb_value self)           { Application * app = Application::getObject(); return app->bedit_load(mrb, self);          }
-mrb_value mrb_bedit_save(mrb_state * mrb, mrb_value self)           { Application * app = Application::getObject(); return app->bedit_save(mrb, self);          }
-mrb_value mrb_bedit_write(mrb_state * mrb, mrb_value self)          { Application * app = Application::getObject(); return app->bedit_write(mrb, self);         }
-mrb_value mrb_bedit_dump(mrb_state * mrb, mrb_value self)           { Application * app = Application::getObject(); return app->bedit_dump(mrb, self);          }
-mrb_value mrb_bedit_toItems(mrb_state * mrb, mrb_value self)        { Application * app = Application::getObject(); return app->bedit_toItems(mrb, self);       }
+mrb_value mrb_bedit_initialize(mrb_state * mrb, mrb_value self)     { Application * app = Application::getObject(); return app->bedit_init(mrb, self);              }
+mrb_value mrb_bedit_length(mrb_state * mrb, mrb_value self)         { Application * app = Application::getObject(); return app->bedit_length(mrb, self);            }
+mrb_value mrb_bedit_load(mrb_state * mrb, mrb_value self)           { Application * app = Application::getObject(); return app->bedit_load(mrb, self);              }
+mrb_value mrb_bedit_save(mrb_state * mrb, mrb_value self)           { Application * app = Application::getObject(); return app->bedit_save(mrb, self);              }
+mrb_value mrb_bedit_write(mrb_state * mrb, mrb_value self)          { Application * app = Application::getObject(); return app->bedit_write(mrb, self);             }
+mrb_value mrb_bedit_dump(mrb_state * mrb, mrb_value self)           { Application * app = Application::getObject(); return app->bedit_dump(mrb, self);              }
+mrb_value mrb_bedit_toItems(mrb_state * mrb, mrb_value self)        { Application * app = Application::getObject(); return app->bedit_toItems(mrb, self);           }
 
 
 void mrb_thread_context_free(mrb_state * mrb, void * ptr)
@@ -1786,19 +1814,19 @@ int main(int argc, char * argv[])
     {
         boost::program_options::options_description desc("smon.exe [Options]");
         desc.add_options()
-            ("baud,b",          boost::program_options::value<std::string>(),   "baud rate      Default 1200O1 ex) -b 9600E1")
-            ("gap,g",           boost::program_options::value<unsigned int>(),  "time out tick. Default   30 ( 30 [ms])")
-            ("timer,t",         boost::program_options::value<unsigned int>(),  "time out tick. Default  300 (300 [ms])")
-            ("timer2",          boost::program_options::value<unsigned int>(),  "time out tick. Default  500 (500 [ms])")
-            ("timer3",          boost::program_options::value<unsigned int>(),  "time out tick. Default 1000 (  1 [s])")
-            ("no-rts",                                                          "no control RTS signal")
-            ("crc,c",          boost::program_options::value<std::string>(),    "calclate modbus RTU CRC")
-            ("crc8",           boost::program_options::value<std::string>(),    "calclate CRC8")
-            ("sum,s",          boost::program_options::value<std::string>(),    "calclate checksum of XOR")
-            ("float,f",        boost::program_options::value<std::string>(),    "hex to float value")
-            ("floatl,F",       boost::program_options::value<std::string>(),    "litle endian hex to float value")
-            ("mruby-script,m", boost::program_options::value<std::string>(),    "execute mruby script")
-            ("help,h",                                                          "help");
+            ("baud,b",          boost::program_options::value<std::string>(),   "baud rate      Default 1200O1 ex) -b 9600E1"   )
+            ("gap,g",           boost::program_options::value<unsigned int>(),  "time out tick. Default   30 ( 30 [ms])"        )
+            ("timer,t",         boost::program_options::value<unsigned int>(),  "time out tick. Default  300 (300 [ms])"        )
+            ("timer2",          boost::program_options::value<unsigned int>(),  "time out tick. Default  500 (500 [ms])"        )
+            ("timer3",          boost::program_options::value<unsigned int>(),  "time out tick. Default 1000 (  1 [s])"         )
+            ("no-rts",                                                          "no control RTS signal"                         )
+            ("crc,c",          boost::program_options::value<std::string>(),    "calclate modbus RTU CRC"                       )
+            ("crc8",           boost::program_options::value<std::string>(),    "calclate CRC8"                                 )
+            ("sum,s",          boost::program_options::value<std::string>(),    "calclate checksum of XOR"                      )
+            ("float,f",        boost::program_options::value<std::string>(),    "hex to float value"                            )
+            ("floatl,F",       boost::program_options::value<std::string>(),    "litle endian hex to float value"               )
+            ("mruby-script,m", boost::program_options::value<std::string>(),    "execute mruby script"                          )
+            ("help,h",                                                          "help"                                          );
         boost::program_options::variables_map argmap;
 
         auto const parsing_result = parse_command_line( argc, argv, desc );
