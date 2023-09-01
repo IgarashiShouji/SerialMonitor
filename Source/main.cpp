@@ -850,37 +850,29 @@ public:
     {
         return length;
     }
-    bool write(mrb_int address, mrb_int size, std::string & in_data)
+    uint32_t write(mrb_int address, mrb_int size, std::string & in_data)
     {
+        uint32_t cnt = 0;
         std::lock_guard<std::mutex> lock(mtx);
-        if(((address + size) <= length) && (0 == (length % 2)))
+        for(auto pos = 0; ((cnt < size) && (address < length)); cnt ++, address ++, pos += 2)
         {
-            char * temp = new char[in_data.size()];
-            for(auto idx = 0, pos = 0; idx < size; idx ++, pos += 2)
-            {
-                auto temp = in_data.substr(pos, 2);
-                auto val  = stoi(temp, 0, 16);
-                data[address + idx] = static_cast<unsigned char>(val);
-            }
-            delete temp;
-            return true;
+            auto temp = in_data.substr(pos, 2);
+            auto val  = stoi(temp, 0, 16);
+            data[address] = static_cast<unsigned char>(val);
         }
-        return false;
+        return cnt;
     }
-    bool dump(mrb_int address, mrb_int size, std::string & output)
+    uint32_t dump(mrb_int address, mrb_int size, std::string & output)
     {
+        uint32_t idx = 0;
         std::lock_guard<std::mutex> lock(mtx);
-        if((address + size) <= length)
+        for( ; (idx < size) && (address < length); idx ++, address ++)
         {
-            for( auto idx = 0; idx < size; idx ++)
-            {
-                char temp[4] = { 0 };
-                sprintf(temp, "%02X", data[address + idx]);
-                output += temp;
-            }
-            return true;
+            char temp[4] = { 0 };
+            sprintf(temp, "%02X", data[address]);
+            output += temp;
         }
-        return false;
+        return idx;
     }
     bool toItems(mrb_state * mrb, uint32_t address, std::string & format_, mrb_value & array)
     {
@@ -1405,9 +1397,14 @@ public:
                 {
                     struct RString * str = mrb_str_ptr(argv[0]);
                     std::string data(RSTR_PTR(str));
+                    for(auto pos = data.find_first_of(" "); pos != std::string::npos; pos = data.find_first_of(" "))
+                    {
+                        data.erase(pos, 1);
+                    }
                     mrb_int size = (data.size() / 2);
                     bedit->alloc(size);
-                    if( !bedit->write(0, size, data) ) { bedit->alloc(0); }
+
+                    if(0 == bedit->write(0, size, data)) { bedit->alloc(0); }
                 }
                 break;
             default:
@@ -1476,13 +1473,31 @@ public:
             switch(argc)
             {
             case 1:
-                mrb_get_args(mrb, "z", &data_ptr);
+                if(MRB_TT_STRING == mrb_type(argv[0]))
+                {
+                    struct RString * str = mrb_str_ptr(argv[0]);
+                    data_ptr = RSTR_PTR(str);
+                }
                 break;
             case 2:
-                mrb_get_args(mrb, "iz", &address, &data_ptr);
+                if(  (MRB_TT_INTEGER == mrb_type(argv[0]))
+                   &&(MRB_TT_STRING  == mrb_type(argv[1])))
+                {
+                    address = mrb_integer(argv[0]);
+                    struct RString * str = mrb_str_ptr(argv[1]);
+                    data_ptr = RSTR_PTR(str);
+                }
                 break;
             case 3:
-                mrb_get_args(mrb, "iiz", &address, &size, &data_ptr);
+                if(  (MRB_TT_INTEGER == mrb_type(argv[0]))
+                   &&(MRB_TT_INTEGER == mrb_type(argv[1]))
+                   &&(MRB_TT_STRING  == mrb_type(argv[2])))
+                {
+                    address = mrb_integer(argv[0]);
+                    size    = mrb_integer(argv[1]);
+                    struct RString * str = mrb_str_ptr(argv[2]);
+                    data_ptr = RSTR_PTR(str);
+                }
                 break;
             default:
                 break;
@@ -1490,13 +1505,15 @@ public:
             if(nullptr != data_ptr)
             {
                 std::string data(data_ptr);
+                for(auto pos = data.find_first_of(" "); pos != std::string::npos; pos = data.find_first_of(" "))
+                {
+                    data.erase(pos, 1);
+                }
                 if(0 == size) { size = data.size() / 2; }
                 if(0 < size)
                 {
-                    if( bedit->write(address, size, data) )
-                    {
-                        return mrb_int_value(mrb, size);
-                    }
+                    auto wsize = bedit->write(address, size, data);
+                    return mrb_int_value(mrb, wsize);
                 }
             }
         }
@@ -1507,13 +1524,29 @@ public:
         BinaryControl * bedit = static_cast<BinaryControl *>(DATA_PTR(self));
         if(nullptr != bedit)
         {
-            mrb_int address;
-            mrb_int size;
-            std::string output;
-            mrb_get_args(mrb, "ii", &address, &size);
-            if( bedit->dump(address, size, output) )
+            mrb_int address = 0;
+            mrb_int size    = bedit->size();
+            mrb_int argc;
+            mrb_value * argv;
+            mrb_get_args(mrb, "*", &argv, &argc);
+            switch(argc)
             {
-                return mrb_str_new_cstr(mrb, output.c_str());
+            case 1:
+                mrb_get_args(mrb, "i", &size);
+                break;
+            case 2:
+                mrb_get_args(mrb, "ii", &address, &size);
+                break;
+            default:
+                break;
+            }
+            if(0 < size)
+            {
+                std::string output;
+                if( 0 < bedit->dump(address, size, output) )
+                {
+                    return mrb_str_new_cstr(mrb, output.c_str());
+                }
             }
         }
         return mrb_nil_value();
@@ -1523,14 +1556,30 @@ public:
         BinaryControl * bedit = static_cast<BinaryControl *>(DATA_PTR(self));
         if(nullptr != bedit)
         {
-            mrb_value arry = mrb_ary_new(mrb);
-            DWord address;
-            char * fmt_ptr;
-            mrb_get_args(mrb, "iz", &address, &fmt_ptr);
-            std::string fmt(fmt_ptr);
-            if( bedit->toItems(mrb, address.data, fmt, arry) )
+            mrb_int address = 0;
+            char *  fmt_ptr = nullptr;
+            mrb_int argc;
+            mrb_value * argv;
+            mrb_get_args(mrb, "*", &argv, &argc);
+            switch(argc)
             {
-                return arry;
+            case 1:
+                mrb_get_args(mrb, "z", &fmt_ptr);
+                break;
+            case 2:
+                mrb_get_args(mrb, "iz", &address, &fmt_ptr);
+                break;
+            default:
+                break;
+            }
+            if(nullptr != fmt_ptr)
+            {
+                std::string fmt(fmt_ptr);
+                mrb_value arry = mrb_ary_new(mrb);
+                if( bedit->toItems(mrb, address, fmt, arry) )
+                {
+                    return arry;
+                }
             }
         }
         return mrb_nil_value();
