@@ -346,7 +346,6 @@ static void mrb_xlsx_context_free(mrb_state * mrb, void * ptr);
 /* class BinEdit */
 static mrb_value mrb_bedit_initialize(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_bedit_length(mrb_state * mrb, mrb_value self);
-static mrb_value mrb_bedit_create(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_bedit_load(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_bedit_save(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_bedit_write(mrb_state * mrb, mrb_value self);
@@ -1423,17 +1422,6 @@ public:
         }
         return mrb_nil_value();
     }
-    mrb_value bedit_create(mrb_state * mrb, mrb_value self)
-    {
-        BinaryControl * bedit = static_cast<BinaryControl *>(DATA_PTR(self));
-        if(nullptr != bedit)
-        {
-            mrb_int size;
-            mrb_get_args(mrb, "i", &size);
-            bedit->alloc(size);
-        }
-        return mrb_nil_value();
-    }
     mrb_value bedit_load(mrb_state * mrb, mrb_value self)
     {
         BinaryControl * bedit = static_cast<BinaryControl *>(DATA_PTR(self));
@@ -1675,7 +1663,6 @@ public:
             struct RClass * bedit_class = mrb_define_class_under( mrb, mrb->kernel_module, "BinEdit", mrb->object_class );
             mrb_define_method( mrb, bedit_class, "initialize",      mrb_bedit_initialize,       MRB_ARGS_ANY()          );
             mrb_define_method( mrb, bedit_class, "length",          mrb_bedit_length,           MRB_ARGS_ARG( 1, 1 )    );
-            mrb_define_method( mrb, bedit_class, "create",          mrb_bedit_create,           MRB_ARGS_ARG( 1, 1 )    );
             mrb_define_method( mrb, bedit_class, "load",            mrb_bedit_load,             MRB_ARGS_ARG( 1, 1 )    );
             mrb_define_method( mrb, bedit_class, "save",            mrb_bedit_save,             MRB_ARGS_ARG( 1, 1 )    );
             mrb_define_method( mrb, bedit_class, "write",           mrb_bedit_write,            MRB_ARGS_ARG( 2, 1 )    );
@@ -1748,7 +1735,6 @@ mrb_value mrb_xlsx_cell(mrb_state * mrb, mrb_value self)            { Applicatio
 
 mrb_value mrb_bedit_initialize(mrb_state * mrb, mrb_value self)     { Application * app = Application::getObject(); return app->bedit_init(mrb, self);          }
 mrb_value mrb_bedit_length(mrb_state * mrb, mrb_value self)         { Application * app = Application::getObject(); return app->bedit_length(mrb, self);        }
-mrb_value mrb_bedit_create(mrb_state * mrb, mrb_value self)         { Application * app = Application::getObject(); return app->bedit_create(mrb, self);        }
 mrb_value mrb_bedit_load(mrb_state * mrb, mrb_value self)           { Application * app = Application::getObject(); return app->bedit_load(mrb, self);          }
 mrb_value mrb_bedit_save(mrb_state * mrb, mrb_value self)           { Application * app = Application::getObject(); return app->bedit_save(mrb, self);          }
 mrb_value mrb_bedit_write(mrb_state * mrb, mrb_value self)          { Application * app = Application::getObject(); return app->bedit_write(mrb, self);         }
