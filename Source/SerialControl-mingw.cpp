@@ -38,24 +38,24 @@ public:
 class SerialControlBoost : public SerialControl
 {
 protected:
-        boost::asio::io_service     io;
-        boost::asio::serial_port    port;
-        BaudRate                    _baudrate;
-        unsigned char               bit_num;
-        RtsContorl                  rts;
+    boost::asio::io_service     io;
+    boost::asio::serial_port    port;
+    unsigned int                    _baudrate;
+    unsigned char               bit_num;
+    RtsContorl                  rts;
 
 public:
-        SerialControlBoost(const char * name, BaudRate bd, Parity pt, StopBit st, bool rts);
-        virtual ~SerialControlBoost(void);
-        virtual std::size_t read(unsigned char * data, std::size_t size);
-        virtual std::size_t send(unsigned char * data, std::size_t size);
-        virtual bool rts_status(void) const;
-        virtual void setRTS(void);
-        virtual void clearRTS(void);
-        virtual void close(void);
+    SerialControlBoost(const char * name, unsigned int bd, Parity pt, StopBit st, bool rts);
+    virtual ~SerialControlBoost(void);
+    virtual std::size_t read(unsigned char * data, std::size_t size);
+    virtual std::size_t send(unsigned char * data, std::size_t size);
+    virtual bool rts_status(void) const;
+    virtual void setRTS(void);
+    virtual void clearRTS(void);
+    virtual void close(void);
 };
 
-SerialControlBoost::SerialControlBoost(const char * name, BaudRate bd, Parity pt, StopBit st, bool rts_ctrl)
+SerialControlBoost::SerialControlBoost(const char * name, unsigned int bd, Parity pt, StopBit st, bool rts_ctrl)
   : port(io, name), _baudrate(bd), bit_num(1 + 8 + st), rts(port.native_handle(), rts_ctrl)
 {
     if(pt != none) bit_num ++;
@@ -118,7 +118,7 @@ bool SerialControlBoost::rts_status(void) const { return rts.status(); }
 void SerialControlBoost::setRTS(void)           { rts.set();   }
 void SerialControlBoost::clearRTS(void)         { rts.clear(); }
 
-SerialControl * SerialControl::createObject(const string & name, BaudRate baud, Parity pt, StopBit st, bool rts)
+SerialControl * SerialControl::createObject(const string & name, unsigned int baud, Parity pt, StopBit st, bool rts)
 {
     SerialControl * com = new SerialControlBoost(name.c_str(), baud, pt, st, rts);
     return com;
@@ -144,7 +144,7 @@ bool SerialControl::hasBaudRate(std::string & baud, Profile & info)
         { BR9600,   even, one }, { BR9600,   even, two }, { BR9600,   none, one }, { BR9600,   none, two }, { BR9600,   odd,  one }, { BR9600,   odd,  two }
     };
 
-    ConstArray<const char *> arry(list, (sizeof(list)/sizeof(list[0])));
+    ConstArray<const char *> arry(list, __ArrayCount(list));
     ConstCString target(baud.c_str(), baud.size());
     size_t idx = getIndexArray<const char *>(arry, target);
     if(idx < __ArrayCount(list))

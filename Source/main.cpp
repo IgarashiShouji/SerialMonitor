@@ -11,6 +11,7 @@
 #include "Entity.hpp"
 #include "SerialControl.hpp"
 #include "ComList.hpp"
+#include "lz4.h"
 
 #include <boost/program_options.hpp>
 #include <boost/filesystem.hpp>
@@ -351,6 +352,8 @@ static mrb_value mrb_bedit_save(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_bedit_write(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_bedit_dump(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_bedit_toItems(mrb_state * mrb, mrb_value self);
+static mrb_value mrb_bedit_compress(mrb_state * mrb, mrb_value self);
+static mrb_value mrb_bedit_decompress(mrb_state * mrb, mrb_value self);
 static void mrb_bedit_context_free(mrb_state * mrb, void * ptr);
 
 
@@ -553,42 +556,37 @@ public:
         }
         std::string name(args[0]);
         std::string baud(def_boud);
+        SerialControl::Profile info;
+        SerialControl::hasBaudRate(baud, info);
         if(1 < args.size())
         {
             for(auto idx = 1; idx < args.size(); idx ++)
             {
                 auto & arg = args[idx];
-                if( std::regex_match(arg, std::regex("GAP=[0-9]+")))
-                {
-                    auto str_num = std::regex_replace(arg, std::regex("GAP=([0-9]+)"), "$1");
-                    timer[0] = stoi(str_num);
-                }
-                else if( std::regex_match(arg, std::regex("TO1=[0-9]+")))
-                {
-                    auto str_num = std::regex_replace(arg, std::regex("TO1=([0-9]+)"), "$1");
-                    timer[1] = stoi(str_num);
-                }
-                else if( std::regex_match(arg, std::regex("TO2=[0-9]+")))
-                {
-                    auto str_num = std::regex_replace(arg, std::regex("TO2=([0-9]+)"), "$1");
-                    timer[2] = stoi(str_num);
-                }
-                else if( std::regex_match(arg, std::regex("TO3=[0-9]+")))
-                {
-                    auto str_num = std::regex_replace(arg, std::regex("TO3=([0-9]+)"), "$1");
-                    timer[3] = stoi(str_num);
-                }
+                if      ( std::regex_match(arg, std::regex("one")))        { info.stop = SerialControl::one; }
+                else if ( std::regex_match(arg, std::regex("ONE")))        { info.stop = SerialControl::one; }
+                else if ( std::regex_match(arg, std::regex("two")))        { info.stop = SerialControl::two; }
+                else if ( std::regex_match(arg, std::regex("TWO")))        { info.stop = SerialControl::two; }
+                else if ( std::regex_match(arg, std::regex("none")))       { info.parity = SerialControl::none; }
+                else if ( std::regex_match(arg, std::regex("NONE")))       { info.parity = SerialControl::none; }
+                else if ( std::regex_match(arg, std::regex("even")))       { info.parity = SerialControl::even; }
+                else if ( std::regex_match(arg, std::regex("EVEN")))       { info.parity = SerialControl::even; }
+                else if ( std::regex_match(arg, std::regex("odd")))        { info.parity = SerialControl::odd; }
+                else if ( std::regex_match(arg, std::regex("ODD")))        { info.parity = SerialControl::odd; }
+                else if ( std::regex_match(arg, std::regex("GAP=[0-9]+"))) { timer[0] = stoi(std::regex_replace(arg, std::regex("GAP=([0-9]+)"), "$1")); }
+                else if ( std::regex_match(arg, std::regex("TO1=[0-9]+"))) { timer[1] = stoi(std::regex_replace(arg, std::regex("TO1=([0-9]+)"), "$1")); }
+                else if ( std::regex_match(arg, std::regex("TO2=[0-9]+"))) { timer[2] = stoi(std::regex_replace(arg, std::regex("TO2=([0-9]+)"), "$1")); }
+                else if ( std::regex_match(arg, std::regex("TO3=[0-9]+"))) { timer[3] = stoi(std::regex_replace(arg, std::regex("TO3=([0-9]+)"), "$1")); }
                 else
                 {
-                    baud = arg;
+                    if( !SerialControl::hasBaudRate(arg, info) )
+                    {
+                        info.baud = stoi(arg);
+                    }
                 }
             }
         }
-        SerialControl::Profile info;
-        if( SerialControl::hasBaudRate(baud, info) )
-        {
-            com = SerialControl::createObject(name.c_str(), info.baud, info.parity, info.stop, rts_ctrl);
-        }
+        com = SerialControl::createObject(name.c_str(), info.baud, info.parity, info.stop, rts_ctrl);
         cache.buff  = new unsigned char [cache_size];
         cache.cnt   = 0;
         cache.state = NONE;
@@ -805,10 +803,11 @@ class BinaryControl
 {
 protected:
     size_t length;
+    size_t compress_size;
     unsigned char * data;
     std::mutex mtx;
 public:
-    BinaryControl(void) : length(0), data(nullptr) { }
+    BinaryControl(void) : length(0), compress_size(0), data(nullptr) { }
     virtual ~BinaryControl(void)
     {
         std::lock_guard<std::mutex> lock(mtx);
@@ -817,17 +816,28 @@ public:
             delete [] data;
         }
     }
+    void alloc(size_t size)
+    {
+        std::lock_guard<std::mutex> lock(mtx);
+        length        = size;
+        compress_size = 0;
+        if( nullptr != data )   { delete [] data;                   data = nullptr; }
+        if( 0 < size )          { data = new unsigned char [size];                  }
+    }
+    size_t size(void) const
+    {
+        if(0 < compress_size) { return compress_size; }
+        return length;
+    }
     size_t loadBinaryFile(std::string & fname)
     {
         std::lock_guard<std::mutex> lock(mtx);
         std::filesystem::path path(fname);
-        length = std::filesystem::file_size(path);
-        if(nullptr != data) { delete [] data; }
-        data = new unsigned char[length];
+        alloc(std::filesystem::file_size(path));
         std::ifstream fin(fname);
         if(fin.is_open())
         {
-            fin.read(reinterpret_cast<char *>(data), length);
+            fin.read(reinterpret_cast<char *>(data), size());
             return length;
         }
         return 0;
@@ -836,22 +846,55 @@ public:
     {
         std::lock_guard<std::mutex> lock(mtx);
         std::ofstream fout(fname);
-        fout.write(reinterpret_cast<char *>(data), length);
+        fout.write(reinterpret_cast<char *>(data), size());
     }
-    void alloc(size_t size)
+    uint32_t compress(void)
     {
-        std::lock_guard<std::mutex> lock(mtx);
-        length = size;
-        if( nullptr != data )   { delete [] data;                   data = nullptr; }
-        if( 0 < size )          { data = new unsigned char [size];                  }
+        if(nullptr != data)
+        {
+            if(0 == compress_size)
+            {
+                auto size_max = LZ4_compressBound(length);
+                std::lock_guard<std::mutex> lock(mtx);
+                auto dest = new unsigned char [size_max];
+                compress_size = LZ4_compress_default(reinterpret_cast<const char *>(data), reinterpret_cast<char *>(dest), length, size_max);
+                if(compress_size < length)
+                {
+                    delete [] data;
+                    data = dest;
+                    return compress_size;
+                }
+                delete [] dest;
+                compress_size = 0;
+            }
+        }
+        return 0;
     }
-    size_t size(void) const
+    uint32_t decompress(void)
     {
-        return length;
+        if(nullptr != data)
+        {
+            if(0 < compress_size)
+            {
+                std::lock_guard<std::mutex> lock(mtx);
+                auto dest = new unsigned char [length];
+                auto size = LZ4_decompress_safe(reinterpret_cast<const char *>(data), reinterpret_cast<char *>(dest), compress_size, length);
+                if(size == length)
+                {
+                    delete [] data;
+                    data = dest;
+                    compress_size = 0;
+                    return size;
+                }
+                delete [] dest;
+            }
+        }
+        return 0;
     }
     uint32_t write(mrb_int address, mrb_int size, std::string & in_data)
     {
         uint32_t cnt = 0;
+        auto length = this->size();
         std::lock_guard<std::mutex> lock(mtx);
         for(auto pos = 0; ((cnt < size) && (address < length)); cnt ++, address ++, pos += 2)
         {
@@ -864,6 +907,7 @@ public:
     uint32_t dump(mrb_int address, mrb_int size, std::string & output)
     {
         uint32_t idx = 0;
+        auto length = this->size();
         std::lock_guard<std::mutex> lock(mtx);
         for( ; (idx < size) && (address < length); idx ++, address ++)
         {
@@ -1600,6 +1644,26 @@ public:
         }
         return mrb_nil_value();
     }
+    mrb_value bedit_compress(mrb_state * mrb, mrb_value self)
+    {
+        BinaryControl * bedit = static_cast<BinaryControl *>(DATA_PTR(self));
+        if(nullptr != bedit)
+        {
+            auto size = bedit->compress();
+            return mrb_int_value(mrb, size);
+        }
+        return mrb_int_value(mrb, 0);
+    }
+    mrb_value bedit_decompress(mrb_state * mrb, mrb_value self)
+    {
+        BinaryControl * bedit = static_cast<BinaryControl *>(DATA_PTR(self));
+        if(nullptr != bedit)
+        {
+            auto size = bedit->decompress();
+            return mrb_int_value(mrb, size);
+        }
+        return mrb_int_value(mrb, 0);
+    }
 
     void main(void)
     {
@@ -1696,6 +1760,8 @@ public:
             mrb_define_method( mrb, bedit_class, "write",           mrb_bedit_write,            MRB_ARGS_ARG( 2, 1 )    );
             mrb_define_method( mrb, bedit_class, "dump",            mrb_bedit_dump,             MRB_ARGS_ARG( 2, 1 )    );
             mrb_define_method( mrb, bedit_class, "toItems",         mrb_bedit_toItems,          MRB_ARGS_ARG( 2, 1 )    );
+            mrb_define_method( mrb, bedit_class, "compress",        mrb_bedit_compress,         MRB_ARGS_NONE()         );
+            mrb_define_method( mrb, bedit_class, "decompress",      mrb_bedit_decompress,       MRB_ARGS_NONE()         );
 
             /* exec mRuby Script */
             extern const uint8_t default_options[];
@@ -1768,6 +1834,8 @@ mrb_value mrb_bedit_save(mrb_state * mrb, mrb_value self)           { Applicatio
 mrb_value mrb_bedit_write(mrb_state * mrb, mrb_value self)          { Application * app = Application::getObject(); return app->bedit_write(mrb, self);             }
 mrb_value mrb_bedit_dump(mrb_state * mrb, mrb_value self)           { Application * app = Application::getObject(); return app->bedit_dump(mrb, self);              }
 mrb_value mrb_bedit_toItems(mrb_state * mrb, mrb_value self)        { Application * app = Application::getObject(); return app->bedit_toItems(mrb, self);           }
+mrb_value mrb_bedit_compress(mrb_state * mrb, mrb_value self)       { Application * app = Application::getObject(); return app->bedit_compress(mrb, self);          }
+mrb_value mrb_bedit_decompress(mrb_state * mrb, mrb_value self)     { Application * app = Application::getObject(); return app->bedit_decompress(mrb, self);        }
 
 
 void mrb_thread_context_free(mrb_state * mrb, void * ptr)
@@ -1835,7 +1903,7 @@ int main(int argc, char * argv[])
 
         if(argmap.count("help"))
         {
-            std::cout << "smon Software revision 0.9.0c" << std::endl;
+            std::cout << "smon Software revision 0.9.0d" << std::endl;
             std::cout << std::endl;
             std::cout << desc << std::endl;
             return 0;

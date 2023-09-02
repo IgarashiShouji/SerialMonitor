@@ -2,7 +2,7 @@ TARGET=smon
 CPP=g++
 AR=ar
 
-CFLAGS_COMMON=-I ./Include -I ./MyUtilities/Include -I ./mruby/include -I ./OpenXLSX/OpenXLSX -I ./OpenXLSX/OpenXLSX/headers -I ./OpenXLSX/build/OpenXLSX -I ./OpenXLSX/Examples/external/nowide/include --input-charset=UTF-8 --exec-charset=UTF-8
+CFLAGS_COMMON=-I ./Include -I ./MyUtilities/Include -I ./mruby/include -I ./OpenXLSX/OpenXLSX -I ./OpenXLSX/OpenXLSX/headers -I ./OpenXLSX/build/OpenXLSX -I ./OpenXLSX/Examples/external/nowide/include -I /lz4/lib --input-charset=UTF-8 --exec-charset=UTF-8
 LIBS_COMMON=-L ./Objects -L ./MyUtilities -L OpenXLSX/build/output/ -L ./lz4/lib/ -lSerialMonitor -lUtilities -lmruby -lOpenXLSX -llz4
 
 CFLAGS=-g -I ./boost-x64/include $(CFLAGS_COMMON) -I ./mruby/build/host/include -pipe -O3 -march=native

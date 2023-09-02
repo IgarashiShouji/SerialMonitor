@@ -12,4 +12,16 @@ printf("wsize: %s\n", bin.write('11 22'))
 printf("wsize: %s\n", bin.write(2, '03'))
 printf("%d: %s\n", bin.length, bin.dump)
 
+bin = BinEdit.new('010203040506070809112233445566778899AABBCCDDEEFF010203040506070809')
+printf("compress: \n")
+printf("%d: %s\n", bin.length, bin.dump)
+bin.compress();   printf("%d: %s\n", bin.length, bin.dump)
+bin.decompress(); printf("%d: %s\n", bin.length, bin.dump)
+
+bin = BinEdit.new('010203040506070809FFFFFFFFFFFFFFFFFFFFFFFFFFFFFF010203040506070809')
+printf("compress: \n")
+printf("%d: %s\n", bin.length, bin.dump)
+bin.compress();   printf("%d: %s\n", bin.length, bin.dump)
+bin.decompress(); printf("%d: %s\n", bin.length, bin.dump)
+
 print "test end\n"

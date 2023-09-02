@@ -38,14 +38,14 @@ public:
     };
     struct Profile
     {
-        enum BaudRate   baud;
+        unsigned int    baud;
         enum Parity     parity;
         enum StopBit    stop;
     };
 
 public:
     static bool hasBaudRate(std::string & baud, Profile & info);
-    static SerialControl * createObject(const std::string & name, SerialControl::BaudRate baud, SerialControl::Parity pt, SerialControl::StopBit st, bool rts);
+    static SerialControl * createObject(const std::string & name, unsigned int  baud, SerialControl::Parity pt, SerialControl::StopBit st, bool rts);
     virtual std::size_t read(unsigned char * data, std::size_t size) = 0;
     virtual std::size_t send(unsigned char * data, std::size_t size) = 0;
     virtual bool rts_status(void) const = 0;
