@@ -806,6 +806,7 @@ protected:
     size_t compress_size;
     unsigned char * data;
     std::mutex mtx;
+
 public:
     BinaryControl(void) : length(0), compress_size(0), data(nullptr) { }
     virtual ~BinaryControl(void)
@@ -831,14 +832,25 @@ public:
     }
     size_t loadBinaryFile(std::string & fname)
     {
-        std::lock_guard<std::mutex> lock(mtx);
         std::filesystem::path path(fname);
-        alloc(std::filesystem::file_size(path));
-        std::ifstream fin(fname);
-        if(fin.is_open())
+        auto            file_sz = std::filesystem::file_size(path);
+        unsigned char * temp    = new unsigned char [file_sz];
+        if((0 < file_sz) && (nullptr != temp))
         {
-            fin.read(reinterpret_cast<char *>(data), size());
-            return length;
+            std::ifstream fin(fname);
+            if(fin.is_open())
+            {
+                unsigned char * org_data = data;
+                fin.read(reinterpret_cast<char *>(temp), file_sz);
+                {
+                    std::lock_guard<std::mutex> lock(mtx);
+                    data          = temp;
+                    length        = file_sz;
+                    compress_size = 0;
+                }
+                if(nullptr != org_data) { delete [] org_data; }
+                return length;
+            }
         }
         return 0;
     }
