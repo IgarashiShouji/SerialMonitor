@@ -837,7 +837,7 @@ public:
         unsigned char * temp    = new unsigned char [file_sz];
         if((0 < file_sz) && (nullptr != temp))
         {
-            std::ifstream fin(fname);
+            std::ifstream fin(fname, std::ios::binary);
             if(fin.is_open())
             {
                 unsigned char * org_data = data;
@@ -857,7 +857,7 @@ public:
     void saveBinaryFile(std::string & fname)
     {
         std::lock_guard<std::mutex> lock(mtx);
-        std::ofstream fout(fname);
+        std::ofstream fout(fname, std::ios::binary);
         fout.write(reinterpret_cast<char *>(data), size());
     }
     uint32_t compress(void)

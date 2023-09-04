@@ -4,6 +4,7 @@ bin = BinEdit.new('0102030405')
 printf("%d: %s\n", bin.length, bin.dump)
 printf("%d: %s\n", bin.length, bin.dump(1, 5))
 printf("%d: %s\n", bin.length, bin.dump(3))
+printf("%d: %s\n", bin.length, bin.dump(0,10))
 
 print BinEdit.hexToArray('bb sS wW iI dD fF h2 A3', '0102 FEFF FFFE 0100 0100 FCFFFFFF FFFFFFFC 01000000 00000001 12345678 12345678 5566 303132'), "\n"
 
