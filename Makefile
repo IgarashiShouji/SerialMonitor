@@ -2,12 +2,12 @@ TARGET=smon
 CPP=g++
 AR=ar
 
-CFLAGS_COMMON=-I ./Include -I ./MyUtilities/Include -I ./mruby/include -I ./OpenXLSX/OpenXLSX -I ./OpenXLSX/OpenXLSX/headers -I ./OpenXLSX/build/OpenXLSX -I ./OpenXLSX/Examples/external/nowide/include
+CFLAGS_COMMON=-I ./Include -I ./MyUtilities/Include -I ./mruby/include -I ./OpenXLSX/OpenXLSX -I ./OpenXLSX/OpenXLSX/headers -I ./OpenXLSX/build/OpenXLSX -I ./OpenXLSX/Examples/external/nowide/include -I /lz4/lib --input-charset=UTF-8 --exec-charset=UTF-8
 LIBS_COMMON=-L ./Objects -L ./MyUtilities -L OpenXLSX/build/output/ -L ./lz4/lib/ -lSerialMonitor -lUtilities -lmruby -lOpenXLSX -llz4
 
 CFLAGS=-g $(CFLAGS_COMMON) -I ./mruby/build/host/include -pipe -O3 -march=native
 LIBS=-L ./mruby/build/host/lib $(LIBS_COMMON) -lboost_program_options -lboost_filesystem -lpthread
-AR_OBJS=Objects/SerialControl-linux.o Objects/default_options.o Objects/default_script.o
+AR_OBJS=Objects/SerialControl-linux.o Objects/default_options.o Objects/default_script.o Objects/help.o
 MAIN_DEPS=Objects/main.o MyUtilities/libUtilities.a mruby/build/host/lib/libmruby.a OpenXLSX/build/output/libOpenXLSX.a Objects/libSerialMonitor.a Objects
 CPPFLAGS=-std=c++17 $(CFLAGS)
 
@@ -54,3 +54,6 @@ Source/default_options.c:      Source/default_options.rb mruby/build/host/lib/li
 	./mruby/bin/mrbc -Bdefault_options $<
 Source/default_script.c:      Source/default_script.rb  mruby/build/host/lib/libmruby.a
 	./mruby/bin/mrbc -Bdefault_script $<
+Objects/help.o: Source/help.s Source/help.txt
+	yes | lz4 Source/help.txt
+	g++ -c -Wa,--noexecstac -o $@ $<

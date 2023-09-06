@@ -17,6 +17,17 @@ def test2(fname)
   printf("length: %d\n", bin.length)
   print "test: file uncompress end\n"
 end
+def test3()
+  bin = BinEdit.new('00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000 ')
+  bin.fromItems('dfwbcsifA',  [ 0x11223344, 1.0, 0xaabb, 0x99, -10, -3, -2, 0.1, '01234' ])
+  print bin.dump(), "\n"
+  print bin.toItems('dfwbcsifA5'), "\n"
+
+  bin = BinEdit.new('00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000 ')
+  bin.fromItems('DFWbcSIFA',  [ 0x11223344, 1.0, 0xaabb, 0x99, -10, -3, -2, 0.1, '987' ])
+  print bin.dump(), "\n"
+  print bin.toItems('DFWbcSIFA3'), "\n"
+end
 
 print "test\n"
 
@@ -49,5 +60,6 @@ bin.uncompress(); printf("%d: %s\n", bin.length, bin.dump)
 opt = Args.new()
 test1(opt['mruby-script'])
 test2(opt['mruby-script'])
+test3()
 
 print "test end\n"
