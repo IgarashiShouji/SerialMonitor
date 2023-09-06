@@ -348,12 +348,13 @@ static void mrb_xlsx_context_free(mrb_state * mrb, void * ptr);
 static mrb_value mrb_bedit_initialize(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_bedit_length(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_bedit_load(mrb_state * mrb, mrb_value self);
+static mrb_value mrb_bedit_load_compress(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_bedit_save(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_bedit_write(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_bedit_dump(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_bedit_toItems(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_bedit_compress(mrb_state * mrb, mrb_value self);
-static mrb_value mrb_bedit_decompress(mrb_state * mrb, mrb_value self);
+static mrb_value mrb_bedit_uncompress(mrb_state * mrb, mrb_value self);
 static void mrb_bedit_context_free(mrb_state * mrb, void * ptr);
 
 
@@ -814,7 +815,7 @@ public:
         std::lock_guard<std::mutex> lock(mtx);
         if(nullptr!=data)
         {
-            delete [] data;
+            std::free(data);
         }
     }
     void alloc(size_t size)
@@ -822,8 +823,8 @@ public:
         std::lock_guard<std::mutex> lock(mtx);
         length        = size;
         compress_size = 0;
-        if( nullptr != data )   { delete [] data;                   data = nullptr; }
-        if( 0 < size )          { data = new unsigned char [size];                  }
+        if( nullptr != data ) { std::free(data); data = nullptr;                        }
+        if( 0 < size )        { data = static_cast<unsigned char *>(std::malloc(size)); }
     }
     size_t size(void) const
     {
@@ -834,22 +835,25 @@ public:
     {
         std::filesystem::path path(fname);
         auto            file_sz = std::filesystem::file_size(path);
-        unsigned char * temp    = new unsigned char [file_sz];
+        unsigned char * temp    = static_cast<unsigned char *>(std::malloc(file_sz));
         if((0 < file_sz) && (nullptr != temp))
         {
-            std::ifstream fin(fname, std::ios::binary);
-            if(fin.is_open())
+            if(std::filesystem::exists(fname))
             {
-                unsigned char * org_data = data;
-                fin.read(reinterpret_cast<char *>(temp), file_sz);
+                std::ifstream fin(fname, std::ios::binary);
+                if(fin.is_open())
                 {
-                    std::lock_guard<std::mutex> lock(mtx);
-                    data          = temp;
-                    length        = file_sz;
-                    compress_size = 0;
+                    unsigned char * org_data = data;
+                    fin.read(reinterpret_cast<char *>(temp), file_sz);
+                    {
+                        std::lock_guard<std::mutex> lock(mtx);
+                        data          = temp;
+                        length        = file_sz;
+                        compress_size = 0;
+                    }
+                    if(nullptr != org_data) { std::free(org_data); }
+                    return length;
                 }
-                if(nullptr != org_data) { delete [] org_data; }
-                return length;
             }
         }
         return 0;
@@ -860,6 +864,14 @@ public:
         std::ofstream fout(fname, std::ios::binary);
         fout.write(reinterpret_cast<char *>(data), size());
     }
+    void chg_compress(void)
+    {
+        if(0 == compress_size)
+        {
+            compress_size = length;
+            length = 0;
+        }
+    }
     uint32_t compress(void)
     {
         if(nullptr != data)
@@ -867,38 +879,70 @@ public:
             if(0 == compress_size)
             {
                 auto size_max = LZ4_compressBound(length);
-                std::lock_guard<std::mutex> lock(mtx);
-                auto dest = new unsigned char [size_max];
-                compress_size = LZ4_compress_default(reinterpret_cast<const char *>(data), reinterpret_cast<char *>(dest), length, size_max);
-                if(compress_size < length)
+                auto cmp_data = std::malloc(size_max);
+                if(nullptr != cmp_data)
                 {
-                    delete [] data;
-                    data = dest;
-                    return compress_size;
+                    std::lock_guard<std::mutex> lock(mtx);
+                    compress_size = LZ4_compress_default(reinterpret_cast<const char *>(data), static_cast<char *>(cmp_data), length, size_max);
+                    if(compress_size < length)
+                    {
+                        std::free(data);
+                        data = static_cast<unsigned char *>(cmp_data);
+                        return compress_size;
+                    }
+                    std::free(cmp_data);
+                    compress_size = 0;
                 }
-                delete [] dest;
-                compress_size = 0;
             }
         }
         return 0;
     }
-    uint32_t decompress(void)
+    uint32_t uncompress(void)
     {
         if(nullptr != data)
         {
             if(0 < compress_size)
             {
                 std::lock_guard<std::mutex> lock(mtx);
-                auto dest = new unsigned char [length];
-                auto size = LZ4_decompress_safe(reinterpret_cast<const char *>(data), reinterpret_cast<char *>(dest), compress_size, length);
-                if(size == length)
+                if(0 < length)
                 {
-                    delete [] data;
-                    data = dest;
-                    compress_size = 0;
-                    return size;
+                    auto dst = std::malloc(length);
+                    if(nullptr != dst)
+                    {
+                        auto size = LZ4_decompress_safe(reinterpret_cast<const char *>(data), reinterpret_cast<char *>(dst), compress_size, length);
+                        if(0 < size)
+                        {
+                            std::free(data);
+                            data = static_cast<unsigned char *>(dst);
+                            compress_size = 0;
+                            length = size;
+                            return size;
+                        }
+                        std::free(dst);
+                    }
                 }
-                delete [] dest;
+                else
+                {
+                    size_t buff_sz = 256;
+                    char * buff = static_cast<char *>(std::malloc(buff_sz));
+                    LZ4_streamDecode_t lz4s = { { 0 } };
+                    for(auto cnt=0; cnt < 32; cnt ++)
+                    {
+                        auto sz = LZ4_decompress_safe(reinterpret_cast<const char *>(data), buff, compress_size, buff_sz);
+                        if(0 < sz)
+                        {
+                            length = sz;
+                            compress_size = 0;
+                            std::free(data);
+                            data = reinterpret_cast<unsigned char *>(buff);
+                            break;
+                        }
+                        buff_sz <<= 1;
+                        auto temp = std::realloc(buff, buff_sz);
+                        if(nullptr == temp) { break; }
+                        buff = static_cast<char *>(temp);
+                    }
+                }
             }
         }
         return 0;
@@ -983,9 +1027,9 @@ public:
                 case 'D': { DWord temp; for(auto idx = 0; idx < 4; idx ++) { temp.buff[idx] = data[address + (3-idx)]; } mrb_ary_push(mrb, array, mrb_int_value(mrb, temp.uint32));  address += 4; } break;
                 case 'I': { DWord temp; for(auto idx = 0; idx < 4; idx ++) { temp.buff[idx] = data[address + (3-idx)]; } mrb_ary_push(mrb, array, mrb_int_value(mrb, temp.int32));   address += 4; } break;
                 case 'F': { DWord temp; for(auto idx = 0; idx < 4; idx ++) { temp.buff[idx] = data[address + (3-idx)]; } mrb_ary_push(mrb, array, mrb_float_value(mrb, temp.value)); address += 4; } break;
-                case 'A': state = t; break;
+                case 'A': state = t;   break;
                 case 'H': state = 'h'; break;
-                case 'h': state = t; break;
+                case 'h': state = t;   break;
                 default:
                     break;
                 }
@@ -1481,13 +1525,29 @@ public:
                 {
                     struct RString * str = mrb_str_ptr(argv[0]);
                     std::string data(RSTR_PTR(str));
-                    for(auto pos = data.find_first_of(" "); pos != std::string::npos; pos = data.find_first_of(" "))
+                    auto reg_file = std::regex("^file:");
+                    auto reg_comp  = std::regex("^compress:");
+                    if(std::regex_search(data, reg_file))
                     {
-                        data.erase(pos, 1);
+                        auto fname= std::regex_replace(data, reg_file, "");
+                        auto sz = bedit->loadBinaryFile(fname);
                     }
-                    mrb_int size = (data.size() / 2);
-                    bedit->alloc(size);
-                    if(0 == bedit->write(0, size, data)) { bedit->alloc(0); }
+                    else if(std::regex_search(data, reg_comp))
+                    {
+                        auto fname= std::regex_replace(data, reg_comp, "");
+                        auto sz = bedit->loadBinaryFile(fname);
+                        bedit->chg_compress();
+                    }
+                    else
+                    {
+                        for(auto pos = data.find_first_of(" "); pos != std::string::npos; pos = data.find_first_of(" "))
+                        {
+                            data.erase(pos, 1);
+                        }
+                        mrb_int size = (data.size() / 2);
+                        bedit->alloc(size);
+                        if(0 == bedit->write(0, size, data)) { bedit->alloc(0); }
+                    }
                 }
                 break;
             default:
@@ -1515,6 +1575,20 @@ public:
             mrb_get_args(mrb, "z", &fname_ptr);
             std::string fname(fname_ptr);
             auto sz = bedit->loadBinaryFile(fname);
+            return mrb_int_value(mrb, sz);
+        }
+        return mrb_int_value(mrb, 0);
+    }
+    mrb_value bedit_load_compress(mrb_state * mrb, mrb_value self)
+    {
+        BinaryControl * bedit = static_cast<BinaryControl *>(DATA_PTR(self));
+        if(nullptr != bedit)
+        {
+            char * fname_ptr;
+            mrb_get_args(mrb, "z", &fname_ptr);
+            std::string fname(fname_ptr);
+            auto sz = bedit->loadBinaryFile(fname);
+            bedit->chg_compress();
             return mrb_int_value(mrb, sz);
         }
         return mrb_int_value(mrb, 0);
@@ -1666,12 +1740,12 @@ public:
         }
         return mrb_int_value(mrb, 0);
     }
-    mrb_value bedit_decompress(mrb_state * mrb, mrb_value self)
+    mrb_value bedit_uncompress(mrb_state * mrb, mrb_value self)
     {
         BinaryControl * bedit = static_cast<BinaryControl *>(DATA_PTR(self));
         if(nullptr != bedit)
         {
-            auto size = bedit->decompress();
+            auto size = bedit->uncompress();
             return mrb_int_value(mrb, size);
         }
         return mrb_int_value(mrb, 0);
@@ -1768,12 +1842,13 @@ public:
             mrb_define_method( mrb, bedit_class, "initialize",      mrb_bedit_initialize,       MRB_ARGS_ANY()          );
             mrb_define_method( mrb, bedit_class, "length",          mrb_bedit_length,           MRB_ARGS_ARG( 1, 1 )    );
             mrb_define_method( mrb, bedit_class, "load",            mrb_bedit_load,             MRB_ARGS_ARG( 1, 1 )    );
+            mrb_define_method( mrb, bedit_class, "load_compress",   mrb_bedit_load_compress,    MRB_ARGS_ARG( 1, 1 )    );
             mrb_define_method( mrb, bedit_class, "save",            mrb_bedit_save,             MRB_ARGS_ARG( 1, 1 )    );
             mrb_define_method( mrb, bedit_class, "write",           mrb_bedit_write,            MRB_ARGS_ARG( 2, 1 )    );
             mrb_define_method( mrb, bedit_class, "dump",            mrb_bedit_dump,             MRB_ARGS_ARG( 2, 1 )    );
             mrb_define_method( mrb, bedit_class, "toItems",         mrb_bedit_toItems,          MRB_ARGS_ARG( 2, 1 )    );
             mrb_define_method( mrb, bedit_class, "compress",        mrb_bedit_compress,         MRB_ARGS_NONE()         );
-            mrb_define_method( mrb, bedit_class, "decompress",      mrb_bedit_decompress,       MRB_ARGS_NONE()         );
+            mrb_define_method( mrb, bedit_class, "uncompress",      mrb_bedit_uncompress,       MRB_ARGS_NONE()         );
 
             /* exec mRuby Script */
             extern const uint8_t default_options[];
@@ -1842,12 +1917,14 @@ mrb_value mrb_xlsx_cell(mrb_state * mrb, mrb_value self)            { Applicatio
 mrb_value mrb_bedit_initialize(mrb_state * mrb, mrb_value self)     { Application * app = Application::getObject(); return app->bedit_init(mrb, self);              }
 mrb_value mrb_bedit_length(mrb_state * mrb, mrb_value self)         { Application * app = Application::getObject(); return app->bedit_length(mrb, self);            }
 mrb_value mrb_bedit_load(mrb_state * mrb, mrb_value self)           { Application * app = Application::getObject(); return app->bedit_load(mrb, self);              }
+mrb_value mrb_bedit_load_compress(mrb_state * mrb, mrb_value self)  { Application * app = Application::getObject(); return app->bedit_load_compress(mrb, self);     }
+
 mrb_value mrb_bedit_save(mrb_state * mrb, mrb_value self)           { Application * app = Application::getObject(); return app->bedit_save(mrb, self);              }
 mrb_value mrb_bedit_write(mrb_state * mrb, mrb_value self)          { Application * app = Application::getObject(); return app->bedit_write(mrb, self);             }
 mrb_value mrb_bedit_dump(mrb_state * mrb, mrb_value self)           { Application * app = Application::getObject(); return app->bedit_dump(mrb, self);              }
 mrb_value mrb_bedit_toItems(mrb_state * mrb, mrb_value self)        { Application * app = Application::getObject(); return app->bedit_toItems(mrb, self);           }
 mrb_value mrb_bedit_compress(mrb_state * mrb, mrb_value self)       { Application * app = Application::getObject(); return app->bedit_compress(mrb, self);          }
-mrb_value mrb_bedit_decompress(mrb_state * mrb, mrb_value self)     { Application * app = Application::getObject(); return app->bedit_decompress(mrb, self);        }
+mrb_value mrb_bedit_uncompress(mrb_state * mrb, mrb_value self)     { Application * app = Application::getObject(); return app->bedit_uncompress(mrb, self);        }
 
 
 void mrb_thread_context_free(mrb_state * mrb, void * ptr)
@@ -1888,6 +1965,11 @@ void mrb_bedit_context_free(mrb_state * mrb, void * ptr)
     }
 }
 
+extern "C"
+{
+extern const char    help_msg[];
+extern unsigned int  help_size;
+}
 int main(int argc, char * argv[])
 {
     try
@@ -1918,6 +2000,10 @@ int main(int argc, char * argv[])
             std::cout << "smon Software revision 0.9.0d" << std::endl;
             std::cout << std::endl;
             std::cout << desc << std::endl;
+            std::cout << help_msg << std::endl;
+#if 0
+            printf("debug: %d\n", help_size);
+#endif
             return 0;
         }
 

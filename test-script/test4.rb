@@ -1,3 +1,23 @@
+def test1(fname)
+  print "test: file compress\n"
+  bin = BinEdit.new(sprintf("file:%s", fname))
+  printf("length: %d\n", bin.length)
+  print bin.dump(0, 16), "\n"
+  bin.compress()
+  bin.save(sprintf("%s.compress", fname))
+  print "test: file compress end\n"
+end
+def test2(fname)
+  print "test: file uncompress\n"
+  bin = BinEdit.new(sprintf("compress:%s.compress", fname))
+  bin.uncompress()
+  printf("length: %d\n", bin.length)
+  print bin.dump(0, 16), "\n"
+  bin.save(sprintf("s.txt", fname))
+  printf("length: %d\n", bin.length)
+  print "test: file uncompress end\n"
+end
+
 print "test\n"
 
 bin = BinEdit.new('0102030405')
@@ -17,12 +37,17 @@ bin = BinEdit.new('010203040506070809112233445566778899AABBCCDDEEFF0102030405060
 printf("compress: \n")
 printf("%d: %s\n", bin.length, bin.dump)
 bin.compress();   printf("%d: %s\n", bin.length, bin.dump)
-bin.decompress(); printf("%d: %s\n", bin.length, bin.dump)
+bin.uncompress(); printf("%d: %s\n", bin.length, bin.dump)
 
 bin = BinEdit.new('010203040506070809FFFFFFFFFFFFFFFFFFFFFFFFFFFFFF010203040506070809')
 printf("compress: \n")
 printf("%d: %s\n", bin.length, bin.dump)
 bin.compress();   printf("%d: %s\n", bin.length, bin.dump)
-bin.decompress(); printf("%d: %s\n", bin.length, bin.dump)
+bin.uncompress(); printf("%d: %s\n", bin.length, bin.dump)
+
+
+opt = Args.new()
+test1(opt['mruby-script'])
+test2(opt['mruby-script'])
 
 print "test end\n"
