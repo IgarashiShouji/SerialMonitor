@@ -19,9 +19,9 @@ def test2(fname)
 end
 def test3()
   bin = BinEdit.new('00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000 ')
-  bin.fromItems('dfwbcsifA',  [ 0x11223344, 1.0, 0xaabb, 0x99, -10, -3, -2, 0.1, '01234' ])
+  bin.fromItems('dfwbcsifAH',  [ 0x11223344, 1.0, 0xaabb, 0x99, -10, -3, -2, 0.1, '01234', 'AABBCC' ])
   print bin.dump(), "\n"
-  print bin.toItems('dfwbcsifA5'), "\n"
+  print bin.toItems('dfwbcsifA5H3'), "\n"
 
   bin = BinEdit.new('00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000 ')
   bin.fromItems('DFWbcSIFA',  [ 0x11223344, 1.0, 0xaabb, 0x99, -10, -3, -2, 0.1, '987' ])

@@ -1062,19 +1062,30 @@ public:
             case 'F': { DWord temp; temp.value  = static_cast<float>(mrb_float(mrb_ary_shift(mrb, array)));      for(auto idx = 0; idx < 4; idx ++) { data[address + (3-idx)] = temp.buff[idx]; } address += 4; size += 4; } break;
 
             case 'A':
-{
-    auto item = mrb_ary_shift(mrb, array);
-    char * msg = RSTR_PTR(mrb_str_ptr(item));
-    printf("debug: %s\n", msg);
-    size_t msg_sz = strlen(msg);
-    memcpy(&(data[address]), msg, msg_sz);
-    address += msg_sz;
-    size += msg_sz;
-}
-break;
-#if 0
-            case 'H': break;
-#endif
+                {
+                    auto item = mrb_ary_shift(mrb, array);
+                    char * msg = RSTR_PTR(mrb_str_ptr(item));
+                    size_t msg_sz = strlen(msg);
+                    memcpy(&(data[address]), msg, msg_sz);
+                    address += msg_sz;
+                    size += msg_sz;
+                }
+                break;
+            case 'H':
+                {
+                    auto item = mrb_ary_shift(mrb, array);
+                    char * msg = RSTR_PTR(mrb_str_ptr(item));
+                    std::string data(msg);
+                    for(auto pos = data.find_first_of(" "); pos != std::string::npos; pos = data.find_first_of(" "))
+                    {
+                        data.erase(pos, 1);
+                    }
+                    mrb_int sz = (data.size() / 2);
+                    auto w_size = write(address, sz, data);
+                    address += w_size;
+                    size += w_size;
+                }
+                break;
             default:
                 break;
             }
