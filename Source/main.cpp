@@ -342,6 +342,7 @@ static mrb_value mrb_xlsx_sheet_names(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_xlsx_set_seet_name(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_xlsx_set_value(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_xlsx_cell(mrb_state * mrb, mrb_value self);
+static mrb_value mrb_xlsx_save(mrb_state * mrb, mrb_value self);
 static void mrb_xlsx_context_free(mrb_state * mrb, void * ptr);
 
 /* class BinEdit */
@@ -1500,6 +1501,15 @@ public:
         }
         return mrb_nil_value();
     }
+    mrb_value xlsx_save(mrb_state * mrb, mrb_value self)
+    {
+        OpenXLSXCtrl * xlsx = static_cast<OpenXLSXCtrl *>(DATA_PTR(self));
+        if(nullptr != xlsx )
+        {
+            xlsx->save();
+        }
+        return self;
+    }
 
     mrb_value bedit_init(mrb_state * mrb, mrb_value self)
     {
@@ -1836,6 +1846,7 @@ public:
             mrb_define_method( mrb, xlsx_class, "setSheetName",     mrb_xlsx_set_seet_name,     MRB_ARGS_ARG( 1, 1 )    );
             mrb_define_method( mrb, xlsx_class, "set_value",        mrb_xlsx_set_value,         MRB_ARGS_ARG( 2, 1 )    );
             mrb_define_method( mrb, xlsx_class, "cell",             mrb_xlsx_cell,              MRB_ARGS_ARG( 1, 1 )    );
+            mrb_define_method( mrb, xlsx_class, "save",             mrb_xlsx_save,              MRB_ARGS_NONE()         );
 
             /* Class BinEdit */
             struct RClass * bedit_class = mrb_define_class_under( mrb, mrb->kernel_module, "BinEdit", mrb->object_class );
@@ -1913,6 +1924,7 @@ mrb_value mrb_xlsx_sheet_names(mrb_state * mrb, mrb_value self)     { Applicatio
 mrb_value mrb_xlsx_set_seet_name(mrb_state * mrb, mrb_value self)   { Application * app = Application::getObject(); return app->xlsx_set_sheet_name(mrb, self);     }
 mrb_value mrb_xlsx_set_value(mrb_state * mrb, mrb_value self)       { Application * app = Application::getObject(); return app->xlsx_set_value(mrb, self);          }
 mrb_value mrb_xlsx_cell(mrb_state * mrb, mrb_value self)            { Application * app = Application::getObject(); return app->xlsx_cell(mrb, self);               }
+mrb_value mrb_xlsx_save(mrb_state * mrb, mrb_value self)            { Application * app = Application::getObject(); return app->xlsx_save(mrb, self);               }
 
 mrb_value mrb_bedit_initialize(mrb_state * mrb, mrb_value self)     { Application * app = Application::getObject(); return app->bedit_init(mrb, self);              }
 mrb_value mrb_bedit_length(mrb_state * mrb, mrb_value self)         { Application * app = Application::getObject(); return app->bedit_length(mrb, self);            }
