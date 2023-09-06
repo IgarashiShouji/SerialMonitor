@@ -7,7 +7,7 @@ LIBS_COMMON=-L ./Objects -L ./MyUtilities -L OpenXLSX/build/output/ -L ./lz4/lib
 
 CFLAGS=-g -I ./boost-x64/include $(CFLAGS_COMMON) -I ./mruby/build/host/include -pipe -O3 -march=native
 LIBS=-static -L ./mruby/build/host/lib -L ./boost-x64/lib $(LIBS_COMMON) -lboost_program_options -lboost_filesystem -lws2_32 -lsetupapi -lksguid -lole32 -lwinmm -ldsound -liconv
-AR_OBJS=Objects/SerialControl-mingw.o Objects/default_options.o Objects/default_script.o Objects/ComList.o
+AR_OBJS=Objects/SerialControl-mingw.o Objects/default_options.o Objects/default_script.o Objects/ComList.o Objects/help.o
 MAIN_DEPS=Objects/main.o MyUtilities/libUtilities.a mruby/build/host/lib/libmruby.a OpenXLSX/build/output/libOpenXLSX.a Objects/libSerialMonitor.a Objects
 CPPFLAGS=-std=c++17 $(CFLAGS)
 
@@ -55,3 +55,6 @@ Source/default_options.c:      Source/default_options.rb mruby/build/host/lib/li
 Source/default_script.c:      Source/default_script.rb  mruby/build/host/lib/libmruby.a
 	./mruby/bin/mrbc -Bdefault_script $<
 Objects/ComList.o: Source/ComList.cpp
+Objects/help.o: Source/help.s Source/help.txt
+	yes | lz4 Source/help.txt
+	g++ -c -o $@ $<
