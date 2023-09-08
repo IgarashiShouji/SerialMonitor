@@ -1,4 +1,5 @@
 Exsample 1)
+
 --------------------------
 > smon.exe com10
 0:com10: GAP
@@ -16,6 +17,7 @@ quit command(or null enter) is end of program.
 
 
 Exsample 2)
+
 --------------------------
 > smon.exe com10,9600,one,odd,GAP=30,TO1=100,TO2=200,TO3=500 com11,9600,one,odd,GAP=30,TO1=100,TO2=200,TO3=500
 0:com10,9600,one,odd,GAP=30,TO1=100,TO2=200,TO3=500: GAP
@@ -44,15 +46,15 @@ oThis example monitors sending and receiving using "com0com".
 
 
 Exsample 3)
---------------------------
-smon -m test-send.rb
+
+> smon.exe -m test-send.rb
 ---< test-send.rb >------------------------------------------------------------------------
 Core.comlist do |port_name|
   if Core.reg_match(port_name, 'COM10') then
     print port_name, "\n"
     com_name = Core.reg_replace(port_name, ':.*$', '')
     if '' != com_name then
-      smon = Smon.new(sprintf("%s,9600O1,GAP=50,TO1=100,TO2=300,TO3=500", com_name))
+      smon = Smon.new(sprintf("%s,9600,one,odd,GAP=50,TO1=100,TO2=300,TO3=500", com_name))
       data = Smon.send_wait(smon, 'FA 0F 1028EC000000000000000000 BE',   [ '^FB0440..' ])
       printf("Recive Data: %s\n", data.gsub(/^FB0440/, ''))
       data =  Smon.send_wait(smon, 'FA 0F 1028ED000000000000000000 94',   [ '^FB0440..' ])
@@ -63,7 +65,8 @@ Core.comlist do |port_name|
   end
 end
 -------------------------------------------------------------------------------------------
-smon -m test-recive.rb
+
+> smon.exe -m test-recive.rb
 ---< test-recive.rb >------------------------------------------------------------------------
 Core.comlist do |port_name|
   if port_name =~ /COM11/ then
@@ -73,7 +76,7 @@ Core.comlist do |port_name|
       list = Array.new
       list.push( [ 'FB044001', [ '^FA0F1028EC.*BE$'] ] )
       list.push( [ 'FB044002', [ '^FA0F1028ED.*94$'] ] )
-      smon = Smon.new(sprintf("%s,9600O1,GAP=50,TO1=100,TO2=300,TO3=500", com_name))
+      smon = Smon.new(sprintf("%s,9600,one,odd,GAP=50,TO1=100,TO2=300,TO3=500", com_name))
       th = WorkerThread.new
       run_enable = true
       th.run do

@@ -358,6 +358,7 @@ static mrb_value mrb_bedit_fromItems(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_bedit_compress(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_bedit_uncompress(mrb_state * mrb, mrb_value self);
 static void mrb_bedit_context_free(mrb_state * mrb, void * ptr);
+static const struct mrb_data_type mrb_bedit_context_type = { "mrb_open_bedit_context", mrb_bedit_context_free, };
 
 
 auto split = [](std::string & src, auto pat)
@@ -832,6 +833,15 @@ public:
     {
         if(0 < compress_size) { return compress_size; }
         return length;
+    }
+    void clone(mrb_int address, mrb_int size, const BinaryControl & src)
+    {
+        if(nullptr != data) { std::free(data); data = nullptr; }
+        if(0 == src.compress_size) { length = size; compress_size = 0;    }
+        else                       { length = size; compress_size = size; }
+        if(src.size() < size) { size = src.size(); }
+        data = static_cast<unsigned char *>(std::malloc(size));
+        memcpy(data, &(src.data[address]), size);
     }
     size_t loadBinaryFile(std::string & fname)
     {
@@ -1567,16 +1577,13 @@ public:
 
     mrb_value bedit_init(mrb_state * mrb, mrb_value self)
     {
-        static const struct mrb_data_type mrb_bedit_context_type =
-        {
-            "mrb_open_bedit_context", mrb_bedit_context_free,
-        };
         BinaryControl * bedit = new BinaryControl();
         mrb_int argc;
         mrb_value * argv;
         mrb_get_args(mrb, "*", &argv, &argc);
-        if(1 == argc)
+        switch(argc)
         {
+        case 1:
             switch( mrb_type( argv[0] ) )
             {
             case MRB_TT_INTEGER:
@@ -1614,9 +1621,56 @@ public:
                     }
                 }
                 break;
+            case MRB_TT_OBJECT:
+                {
+                    const mrb_data_type * src_type = DATA_TYPE(argv[0]);
+                    if( src_type == &mrb_bedit_context_type )
+                    {
+                        BinaryControl * bin_src = static_cast<BinaryControl *>(DATA_PTR(argv[0]));
+                        if(nullptr != bin_src)
+                        {
+                            bedit->clone(0, bin_src->size(), *bin_src);
+                        }
+                    }
+                }
+                break;
             default:
                 break;
             }
+            break;
+        case 2:
+            if(  (MRB_TT_OBJECT  == mrb_type(argv[0]))
+               &&(MRB_TT_INTEGER == mrb_type(argv[1])))
+            {
+                const mrb_data_type * src_type = DATA_TYPE(argv[0]);
+                if( src_type == &mrb_bedit_context_type )
+                {
+                    BinaryControl * bin_src = static_cast<BinaryControl *>(DATA_PTR(argv[0]));
+                    if(nullptr != bin_src)
+                    {
+                        bedit->clone(0, mrb_integer(argv[1]), *bin_src);
+                    }
+                }
+            }
+            break;
+        case 3:
+            if(  (MRB_TT_OBJECT  == mrb_type(argv[0]))
+               &&(MRB_TT_INTEGER == mrb_type(argv[1]))
+               &&(MRB_TT_INTEGER == mrb_type(argv[2])))
+            {
+                const mrb_data_type * src_type = DATA_TYPE(argv[0]);
+                if( src_type == &mrb_bedit_context_type )
+                {
+                    BinaryControl * bin_src = static_cast<BinaryControl *>(DATA_PTR(argv[0]));
+                    if(nullptr != bin_src)
+                    {
+                        bedit->clone(mrb_integer(argv[1]), mrb_integer(argv[2]), *bin_src);
+                    }
+                }
+            }
+            break;
+        default:
+            break;
         }
         mrb_data_init(self, bedit, &mrb_bedit_context_type);
         return self;

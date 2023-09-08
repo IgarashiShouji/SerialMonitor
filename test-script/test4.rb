@@ -28,6 +28,16 @@ def test3()
   print bin.dump(), "\n"
   print bin.toItems('DFWbcSIFA3'), "\n"
 end
+def test4()
+  bin1 = BinEdit.new('01020304')
+  bin2 = BinEdit.new(bin1)
+  bin3 = BinEdit.new(bin1, 3)
+  bin4 = BinEdit.new(bin1, 1, 2)
+  print "bin1: ", bin1.dump(), "\n"
+  print "bin2: ", bin2.dump(), "\n"
+  print "bin3: ", bin3.dump(), "\n"
+  print "bin4: ", bin4.dump(), "\n"
+end
 
 print "test\n"
 
@@ -61,5 +71,6 @@ opt = Args.new()
 test1(opt['mruby-script'])
 test2(opt['mruby-script'])
 test3()
+test4()
 
 print "test end\n"
