@@ -348,9 +348,8 @@ static void mrb_xlsx_context_free(mrb_state * mrb, void * ptr);
 /* class BinEdit */
 static mrb_value mrb_bedit_initialize(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_bedit_length(mrb_state * mrb, mrb_value self);
-static mrb_value mrb_bedit_load(mrb_state * mrb, mrb_value self);
-static mrb_value mrb_bedit_load_compress(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_bedit_save(mrb_state * mrb, mrb_value self);
+static mrb_value mrb_bedit_memset(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_bedit_write(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_bedit_dump(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_bedit_get(mrb_state * mrb, mrb_value self);
@@ -808,11 +807,12 @@ class BinaryControl
 protected:
     size_t length;
     size_t compress_size;
+    size_t pos;
     unsigned char * data;
     std::mutex mtx;
 
 public:
-    BinaryControl(void) : length(0), compress_size(0), data(nullptr) { }
+    BinaryControl(void) : length(0), compress_size(0), pos(0), data(nullptr) { }
     virtual ~BinaryControl(void)
     {
         std::lock_guard<std::mutex> lock(mtx);
@@ -826,6 +826,7 @@ public:
         std::lock_guard<std::mutex> lock(mtx);
         length        = size;
         compress_size = 0;
+        pos           = 0;
         if( nullptr != data ) { std::free(data); data = nullptr;                        }
         if( 0 < size )        { data = static_cast<unsigned char *>(std::malloc(size)); }
     }
@@ -833,6 +834,11 @@ public:
     {
         if(0 < compress_size) { return compress_size; }
         return length;
+    }
+    size_t get_pos(void)
+    {
+        if(pos < size()) { return pos; }
+        return 0;
     }
     void clone(mrb_int address, mrb_int size, const BinaryControl & src)
     {
@@ -842,6 +848,7 @@ public:
         if(src.size() < size) { size = src.size(); }
         data = static_cast<unsigned char *>(std::malloc(size));
         memcpy(data, &(src.data[address]), size);
+        pos = 0;
     }
     size_t loadBinaryFile(std::string & fname)
     {
@@ -864,6 +871,7 @@ public:
                         compress_size = 0;
                     }
                     if(nullptr != org_data) { std::free(org_data); }
+                    pos = 0;
                     return length;
                 }
             }
@@ -900,6 +908,7 @@ public:
                     {
                         std::free(data);
                         data = static_cast<unsigned char *>(cmp_data);
+                        pos = 0;
                         return compress_size;
                     }
                     std::free(cmp_data);
@@ -928,6 +937,7 @@ public:
                             data = static_cast<unsigned char *>(dst);
                             compress_size = 0;
                             length = size;
+                            pos = 0;
                             return size;
                         }
                         std::free(dst);
@@ -959,14 +969,27 @@ public:
         }
         return 0;
     }
+    uint32_t memset(mrb_int address, mrb_int set_data, mrb_int sz)
+    {
+        uint32_t len = 0;
+        auto size = this->size();
+        if(address < size)
+        {
+            len = address - size;
+            if(sz < len) { len = sz; }
+            std::lock_guard<std::mutex> lock(mtx);
+            std::memset(&(data[address]), static_cast<uint8_t>(set_data), len);
+        }
+        return len;
+    }
     uint32_t write(mrb_int address, mrb_int size, std::string & in_data)
     {
         uint32_t cnt = 0;
         auto length = this->size();
         std::lock_guard<std::mutex> lock(mtx);
-        for(auto pos = 0; ((cnt < size) && (address < length)); cnt ++, address ++, pos += 2)
+        for(auto in_pos = 0; ((cnt < size) && (address < length)); cnt ++, address ++, in_pos += 2)
         {
-            auto temp = in_data.substr(pos, 2);
+            auto temp = in_data.substr(in_pos, 2);
             auto val  = stoi(temp, 0, 16);
             data[address] = static_cast<unsigned char>(val);
         }
@@ -1047,6 +1070,7 @@ public:
                 }
             }
         }
+        pos = address;
         return true;
     }
     mrb_int fromItems(mrb_state * mrb, uint32_t address, std::string & format_, mrb_value & array)
@@ -1086,9 +1110,9 @@ public:
                     auto item = mrb_ary_shift(mrb, array);
                     char * msg = RSTR_PTR(mrb_str_ptr(item));
                     std::string data(msg);
-                    for(auto pos = data.find_first_of(" "); pos != std::string::npos; pos = data.find_first_of(" "))
+                    for(auto str_pos = data.find_first_of(" "); str_pos != std::string::npos; str_pos = data.find_first_of(" "))
                     {
-                        data.erase(pos, 1);
+                        data.erase(str_pos, 1);
                     }
                     mrb_int sz = (data.size() / 2);
                     auto w_size = write(address, sz, data);
@@ -1100,6 +1124,7 @@ public:
                 break;
             }
         }
+        pos = address;
         return size;
     }
 };
@@ -1684,33 +1709,6 @@ public:
         }
         return mrb_nil_value();
     }
-    mrb_value bedit_load(mrb_state * mrb, mrb_value self)
-    {
-        BinaryControl * bedit = static_cast<BinaryControl *>(DATA_PTR(self));
-        if(nullptr != bedit)
-        {
-            char * fname_ptr;
-            mrb_get_args(mrb, "z", &fname_ptr);
-            std::string fname(fname_ptr);
-            auto sz = bedit->loadBinaryFile(fname);
-            return mrb_int_value(mrb, sz);
-        }
-        return mrb_int_value(mrb, 0);
-    }
-    mrb_value bedit_load_compress(mrb_state * mrb, mrb_value self)
-    {
-        BinaryControl * bedit = static_cast<BinaryControl *>(DATA_PTR(self));
-        if(nullptr != bedit)
-        {
-            char * fname_ptr;
-            mrb_get_args(mrb, "z", &fname_ptr);
-            std::string fname(fname_ptr);
-            auto sz = bedit->loadBinaryFile(fname);
-            bedit->chg_compress();
-            return mrb_int_value(mrb, sz);
-        }
-        return mrb_int_value(mrb, 0);
-    }
     mrb_value bedit_save(mrb_state * mrb, mrb_value self)
     {
         BinaryControl * bedit = static_cast<BinaryControl *>(DATA_PTR(self));
@@ -1722,6 +1720,26 @@ public:
             bedit->saveBinaryFile(fname);
         }
         return self;
+    }
+    mrb_value bedit_memset(mrb_state * mrb, mrb_value self)
+    {
+        BinaryControl * bedit = static_cast<BinaryControl *>(DATA_PTR(self));
+        if(nullptr != bedit)
+        {
+            mrb_int size = 0;
+            mrb_int argc;
+            mrb_value * argv;
+            mrb_get_args(mrb, "*", &argv, &argc);
+            switch(argc)
+            {
+            case 1:  { size = bedit->memset(                   0, mrb_integer(argv[0]),        bedit->size()); break; }
+            case 2:  { size = bedit->memset(                   0, mrb_integer(argv[0]), mrb_integer(argv[1])); break; }
+            case 3:  { size = bedit->memset(mrb_integer(argv[0]), mrb_integer(argv[1]), mrb_integer(argv[2])); break; }
+            default: { break; }
+            }
+            return mrb_int_value(mrb, size);
+        }
+        return mrb_int_value(mrb, 0);
     }
     mrb_value bedit_write(mrb_state * mrb, mrb_value self)
     {
@@ -1820,7 +1838,7 @@ public:
         BinaryControl * bedit = static_cast<BinaryControl *>(DATA_PTR(self));
         if(nullptr != bedit)
         {
-            mrb_int address = 0;
+            mrb_int address = bedit->get_pos();
             char *  fmt_ptr = nullptr;
             mrb_int argc;
             mrb_value * argv;
@@ -1864,7 +1882,7 @@ public:
         BinaryControl * bedit = static_cast<BinaryControl *>(DATA_PTR(self));
         if(nullptr != bedit)
         {
-            mrb_int address = 0;
+            mrb_int address = bedit->get_pos();
             char *  fmt_ptr = nullptr;
             mrb_value arry;
             mrb_int argc;
@@ -1896,11 +1914,6 @@ public:
             }
             if(nullptr!=fmt_ptr)
             {
-#if 0
-                struct RArray *a = mrb_ary_ptr(arry);
-                mrb_int len = ARY_LEN(a);
-                printf("debug: arry.length(%d)\n", len);
-#endif
                 std::string fmt(fmt_ptr);
                 return mrb_int_value(mrb, bedit->fromItems(mrb, address, fmt, arry));
             }
@@ -2020,15 +2033,14 @@ public:
             struct RClass * bedit_class = mrb_define_class_under( mrb, mrb->kernel_module, "BinEdit", mrb->object_class );
             mrb_define_method( mrb, bedit_class, "initialize",      mrb_bedit_initialize,       MRB_ARGS_ANY()          );
             mrb_define_method( mrb, bedit_class, "length",          mrb_bedit_length,           MRB_ARGS_ARG( 1, 1 )    );
-            mrb_define_method( mrb, bedit_class, "load",            mrb_bedit_load,             MRB_ARGS_ARG( 1, 1 )    );
-            mrb_define_method( mrb, bedit_class, "load_compress",   mrb_bedit_load_compress,    MRB_ARGS_ARG( 1, 1 )    );
             mrb_define_method( mrb, bedit_class, "save",            mrb_bedit_save,             MRB_ARGS_ARG( 1, 1 )    );
+            mrb_define_method( mrb, bedit_class, "compress",        mrb_bedit_compress,         MRB_ARGS_NONE()         );
+            mrb_define_method( mrb, bedit_class, "uncompress",      mrb_bedit_uncompress,       MRB_ARGS_NONE()         );
+            mrb_define_method( mrb, bedit_class, "memset",          mrb_bedit_memset,           MRB_ARGS_ARG( 3, 1 )    );
             mrb_define_method( mrb, bedit_class, "write",           mrb_bedit_write,            MRB_ARGS_ARG( 2, 1 )    );
             mrb_define_method( mrb, bedit_class, "dump",            mrb_bedit_dump,             MRB_ARGS_ARG( 2, 1 )    );
             mrb_define_method( mrb, bedit_class, "get",             mrb_bedit_get,              MRB_ARGS_ARG( 2, 1 )    );
             mrb_define_method( mrb, bedit_class, "set",             mrb_bedit_set,              MRB_ARGS_ARG( 3, 1 )    );
-            mrb_define_method( mrb, bedit_class, "compress",        mrb_bedit_compress,         MRB_ARGS_NONE()         );
-            mrb_define_method( mrb, bedit_class, "uncompress",      mrb_bedit_uncompress,       MRB_ARGS_NONE()         );
 
             /* exec mRuby Script */
             extern const uint8_t default_options[];
@@ -2096,12 +2108,11 @@ mrb_value mrb_xlsx_save(mrb_state * mrb, mrb_value self)            { auto resul
 
 mrb_value mrb_bedit_initialize(mrb_state * mrb, mrb_value self)     { auto result = (Application::getObject())->bedit_init(mrb, self);   mrb_garbage_collect(mrb);  return result; }
 mrb_value mrb_bedit_length(mrb_state * mrb, mrb_value self)         { auto result = (Application::getObject())->bedit_length(mrb, self);                            return result; }
-mrb_value mrb_bedit_load(mrb_state * mrb, mrb_value self)           { auto result = (Application::getObject())->bedit_load(mrb, self);                              return result; }
-mrb_value mrb_bedit_load_compress(mrb_state * mrb, mrb_value self)  { auto result = (Application::getObject())->bedit_load_compress(mrb, self);                     return result; }
 mrb_value mrb_bedit_save(mrb_state * mrb, mrb_value self)           { auto result = (Application::getObject())->bedit_save(mrb, self);                              return result; }
 mrb_value mrb_bedit_compress(mrb_state * mrb, mrb_value self)       { auto result = (Application::getObject())->bedit_compress(mrb, self);                          return result; }
 mrb_value mrb_bedit_uncompress(mrb_state * mrb, mrb_value self)     { auto result = (Application::getObject())->bedit_uncompress(mrb, self);                        return result; }
 mrb_value mrb_bedit_write(mrb_state * mrb, mrb_value self)          { auto result = (Application::getObject())->bedit_write(mrb, self);                             return result; }
+mrb_value mrb_bedit_memset(mrb_state * mrb, mrb_value self)         { auto result = (Application::getObject())->bedit_memset(mrb, self);                            return result; }
 mrb_value mrb_bedit_dump(mrb_state * mrb, mrb_value self)           { auto result = (Application::getObject())->bedit_dump(mrb, self);   mrb_garbage_collect(mrb);  return result; }
 mrb_value mrb_bedit_get(mrb_state * mrb, mrb_value self)            { auto result = (Application::getObject())->bedit_get(mrb, self);    mrb_garbage_collect(mrb);  return result; }
 mrb_value mrb_bedit_set(mrb_state * mrb, mrb_value self)            { auto result = (Application::getObject())->bedit_set(mrb, self);    mrb_garbage_collect(mrb);  return result; }
