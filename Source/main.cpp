@@ -1842,7 +1842,18 @@ public:
                 mrb_value arry = mrb_ary_new(mrb);
                 if( bedit->toItems(mrb, address, fmt, arry) )
                 {
-                    return arry;
+                    struct RArray *rarry = mrb_ary_ptr(arry);
+                    mrb_int len = ARY_LEN(rarry);
+                    switch(len)
+                    {
+                    case 0:
+                        break;
+                    case 1:
+                        return mrb_ary_shift(mrb, arry);
+                        break;
+                    default:
+                        return arry;
+                    }
                 }
             }
         }
@@ -2055,47 +2066,45 @@ Application * Application::getObject(void)
     return Application::obj;
 }
 
-mrb_value mrb_core_gets(mrb_state* mrb, mrb_value self)             { Application * app = Application::getObject(); return app->core_gets(mrb, self);               }
+mrb_value mrb_core_gets(mrb_state* mrb, mrb_value self)             { auto result = (Application::getObject())->core_gets(mrb, self);                               return result; }
+mrb_value mrb_opt_initialize(mrb_state * mrb, mrb_value self)       { auto result = (Application::getObject())->opt_init(mrb, self);                                return result; }
+mrb_value mrb_opt_size(mrb_state * mrb, mrb_value self)             { auto result = (Application::getObject())->opt_size(mrb, self);                                return result; }
+mrb_value mrb_opt_get(mrb_state * mrb, mrb_value self)              { auto result = (Application::getObject())->opt_get(mrb, self);                                 return result; }
 
-mrb_value mrb_opt_initialize(mrb_state * mrb, mrb_value self)       { Application * app = Application::getObject(); return app->opt_init(mrb, self);                }
-mrb_value mrb_opt_size(mrb_state * mrb, mrb_value self)             { Application * app = Application::getObject(); return app->opt_size(mrb, self);                }
-mrb_value mrb_opt_get(mrb_state * mrb, mrb_value self)              { Application * app = Application::getObject(); return app->opt_get(mrb, self);                 }
+mrb_value mrb_thread_initialize(mrb_state * mrb, mrb_value self)    { auto result = (Application::getObject())->thread_init(mrb, self);                             return result; }
+mrb_value mrb_thread_run(mrb_state * mrb, mrb_value self)           { auto result = (Application::getObject())->thread_run(mrb, self);                              return result; }
+mrb_value mrb_thread_state(mrb_state * mrb, mrb_value self)         { auto result = (Application::getObject())->thread_state(mrb, self);                            return result; }
+mrb_value mrb_thread_join(mrb_state * mrb, mrb_value self)          { auto result = (Application::getObject())->thread_join(mrb, self);  mrb_garbage_collect(mrb);  return result; }
+mrb_value mrb_thread_wait(mrb_state * mrb, mrb_value self)          { auto result = (Application::getObject())->thread_wait(mrb, self);  mrb_garbage_collect(mrb);  return result; }
+mrb_value mrb_thread_notify(mrb_state * mrb, mrb_value self)        { auto result = (Application::getObject())->thread_notiry(mrb, self);                           return result; }
+mrb_value mrb_thread_sync(mrb_state * mrb, mrb_value self)          { auto result = (Application::getObject())->thread_sync(mrb, self);                             return result; }
 
-mrb_value mrb_thread_initialize(mrb_state * mrb, mrb_value self)    { Application * app = Application::getObject(); return app->thread_init(mrb, self);             }
-mrb_value mrb_thread_run(mrb_state * mrb, mrb_value self)           { Application * app = Application::getObject(); return app->thread_run(mrb, self);              }
-mrb_value mrb_thread_join(mrb_state * mrb, mrb_value self)          { Application * app = Application::getObject(); return app->thread_join(mrb, self);             }
-mrb_value mrb_thread_state(mrb_state * mrb, mrb_value self)         { Application * app = Application::getObject(); return app->thread_state(mrb, self);            }
-mrb_value mrb_thread_wait(mrb_state * mrb, mrb_value self)          { Application * app = Application::getObject(); return app->thread_wait(mrb, self);             }
-mrb_value mrb_thread_notify(mrb_state * mrb, mrb_value self)        { Application * app = Application::getObject(); return app->thread_notiry(mrb, self);           }
-mrb_value mrb_thread_sync(mrb_state * mrb, mrb_value self)          { Application * app = Application::getObject(); return app->thread_sync(mrb, self);             }
+mrb_value mrb_smon_initialize(mrb_state * mrb, mrb_value self)      { auto result = (Application::getObject())->smon_init(mrb, self);                               return result; }
+mrb_value mrb_smon_send(mrb_state * mrb, mrb_value self)            { auto result = (Application::getObject())->smon_send(mrb, self);                               return result; }
+mrb_value mrb_smon_wait(mrb_state * mrb, mrb_value self)            { auto result = (Application::getObject())->smon_wait(mrb, self);    mrb_garbage_collect(mrb);  return result; }
+mrb_value mrb_smon_close(mrb_state * mrb, mrb_value self)           { auto result = (Application::getObject())->smon_close(mrb, self);   mrb_garbage_collect(mrb);  return result; }
 
-mrb_value mrb_smon_initialize(mrb_state * mrb, mrb_value self)      { Application * app = Application::getObject(); return app->smon_init(mrb, self);               }
-mrb_value mrb_smon_wait(mrb_state * mrb, mrb_value self)            { Application * app = Application::getObject(); return app->smon_wait(mrb, self);               }
-mrb_value mrb_smon_send(mrb_state * mrb, mrb_value self)            { Application * app = Application::getObject(); return app->smon_send(mrb, self);               }
-mrb_value mrb_smon_close(mrb_state * mrb, mrb_value self)           { Application * app = Application::getObject(); return app->smon_close(mrb, self);              }
+mrb_value mrb_xlsx_initialize(mrb_state * mrb, mrb_value self)      { auto result = (Application::getObject())->xlsx_init(mrb, self);                               return result; }
+mrb_value mrb_xlsx_create(mrb_state * mrb, mrb_value self)          { auto result = (Application::getObject())->xlsx_create(mrb, self);  mrb_garbage_collect(mrb);  return result; }
+mrb_value mrb_xlsx_open(mrb_state * mrb, mrb_value self)            { auto result = (Application::getObject())->xlsx_open(mrb, self);    mrb_garbage_collect(mrb);  return result; }
+mrb_value mrb_xlsx_worksheet(mrb_state * mrb, mrb_value self)       { auto result = (Application::getObject())->xlsx_worksheet(mrb, self);                          return result; }
+mrb_value mrb_xlsx_sheet_names(mrb_state * mrb, mrb_value self)     { auto result = (Application::getObject())->xlsx_work_sheet_names(mrb, self);                   return result; }
+mrb_value mrb_xlsx_set_seet_name(mrb_state * mrb, mrb_value self)   { auto result = (Application::getObject())->xlsx_set_sheet_name(mrb, self);                     return result; }
+mrb_value mrb_xlsx_set_value(mrb_state * mrb, mrb_value self)       { auto result = (Application::getObject())->xlsx_set_value(mrb, self);                          return result; }
+mrb_value mrb_xlsx_cell(mrb_state * mrb, mrb_value self)            { auto result = (Application::getObject())->xlsx_cell(mrb, self);                               return result; }
+mrb_value mrb_xlsx_save(mrb_state * mrb, mrb_value self)            { auto result = (Application::getObject())->xlsx_save(mrb, self);                               return result; }
 
-mrb_value mrb_xlsx_initialize(mrb_state * mrb, mrb_value self)      { Application * app = Application::getObject(); return app->xlsx_init(mrb, self);               }
-mrb_value mrb_xlsx_create(mrb_state * mrb, mrb_value self)          { Application * app = Application::getObject(); return app->xlsx_create(mrb, self);             }
-mrb_value mrb_xlsx_open(mrb_state * mrb, mrb_value self)            { Application * app = Application::getObject(); return app->xlsx_open(mrb, self);               }
-mrb_value mrb_xlsx_worksheet(mrb_state * mrb, mrb_value self)       { Application * app = Application::getObject(); return app->xlsx_worksheet(mrb, self);          }
-mrb_value mrb_xlsx_sheet_names(mrb_state * mrb, mrb_value self)     { Application * app = Application::getObject(); return app->xlsx_work_sheet_names(mrb, self);   }
-mrb_value mrb_xlsx_set_seet_name(mrb_state * mrb, mrb_value self)   { Application * app = Application::getObject(); return app->xlsx_set_sheet_name(mrb, self);     }
-mrb_value mrb_xlsx_set_value(mrb_state * mrb, mrb_value self)       { Application * app = Application::getObject(); return app->xlsx_set_value(mrb, self);          }
-mrb_value mrb_xlsx_cell(mrb_state * mrb, mrb_value self)            { Application * app = Application::getObject(); return app->xlsx_cell(mrb, self);               }
-mrb_value mrb_xlsx_save(mrb_state * mrb, mrb_value self)            { Application * app = Application::getObject(); return app->xlsx_save(mrb, self);               }
-
-mrb_value mrb_bedit_initialize(mrb_state * mrb, mrb_value self)     { Application * app = Application::getObject(); return app->bedit_init(mrb, self);              }
-mrb_value mrb_bedit_length(mrb_state * mrb, mrb_value self)         { Application * app = Application::getObject(); return app->bedit_length(mrb, self);            }
-mrb_value mrb_bedit_load(mrb_state * mrb, mrb_value self)           { Application * app = Application::getObject(); return app->bedit_load(mrb, self);              }
-mrb_value mrb_bedit_load_compress(mrb_state * mrb, mrb_value self)  { Application * app = Application::getObject(); return app->bedit_load_compress(mrb, self);     }
-
-mrb_value mrb_bedit_save(mrb_state * mrb, mrb_value self)           { Application * app = Application::getObject(); return app->bedit_save(mrb, self);              }
-mrb_value mrb_bedit_write(mrb_state * mrb, mrb_value self)          { Application * app = Application::getObject(); return app->bedit_write(mrb, self);             }
-mrb_value mrb_bedit_dump(mrb_state * mrb, mrb_value self)           { Application * app = Application::getObject(); return app->bedit_dump(mrb, self);              }
-mrb_value mrb_bedit_get(mrb_state * mrb, mrb_value self)            { Application * app = Application::getObject(); return app->bedit_get(mrb, self);               }
-mrb_value mrb_bedit_set(mrb_state * mrb, mrb_value self)            { Application * app = Application::getObject(); return app->bedit_set(mrb, self);               }
-mrb_value mrb_bedit_compress(mrb_state * mrb, mrb_value self)       { Application * app = Application::getObject(); return app->bedit_compress(mrb, self);          }
-mrb_value mrb_bedit_uncompress(mrb_state * mrb, mrb_value self)     { Application * app = Application::getObject(); return app->bedit_uncompress(mrb, self);        }
+mrb_value mrb_bedit_initialize(mrb_state * mrb, mrb_value self)     { auto result = (Application::getObject())->bedit_init(mrb, self);   mrb_garbage_collect(mrb);  return result; }
+mrb_value mrb_bedit_length(mrb_state * mrb, mrb_value self)         { auto result = (Application::getObject())->bedit_length(mrb, self);                            return result; }
+mrb_value mrb_bedit_load(mrb_state * mrb, mrb_value self)           { auto result = (Application::getObject())->bedit_load(mrb, self);                              return result; }
+mrb_value mrb_bedit_load_compress(mrb_state * mrb, mrb_value self)  { auto result = (Application::getObject())->bedit_load_compress(mrb, self);                     return result; }
+mrb_value mrb_bedit_save(mrb_state * mrb, mrb_value self)           { auto result = (Application::getObject())->bedit_save(mrb, self);                              return result; }
+mrb_value mrb_bedit_compress(mrb_state * mrb, mrb_value self)       { auto result = (Application::getObject())->bedit_compress(mrb, self);                          return result; }
+mrb_value mrb_bedit_uncompress(mrb_state * mrb, mrb_value self)     { auto result = (Application::getObject())->bedit_uncompress(mrb, self);                        return result; }
+mrb_value mrb_bedit_write(mrb_state * mrb, mrb_value self)          { auto result = (Application::getObject())->bedit_write(mrb, self);                             return result; }
+mrb_value mrb_bedit_dump(mrb_state * mrb, mrb_value self)           { auto result = (Application::getObject())->bedit_dump(mrb, self);   mrb_garbage_collect(mrb);  return result; }
+mrb_value mrb_bedit_get(mrb_state * mrb, mrb_value self)            { auto result = (Application::getObject())->bedit_get(mrb, self);    mrb_garbage_collect(mrb);  return result; }
+mrb_value mrb_bedit_set(mrb_state * mrb, mrb_value self)            { auto result = (Application::getObject())->bedit_set(mrb, self);    mrb_garbage_collect(mrb);  return result; }
 
 
 void mrb_thread_context_free(mrb_state * mrb, void * ptr)

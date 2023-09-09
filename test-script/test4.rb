@@ -38,6 +38,20 @@ def test4()
   print "bin3: ", bin3.dump(), "\n"
   print "bin4: ", bin4.dump(), "\n"
 end
+class String
+  def toItems(fmt)
+    bin = bin.BinEdit.new(self)
+    return gin.get(fmt)
+  end
+end
+def test5()
+  print "test 5\n"
+  print (BinEdit.new("00000001")).get('D'), "\n"
+  print (BinEdit.new("000000010200")).get('Dw'), "\n"
+  print (BinEdit.new("000000010200")).get(' '), "\n"
+  GC.start()
+  print "test 5: end\n"
+end
 
 print "test\n"
 
@@ -72,5 +86,6 @@ test1(opt['mruby-script'])
 test2(opt['mruby-script'])
 test3()
 test4()
+test5()
 
 print "test end\n"
