@@ -29,7 +29,7 @@ Core.__CheckOptions()
 class BinEdit
   def self.hexToArray(format, hex_string)
     bin = BinEdit.new(hex_string)
-    return bin.toItems(format)
+    return bin.get(format)
   end
 end
 class SendWaitEventer

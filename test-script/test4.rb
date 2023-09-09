@@ -19,14 +19,14 @@ def test2(fname)
 end
 def test3()
   bin = BinEdit.new('00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000 ')
-  bin.fromItems('dfwbcsifAH',  [ 0x11223344, 1.0, 0xaabb, 0x99, -10, -3, -2, 0.1, '01234', 'AABBCC' ])
+  bin.set(0, 'dfwbcsifAH',  [ 0x11223344, 1.0, 0xaabb, 0x99, -10, -3, -2, 0.1, '01234', 'AABBCC' ])
   print bin.dump(), "\n"
-  print bin.toItems('dfwbcsifA5H3'), "\n"
+  print bin.get('dfwbcsifA5H3'), "\n"
 
   bin = BinEdit.new('00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000 ')
-  bin.fromItems('DFWbcSIFA',  [ 0x11223344, 1.0, 0xaabb, 0x99, -10, -3, -2, 0.1, '987' ])
+  bin.set('DFWbcSIFA',  [ 0x11223344, 1.0, 0xaabb, 0x99, -10, -3, -2, 0.1, '987' ])
   print bin.dump(), "\n"
-  print bin.toItems('DFWbcSIFA3'), "\n"
+  print bin.get(0, 'DFWbcSIFA3'), "\n"
 end
 def test4()
   bin1 = BinEdit.new('01020304')

@@ -353,8 +353,8 @@ static mrb_value mrb_bedit_load_compress(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_bedit_save(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_bedit_write(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_bedit_dump(mrb_state * mrb, mrb_value self);
-static mrb_value mrb_bedit_toItems(mrb_state * mrb, mrb_value self);
-static mrb_value mrb_bedit_fromItems(mrb_state * mrb, mrb_value self);
+static mrb_value mrb_bedit_get(mrb_state * mrb, mrb_value self);
+static mrb_value mrb_bedit_set(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_bedit_compress(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_bedit_uncompress(mrb_state * mrb, mrb_value self);
 static void mrb_bedit_context_free(mrb_state * mrb, void * ptr);
@@ -1815,7 +1815,7 @@ public:
         }
         return mrb_nil_value();
     }
-    mrb_value bedit_toItems(mrb_state * mrb, mrb_value self)
+    mrb_value bedit_get(mrb_state * mrb, mrb_value self)
     {
         BinaryControl * bedit = static_cast<BinaryControl *>(DATA_PTR(self));
         if(nullptr != bedit)
@@ -1848,7 +1848,7 @@ public:
         }
         return mrb_nil_value();
     }
-    mrb_value bedit_fromItems(mrb_state * mrb, mrb_value self)
+    mrb_value bedit_set(mrb_state * mrb, mrb_value self)
     {
         BinaryControl * bedit = static_cast<BinaryControl *>(DATA_PTR(self));
         if(nullptr != bedit)
@@ -2014,8 +2014,8 @@ public:
             mrb_define_method( mrb, bedit_class, "save",            mrb_bedit_save,             MRB_ARGS_ARG( 1, 1 )    );
             mrb_define_method( mrb, bedit_class, "write",           mrb_bedit_write,            MRB_ARGS_ARG( 2, 1 )    );
             mrb_define_method( mrb, bedit_class, "dump",            mrb_bedit_dump,             MRB_ARGS_ARG( 2, 1 )    );
-            mrb_define_method( mrb, bedit_class, "toItems",         mrb_bedit_toItems,          MRB_ARGS_ARG( 2, 1 )    );
-            mrb_define_method( mrb, bedit_class, "fromItems",       mrb_bedit_fromItems,        MRB_ARGS_ARG( 3, 1 )    );
+            mrb_define_method( mrb, bedit_class, "get",             mrb_bedit_get,              MRB_ARGS_ARG( 2, 1 )    );
+            mrb_define_method( mrb, bedit_class, "set",             mrb_bedit_set,              MRB_ARGS_ARG( 3, 1 )    );
             mrb_define_method( mrb, bedit_class, "compress",        mrb_bedit_compress,         MRB_ARGS_NONE()         );
             mrb_define_method( mrb, bedit_class, "uncompress",      mrb_bedit_uncompress,       MRB_ARGS_NONE()         );
 
@@ -2092,8 +2092,8 @@ mrb_value mrb_bedit_load_compress(mrb_state * mrb, mrb_value self)  { Applicatio
 mrb_value mrb_bedit_save(mrb_state * mrb, mrb_value self)           { Application * app = Application::getObject(); return app->bedit_save(mrb, self);              }
 mrb_value mrb_bedit_write(mrb_state * mrb, mrb_value self)          { Application * app = Application::getObject(); return app->bedit_write(mrb, self);             }
 mrb_value mrb_bedit_dump(mrb_state * mrb, mrb_value self)           { Application * app = Application::getObject(); return app->bedit_dump(mrb, self);              }
-mrb_value mrb_bedit_toItems(mrb_state * mrb, mrb_value self)        { Application * app = Application::getObject(); return app->bedit_toItems(mrb, self);           }
-mrb_value mrb_bedit_fromItems(mrb_state * mrb, mrb_value self)      { Application * app = Application::getObject(); return app->bedit_fromItems(mrb, self);         }
+mrb_value mrb_bedit_get(mrb_state * mrb, mrb_value self)            { Application * app = Application::getObject(); return app->bedit_get(mrb, self);               }
+mrb_value mrb_bedit_set(mrb_state * mrb, mrb_value self)            { Application * app = Application::getObject(); return app->bedit_set(mrb, self);               }
 mrb_value mrb_bedit_compress(mrb_state * mrb, mrb_value self)       { Application * app = Application::getObject(); return app->bedit_compress(mrb, self);          }
 mrb_value mrb_bedit_uncompress(mrb_state * mrb, mrb_value self)     { Application * app = Application::getObject(); return app->bedit_uncompress(mrb, self);        }
 
