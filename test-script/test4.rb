@@ -18,7 +18,7 @@ def test2(fname)
   print "test: file uncompress end\n"
 end
 def test3()
-  print "test 3\n"
+  print "test 3: memset, memcpy\n"
   bin = BinEdit.new('00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000 ')
   bin.set(0, 'dfwbcsifAH',  [ 0x11223344, 1.0, 0xaabb, 0x99, -10, -3, -2, 0.1, '01234', 'AABBCC' ])
   print "  ", bin.dump(), "\n"
@@ -52,10 +52,24 @@ def test3()
     print "  ", bin.get("bwA2"), "\n"
   end
 
+  bin1 = BinEdit.new(32)
+  bin1.memset(0);
+  bin2 = BinEdit.new('AABBCCDD')
+  print "  ", bin1.dump(), "\n"
+  print "  ", bin2.dump(), "\n"
+  bin1.memcpy(bin2)
+  print "  ", bin1.dump(), "\n"
+  bin1.memcpy(16, bin2)
+  print "  ", bin1.dump(), "\n"
+  bin1.memcpy(8, 2, bin2)
+  print "  ", bin1.dump(), "\n"
+  bin1.memcpy(24, 2, 2, bin2)
+  print "  ", bin1.dump(), "\n"
+
   print "test 3: end\n"
 end
 def test4()
-  print "test 4\n"
+  print "test 4: copy constract \n"
   bin1 = BinEdit.new('01020304')
   bin2 = BinEdit.new(bin1)
   bin3 = BinEdit.new(bin1, 3)

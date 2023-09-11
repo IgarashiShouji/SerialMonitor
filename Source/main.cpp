@@ -350,6 +350,7 @@ static mrb_value mrb_bedit_initialize(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_bedit_length(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_bedit_save(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_bedit_memset(mrb_state * mrb, mrb_value self);
+static mrb_value mrb_bedit_memcpy(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_bedit_write(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_bedit_dump(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_bedit_get(mrb_state * mrb, mrb_value self);
@@ -847,7 +848,7 @@ public:
         else                       { length = size; compress_size = size; }
         if(src.size() < size) { size = src.size(); }
         data = static_cast<unsigned char *>(std::malloc(size));
-        memcpy(data, &(src.data[address]), size);
+        std::memcpy(data, &(src.data[address]), size);
         pos = 0;
     }
     size_t loadBinaryFile(std::string & fname)
@@ -982,6 +983,19 @@ public:
         }
         return len;
     }
+    uint32_t memcpy(mrb_int address_dst, mrb_int address_src, mrb_int len, BinaryControl & src)
+    {
+        auto dst_len = size()     - address_dst;
+        auto src_len = src.size() - address_src;
+        if(dst_len < len) { len = dst_len; }
+        if(src_len < len) { len = src_len; }
+        if(0 < len)
+        {
+            std::lock_guard<std::mutex> lock(mtx);
+            std::memcpy(&(data[address_dst]), &(src.data[address_src]), len);
+        }
+        return len;
+    }
     uint32_t write(mrb_int address, mrb_int size, std::string & in_data)
     {
         uint32_t cnt = 0;
@@ -1028,7 +1042,7 @@ public:
                         size_t size = stoi(num);
                         char str[size + 1];
                         str[size] = '\0';
-                        memcpy(str, &(data[address]), size);
+                        std::memcpy(str, &(data[address]), size);
                         mrb_ary_push(mrb, array, mrb_str_new_cstr(mrb, str));
                         address += size;
                     }
@@ -1052,11 +1066,11 @@ public:
                 {
                 case 'b': {  Byte temp; temp.buff[0] = data[address]; mrb_ary_push(mrb, array, mrb_int_value(mrb, temp.data)); address += 1; } break;
                 case 'c': {  Byte temp; temp.buff[0] = data[address]; mrb_ary_push(mrb, array, mrb_int_value(mrb, temp.val));  address += 1; } break;
-                case 'w': {  Word temp; memcpy(&(temp.buff[0]), &(data[address]), 2); mrb_ary_push(mrb, array, mrb_int_value(mrb, temp.uint16)); address += 2; } break;
-                case 's': {  Word temp; memcpy(&(temp.buff[0]), &(data[address]), 2); mrb_ary_push(mrb, array, mrb_int_value(mrb, temp.int16));  address += 2; } break;
-                case 'd': { DWord temp; memcpy(&(temp.buff[0]), &(data[address]), 4); mrb_ary_push(mrb, array, mrb_int_value(mrb, temp.uint32));  address += 4; } break;
-                case 'i': { DWord temp; memcpy(&(temp.buff[0]), &(data[address]), 4); mrb_ary_push(mrb, array, mrb_int_value(mrb, temp.int32));   address += 4; } break;
-                case 'f': { DWord temp; memcpy(&(temp.buff[0]), &(data[address]), 4); mrb_ary_push(mrb, array, mrb_float_value(mrb, temp.value)); address += 4; } break;
+                case 'w': {  Word temp; std::memcpy(&(temp.buff[0]), &(data[address]), 2); mrb_ary_push(mrb, array, mrb_int_value(mrb, temp.uint16)); address += 2; } break;
+                case 's': {  Word temp; std::memcpy(&(temp.buff[0]), &(data[address]), 2); mrb_ary_push(mrb, array, mrb_int_value(mrb, temp.int16));  address += 2; } break;
+                case 'd': { DWord temp; std::memcpy(&(temp.buff[0]), &(data[address]), 4); mrb_ary_push(mrb, array, mrb_int_value(mrb, temp.uint32));  address += 4; } break;
+                case 'i': { DWord temp; std::memcpy(&(temp.buff[0]), &(data[address]), 4); mrb_ary_push(mrb, array, mrb_int_value(mrb, temp.int32));   address += 4; } break;
+                case 'f': { DWord temp; std::memcpy(&(temp.buff[0]), &(data[address]), 4); mrb_ary_push(mrb, array, mrb_float_value(mrb, temp.value)); address += 4; } break;
                 case 'W': { Word temp;  for(auto idx = 0; idx < 2; idx ++) { temp.buff[idx] = data[address + (1-idx)]; } mrb_ary_push(mrb, array, mrb_int_value(mrb, temp.uint16));  address += 2; } break;
                 case 'S': { Word temp;  for(auto idx = 0; idx < 2; idx ++) { temp.buff[idx] = data[address + (1-idx)]; } mrb_ary_push(mrb, array, mrb_int_value(mrb, temp.int16));   address += 2; } break;
                 case 'D': { DWord temp; for(auto idx = 0; idx < 4; idx ++) { temp.buff[idx] = data[address + (3-idx)]; } mrb_ary_push(mrb, array, mrb_int_value(mrb, temp.uint32));  address += 4; } break;
@@ -1083,11 +1097,11 @@ public:
             {
             case 'c': { DWord temp; temp.val    = static_cast< int8_t >(mrb_integer(mrb_ary_shift(mrb, array))); data[address] = temp.data; address += 1; size += 1; } break;
             case 'b': { DWord temp; temp.data   = static_cast<uint8_t >(mrb_integer(mrb_ary_shift(mrb, array))); data[address] = temp.data; address += 1; size += 1; } break;
-            case 's': { DWord temp; temp.int16  = static_cast< int16_t>(mrb_integer(mrb_ary_shift(mrb, array))); memcpy(&(data[address]), &(temp.buff[0]), 2); address += 2; size += 2; } break;
-            case 'w': { DWord temp; temp.uint16 = static_cast<uint16_t>(mrb_integer(mrb_ary_shift(mrb, array))); memcpy(&(data[address]), &(temp.buff[0]), 2); address += 2; size += 2; } break;
-            case 'i': { DWord temp; temp.int32  = static_cast< int32_t>(mrb_integer(mrb_ary_shift(mrb, array))); memcpy(&(data[address]), &(temp.buff[0]), 4); address += 4; size += 4; } break;
-            case 'd': { DWord temp; temp.uint32 = static_cast<uint32_t>(mrb_integer(mrb_ary_shift(mrb, array))); memcpy(&(data[address]), &(temp.buff[0]), 4); address += 4; size += 4; } break;
-            case 'f': { DWord temp; temp.value  = static_cast<float>(mrb_float(mrb_ary_shift(mrb, array)));      memcpy(&(data[address]), &(temp.buff[0]), 4); address += 4; size += 4; } break;
+            case 's': { DWord temp; temp.int16  = static_cast< int16_t>(mrb_integer(mrb_ary_shift(mrb, array))); std::memcpy(&(data[address]), &(temp.buff[0]), 2); address += 2; size += 2; } break;
+            case 'w': { DWord temp; temp.uint16 = static_cast<uint16_t>(mrb_integer(mrb_ary_shift(mrb, array))); std::memcpy(&(data[address]), &(temp.buff[0]), 2); address += 2; size += 2; } break;
+            case 'i': { DWord temp; temp.int32  = static_cast< int32_t>(mrb_integer(mrb_ary_shift(mrb, array))); std::memcpy(&(data[address]), &(temp.buff[0]), 4); address += 4; size += 4; } break;
+            case 'd': { DWord temp; temp.uint32 = static_cast<uint32_t>(mrb_integer(mrb_ary_shift(mrb, array))); std::memcpy(&(data[address]), &(temp.buff[0]), 4); address += 4; size += 4; } break;
+            case 'f': { DWord temp; temp.value  = static_cast<float>(mrb_float(mrb_ary_shift(mrb, array)));      std::memcpy(&(data[address]), &(temp.buff[0]), 4); address += 4; size += 4; } break;
 
             case 'S': { DWord temp; temp.int16  = static_cast< int16_t>(mrb_integer(mrb_ary_shift(mrb, array))); for(auto idx = 0; idx < 2; idx ++) { data[address + (1-idx)] = temp.buff[idx]; } address += 2; size += 2; } break;
             case 'W': { DWord temp; temp.uint16 = static_cast<uint16_t>(mrb_integer(mrb_ary_shift(mrb, array))); for(auto idx = 0; idx < 2; idx ++) { data[address + (1-idx)] = temp.buff[idx]; } address += 2; size += 2; } break;
@@ -1100,7 +1114,7 @@ public:
                     auto item = mrb_ary_shift(mrb, array);
                     char * msg = RSTR_PTR(mrb_str_ptr(item));
                     size_t msg_sz = strlen(msg);
-                    memcpy(&(data[address]), msg, msg_sz);
+                    std::memcpy(&(data[address]), msg, msg_sz);
                     address += msg_sz;
                     size += msg_sz;
                 }
@@ -1600,6 +1614,16 @@ public:
         return self;
     }
 
+    BinaryControl * get_bedit_ptr(mrb_value & argv)
+    {
+        const mrb_data_type * src_type = DATA_TYPE(argv);
+        if( src_type == &mrb_bedit_context_type )
+        {
+            BinaryControl * bin_src = static_cast<BinaryControl *>(DATA_PTR(argv));
+            return bin_src;
+        }
+        return nullptr;
+    }
     mrb_value bedit_init(mrb_state * mrb, mrb_value self)
     {
         BinaryControl * bedit = new BinaryControl();
@@ -1648,15 +1672,8 @@ public:
                 break;
             case MRB_TT_OBJECT:
                 {
-                    const mrb_data_type * src_type = DATA_TYPE(argv[0]);
-                    if( src_type == &mrb_bedit_context_type )
-                    {
-                        BinaryControl * bin_src = static_cast<BinaryControl *>(DATA_PTR(argv[0]));
-                        if(nullptr != bin_src)
-                        {
-                            bedit->clone(0, bin_src->size(), *bin_src);
-                        }
-                    }
+                    BinaryControl * bin_src = get_bedit_ptr(argv[0]);
+                    if(nullptr != bin_src) { bedit->clone(0, bin_src->size(), *bin_src); }
                 }
                 break;
             default:
@@ -1732,12 +1749,65 @@ public:
             mrb_get_args(mrb, "*", &argv, &argc);
             switch(argc)
             {
-            case 1:  { size = bedit->memset(                   0, mrb_integer(argv[0]),        bedit->size()); break; }
-            case 2:  { size = bedit->memset(                   0, mrb_integer(argv[0]), mrb_integer(argv[1])); break; }
-            case 3:  { size = bedit->memset(mrb_integer(argv[0]), mrb_integer(argv[1]), mrb_integer(argv[2])); break; }
+            case 1: if(MRB_TT_INTEGER == mrb_type(argv[0]))     { size = bedit->memset(                   0, mrb_integer(argv[0]),        bedit->size()); break; }
+            case 2: if(  (MRB_TT_INTEGER == mrb_type(argv[0]))
+                       &&(MRB_TT_INTEGER == mrb_type(argv[1]))) { size = bedit->memset(                   0, mrb_integer(argv[0]), mrb_integer(argv[1])); break; }
+            case 3: if(  (MRB_TT_INTEGER == mrb_type(argv[0]))
+                       &&(MRB_TT_INTEGER == mrb_type(argv[1]))
+                       &&(MRB_TT_INTEGER == mrb_type(argv[2]))) { size = bedit->memset(mrb_integer(argv[0]), mrb_integer(argv[1]), mrb_integer(argv[2])); break; }
             default: { break; }
             }
             return mrb_int_value(mrb, size);
+        }
+        return mrb_int_value(mrb, 0);
+    }
+    mrb_value bedit_memcpy(mrb_state * mrb, mrb_value self)
+    {
+        BinaryControl * bedit = static_cast<BinaryControl *>(DATA_PTR(self));
+        if(nullptr != bedit)
+        {
+            mrb_int argc;
+            mrb_value * argv;
+            mrb_get_args(mrb, "*", &argv, &argc);
+            switch(argc)
+            {
+            case 1:
+                if(MRB_TT_OBJECT == mrb_type(argv[0]))
+                {
+                    BinaryControl * src = get_bedit_ptr(argv[0]);
+                    if(nullptr != src) { return mrb_int_value(mrb, bedit->memcpy(0, 0, src->size(), *src)); }
+                }
+                break;
+            case 2:
+                if(  (MRB_TT_INTEGER == mrb_type(argv[0]))
+                   &&(MRB_TT_OBJECT  == mrb_type(argv[1])))
+                {
+                    BinaryControl * src = get_bedit_ptr(argv[1]);
+                    if(nullptr != src) { return mrb_int_value(mrb, bedit->memcpy(mrb_integer(argv[0]), 0, src->size(), *src)); }
+                }
+                break;
+            case 3:
+                if(  (MRB_TT_INTEGER == mrb_type(argv[0]))
+                   &&(MRB_TT_INTEGER == mrb_type(argv[1]))
+                   &&(MRB_TT_OBJECT  == mrb_type(argv[2])))
+                {
+                    BinaryControl * src = get_bedit_ptr(argv[2]);
+                    if(nullptr != src) { return mrb_int_value(mrb, bedit->memcpy(mrb_integer(argv[0]), 0, mrb_integer(argv[1]), *src)); }
+                }
+                break;
+            case 4:
+                if(  (MRB_TT_INTEGER == mrb_type(argv[0]))
+                   &&(MRB_TT_INTEGER == mrb_type(argv[1]))
+                   &&(MRB_TT_INTEGER == mrb_type(argv[2]))
+                   &&(MRB_TT_OBJECT  == mrb_type(argv[3])))
+                {
+                    BinaryControl * src = get_bedit_ptr(argv[3]);
+                    if(nullptr != src) { return mrb_int_value(mrb, bedit->memcpy(mrb_integer(argv[0]), mrb_integer(argv[1]), mrb_integer(argv[2]), *src)); }
+                }
+                break;
+            default:
+                break;
+            }
         }
         return mrb_int_value(mrb, 0);
     }
@@ -2036,6 +2106,7 @@ public:
             mrb_define_method( mrb, bedit_class, "save",            mrb_bedit_save,             MRB_ARGS_ARG( 1, 1 )    );
             mrb_define_method( mrb, bedit_class, "compress",        mrb_bedit_compress,         MRB_ARGS_NONE()         );
             mrb_define_method( mrb, bedit_class, "uncompress",      mrb_bedit_uncompress,       MRB_ARGS_NONE()         );
+            mrb_define_method( mrb, bedit_class, "memcpy",          mrb_bedit_memcpy,           MRB_ARGS_ARG( 3, 1 )    );
             mrb_define_method( mrb, bedit_class, "memset",          mrb_bedit_memset,           MRB_ARGS_ARG( 3, 1 )    );
             mrb_define_method( mrb, bedit_class, "write",           mrb_bedit_write,            MRB_ARGS_ARG( 2, 1 )    );
             mrb_define_method( mrb, bedit_class, "dump",            mrb_bedit_dump,             MRB_ARGS_ARG( 2, 1 )    );
@@ -2113,6 +2184,7 @@ mrb_value mrb_bedit_compress(mrb_state * mrb, mrb_value self)       { auto resul
 mrb_value mrb_bedit_uncompress(mrb_state * mrb, mrb_value self)     { auto result = (Application::getObject())->bedit_uncompress(mrb, self);                        return result; }
 mrb_value mrb_bedit_write(mrb_state * mrb, mrb_value self)          { auto result = (Application::getObject())->bedit_write(mrb, self);                             return result; }
 mrb_value mrb_bedit_memset(mrb_state * mrb, mrb_value self)         { auto result = (Application::getObject())->bedit_memset(mrb, self);                            return result; }
+mrb_value mrb_bedit_memcpy(mrb_state * mrb, mrb_value self)         { auto result = (Application::getObject())->bedit_memcpy(mrb, self);                            return result; }
 mrb_value mrb_bedit_dump(mrb_state * mrb, mrb_value self)           { auto result = (Application::getObject())->bedit_dump(mrb, self);   mrb_garbage_collect(mrb);  return result; }
 mrb_value mrb_bedit_get(mrb_state * mrb, mrb_value self)            { auto result = (Application::getObject())->bedit_get(mrb, self);    mrb_garbage_collect(mrb);  return result; }
 mrb_value mrb_bedit_set(mrb_state * mrb, mrb_value self)            { auto result = (Application::getObject())->bedit_set(mrb, self);    mrb_garbage_collect(mrb);  return result; }
