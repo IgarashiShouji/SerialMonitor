@@ -361,7 +361,8 @@ static void mrb_bedit_context_free(mrb_state * mrb, void * ptr);
 static const struct mrb_data_type mrb_bedit_context_type = { "mrb_open_bedit_context", mrb_bedit_context_free, };
 
 
-auto split = [](std::string & src, auto pat)
+/* static functions */
+static auto split = [](std::string & src, auto pat)
 {
     std::vector<std::string> result{};
     std::regex reg{pat};
@@ -372,21 +373,14 @@ auto split = [](std::string & src, auto pat)
 static unsigned char toValue(unsigned char data)
 {
     unsigned char val=0;
-    if(('0' <= data) && (data<='9'))
-    {
-        val = data - '0';
-    }
-    else if(('a' <= data) && (data<='f'))
-    {
-        val = 10 + data - 'a';
-    }
-    else if(('A' <= data) && (data<='F'))
-    {
-        val = 10 + data - 'A';
-    }
+         if(('0' <= data) && (data<='9')) { val = data - '0';      }
+    else if(('a' <= data) && (data<='f')) { val = 10 + data - 'a'; }
+    else if(('A' <= data) && (data<='F')) { val = 10 + data - 'A'; }
+    else                                  { }
     return val;
 }
 
+/* class */
 class WorkerThread
 {
 public:
@@ -2189,7 +2183,6 @@ mrb_value mrb_bedit_dump(mrb_state * mrb, mrb_value self)           { auto resul
 mrb_value mrb_bedit_get(mrb_state * mrb, mrb_value self)            { auto result = (Application::getObject())->bedit_get(mrb, self);    mrb_garbage_collect(mrb);  return result; }
 mrb_value mrb_bedit_set(mrb_state * mrb, mrb_value self)            { auto result = (Application::getObject())->bedit_set(mrb, self);    mrb_garbage_collect(mrb);  return result; }
 
-
 void mrb_thread_context_free(mrb_state * mrb, void * ptr)
 {
 //    printf("%s:%d: %s\n", __FILE__, __LINE__, __FUNCTION__);
@@ -2239,34 +2232,44 @@ int main(int argc, char * argv[])
     {
         boost::program_options::options_description desc("smon.exe [Options]");
         desc.add_options()
-            ("baud,b",          boost::program_options::value<std::string>(),   "baud rate      Default 1200O1 ex) -b 9600E1"   )
-            ("gap,g",           boost::program_options::value<unsigned int>(),  "time out tick. Default   30 ( 30 [ms])"        )
-            ("timer,t",         boost::program_options::value<unsigned int>(),  "time out tick. Default  300 (300 [ms])"        )
-            ("timer2",          boost::program_options::value<unsigned int>(),  "time out tick. Default  500 (500 [ms])"        )
-            ("timer3",          boost::program_options::value<unsigned int>(),  "time out tick. Default 1000 (  1 [s])"         )
-            ("no-rts",                                                          "no control RTS signal"                         )
-            ("crc,c",          boost::program_options::value<std::string>(),    "calclate modbus RTU CRC"                       )
-            ("crc8",           boost::program_options::value<std::string>(),    "calclate CRC8"                                 )
-            ("sum,s",          boost::program_options::value<std::string>(),    "calclate checksum of XOR"                      )
-            ("float,f",        boost::program_options::value<std::string>(),    "hex to float value"                            )
-            ("floatl,F",       boost::program_options::value<std::string>(),    "litle endian hex to float value"               )
-            ("mruby-script,m", boost::program_options::value<std::string>(),    "execute mruby script"                          )
-            ("help,h",                                                          "help"                                          );
+            ("baud,b",          boost::program_options::value<std::string>(),   "baud rate      Default 1200O1 ex) -b 9600E1"     )
+            ("gap,g",           boost::program_options::value<unsigned int>(),  "time out tick. Default   30 ( 30 [ms])"          )
+            ("timer,t",         boost::program_options::value<unsigned int>(),  "time out tick. Default  300 (300 [ms])"          )
+            ("timer2",          boost::program_options::value<unsigned int>(),  "time out tick. Default  500 (500 [ms])"          )
+            ("timer3",          boost::program_options::value<unsigned int>(),  "time out tick. Default 1000 (  1 [s])"           )
+            ("no-rts",                                                          "no control RTS signal"                           )
+            ("crc,c",          boost::program_options::value<std::string>(),    "calclate modbus RTU CRC"                         )
+            ("crc8",           boost::program_options::value<std::string>(),    "calclate CRC8"                                   )
+            ("sum,s",          boost::program_options::value<std::string>(),    "calclate checksum of XOR"                        )
+            ("float,f",        boost::program_options::value<std::string>(),    "hex to float value"                              )
+            ("floatl,F",       boost::program_options::value<std::string>(),    "litle endian hex to float value"                 )
+            ("mruby-script,m", boost::program_options::value<std::string>(),    "execute mruby script"                            )
+            ("help,h",                                                          "help"                                            )
+            ("help-misc",                                                       "display of exsample and commet, ext class ...etc");
         boost::program_options::variables_map argmap;
 
         auto const parsing_result = parse_command_line( argc, argv, desc );
         store( parsing_result, argmap );
         notify( argmap );
 
-        if(argmap.count("help"))
+        auto SoftwareRevision = "0.10.01";
+        if(argmap.count("help-misc"))
         {
-            std::cout << "smon Software revision 0.09.00" << std::endl;
+            std::cout << "smon Software revision " << SoftwareRevision << std::endl;
             std::cout << std::endl;
             std::cout << desc << std::endl;
             std::cout << help_msg << std::endl;
 #if 0
             printf("debug: %d\n", help_size);
 #endif
+            return 0;
+        }
+
+        if(argmap.count("help"))
+        {
+            std::cout << "smon Software revision " << SoftwareRevision << std::endl;
+            std::cout << std::endl;
+            std::cout << desc << std::endl;
             return 0;
         }
 
