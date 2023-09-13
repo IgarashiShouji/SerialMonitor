@@ -372,7 +372,7 @@ static auto split = [](std::string & src, auto pat)
 
 static unsigned char toValue(unsigned char data)
 {
-    unsigned char val=0;
+    unsigned char val=0xff;
          if(('0' <= data) && (data<='9')) { val = data - '0';      }
     else if(('a' <= data) && (data<='f')) { val = 10 + data - 'a'; }
     else if(('A' <= data) && (data<='F')) { val = 10 + data - 'A'; }
@@ -511,292 +511,6 @@ public:
     }
 };
 
-class SerialMonitor : public MyEntity::TimerHandler
-{
-public:
-    enum State
-    {
-        GAP = 0,
-        TIME_OUT_1,
-        TIME_OUT_2,
-        TIME_OUT_3,
-        CACHE_FULL,
-        CLOSE,
-        NONE
-    };
-    struct ReciveInfo
-    {
-        enum State      state;
-        unsigned int    cnt;
-        unsigned char * buff;
-    };
-protected:
-    std::string                              arg;
-    std::vector<size_t>                      timer;
-    std::map<SerialMonitor *, std::string> & res_list;
-    SerialControl *                          com;
-    MyEntity::OneShotTimerEventer<size_t> *  tevter;
-    unsigned int                             cache_size;
-    bool                                     rcv_enable;
-    ReciveInfo                               cache;
-    std::thread                              th_recive;
-    std::mutex                               mtx;
-    std::condition_variable                  cond;
-    std::list<ReciveInfo>                    rcv_cache;
-public:
-    SerialMonitor(mrb_value & self, const char * arg_, std::vector<size_t> & timer_default, std::map<SerialMonitor *, std::string> & list, std::string def_boud, bool rts_ctrl)
-      : arg(arg_), timer(timer_default), res_list(list), com(nullptr), tevter(nullptr), cache_size(1024), rcv_enable(true)
-    {   /* split */
-        std::vector<std::string> args;
-        for( auto&& item : split( arg, "," ) )
-        {
-            args.push_back(item);
-        }
-        std::string name(args[0]);
-        std::string baud(def_boud);
-        SerialControl::Profile info;
-        SerialControl::hasBaudRate(baud, info);
-        if(1 < args.size())
-        {
-            for(auto idx = 1; idx < args.size(); idx ++)
-            {
-                auto & arg = args[idx];
-                if      ( std::regex_match(arg, std::regex("one")))        { info.stop = SerialControl::one; }
-                else if ( std::regex_match(arg, std::regex("ONE")))        { info.stop = SerialControl::one; }
-                else if ( std::regex_match(arg, std::regex("two")))        { info.stop = SerialControl::two; }
-                else if ( std::regex_match(arg, std::regex("TWO")))        { info.stop = SerialControl::two; }
-                else if ( std::regex_match(arg, std::regex("none")))       { info.parity = SerialControl::none; }
-                else if ( std::regex_match(arg, std::regex("NONE")))       { info.parity = SerialControl::none; }
-                else if ( std::regex_match(arg, std::regex("even")))       { info.parity = SerialControl::even; }
-                else if ( std::regex_match(arg, std::regex("EVEN")))       { info.parity = SerialControl::even; }
-                else if ( std::regex_match(arg, std::regex("odd")))        { info.parity = SerialControl::odd; }
-                else if ( std::regex_match(arg, std::regex("ODD")))        { info.parity = SerialControl::odd; }
-                else if ( std::regex_match(arg, std::regex("GAP=[0-9]+"))) { timer[0] = stoi(std::regex_replace(arg, std::regex("GAP=([0-9]+)"), "$1")); }
-                else if ( std::regex_match(arg, std::regex("TO1=[0-9]+"))) { timer[1] = stoi(std::regex_replace(arg, std::regex("TO1=([0-9]+)"), "$1")); }
-                else if ( std::regex_match(arg, std::regex("TO2=[0-9]+"))) { timer[2] = stoi(std::regex_replace(arg, std::regex("TO2=([0-9]+)"), "$1")); }
-                else if ( std::regex_match(arg, std::regex("TO3=[0-9]+"))) { timer[3] = stoi(std::regex_replace(arg, std::regex("TO3=([0-9]+)"), "$1")); }
-                else
-                {
-                    if( !SerialControl::hasBaudRate(arg, info) )
-                    {
-                        info.baud = stoi(arg);
-                    }
-                }
-            }
-        }
-        com = SerialControl::createObject(name.c_str(), info.baud, info.parity, info.stop, rts_ctrl);
-        cache.buff  = new unsigned char [cache_size];
-        cache.cnt   = 0;
-        cache.state = NONE;
-        std::thread temp(&SerialMonitor::recive, this, 0);
-        th_recive.swap(temp);
-    }
-    virtual ~SerialMonitor(void)
-    {
-        delete com;
-        delete [] cache.buff;
-        cache.cnt   = 0;
-        for(auto & item : rcv_cache)
-        {
-            delete [] item.buff;
-        }
-        rcv_cache.clear();
-        res_list.erase(this);
-        th_recive.join();
-    }
-    void close(void)
-    {
-        com->close();
-        delete com;
-        com = nullptr;
-    }
-    void send(std::string data, unsigned int timer)
-    {
-        if( nullptr != com)
-        {
-            for(auto pos = data.find_first_of(" "); pos != std::string::npos; pos = data.find_first_of(" "))
-            {
-                data.erase(pos, 1);
-            }
-            auto s_len = data.size();
-            if( ( 1 < s_len ) && !( 1 & s_len ) )
-            {   /* even charactor count and more size of 1 byte */
-                auto max = s_len / 2;
-                auto len = 0;
-                auto bin = new unsigned  char [max];
-                for(auto idx = 0; len < max; len ++)
-                {
-                    unsigned char val = (toValue(data.at(idx ++)) << 4);
-                    val |= toValue(data.at(idx ++));
-                    bin[len] = val;
-                }
-                com->send(bin, len);
-                std::this_thread::sleep_for(std::chrono::milliseconds(timer));
-                if( nullptr != tevter)
-                {
-                    std::lock_guard<std::mutex> lock(mtx);
-                    tevter->restart();
-                }
-                delete [] bin;
-            }
-        }
-    }
-    SerialMonitor::State recive_wait(std::string & data)
-    {
-        ReciveInfo rcv_info = { NONE, 0, nullptr };
-        auto lamda = [this, &rcv_info]
-        {
-            if(!rcv_enable)
-            {
-                cache.state = CLOSE;
-                cache.cnt   = 0;
-                cache.buff  = nullptr;
-                return true;
-            }
-            if(0 < rcv_cache.size())
-            {
-                rcv_info = *(rcv_cache.begin());
-                rcv_cache.pop_front();
-                return true;
-            }
-            return false;
-        };
-        std::unique_lock<std::mutex> lock(mtx);
-        cond.wait(lock, lamda);
-        for(unsigned int idx = 0; idx < rcv_info.cnt; idx ++)
-        {
-            char temp[4];
-            sprintf(temp, "%02X", rcv_info.buff[idx]);
-            temp[2] = '\0';
-            data += temp;
-        }
-        delete [] rcv_info.buff;
-        return rcv_info.state;
-    }
-    void recive(size_t id)
-    {
-        MyEntity::OneShotTimerEventer timeout_evter(timer, *this);
-        tevter = &timeout_evter;
-        while(rcv_enable)
-        {
-            if(nullptr == com) { break; }
-            unsigned char data;
-            size_t len = com->read(&(data), 1);
-            if(0 == len) { break; }
-            std::lock_guard<std::mutex> lock(mtx);
-            timeout_evter.restart();
-            if(0 < len)
-            {
-                cache.buff[cache.cnt] = data;
-                cache.cnt += len;
-                if(cache_size <= cache.cnt)
-                {
-                    cache.state = CACHE_FULL;
-                    rcv_cache.push_back(cache);
-                    cache.buff  = new unsigned char [cache_size];
-                    cache.cnt   = 0;
-                    cond.notify_all();
-                }
-            }
-        }
-        std::lock_guard<std::mutex> lock(mtx);
-        rcv_enable = false;
-        cache.state = CLOSE;
-        cache.cnt   = 0;
-        rcv_cache.push_back(cache);
-        cache.buff  = new unsigned char [cache_size];
-        cache.cnt   = 0;
-        cond.notify_all();
-    }
-    virtual void handler(unsigned int idx)
-    {
-        static const enum State evt_state[] = { GAP, TIME_OUT_1, TIME_OUT_2, TIME_OUT_3 };
-        if(idx < __ArrayCount(evt_state))
-        {
-            if( !com->rts_status() )
-            {
-                std::lock_guard<std::mutex> lock(mtx);
-                cache.state = evt_state[idx];
-                rcv_cache.push_back(cache);
-                cache.buff = new unsigned char [cache_size];
-                cache.cnt  = 0;
-                cond.notify_all();
-            }
-        }
-    }
-};
-
-class OpenXLSXCtrl
-{
-public:
-    enum Type
-    {
-        Empty,
-        Boolean,
-        Integer,
-        Float,
-        Error,
-        String
-    };
-protected:
-    OpenXLSX::XLDocument  xlsx;
-    OpenXLSX::XLWorkbook  book;
-    OpenXLSX::XLWorksheet sheet;
-
-public:
-    OpenXLSXCtrl(void)          { }
-    virtual ~OpenXLSXCtrl(void) { }
-    void create(char * fname)                        { xlsx.create(fname);           }
-    void open(char * fname)                          { xlsx.open(fname);             }
-    void workbook(void)                              { book = xlsx.workbook();       }
-    std::vector<std::string> getWorkSheetNames(void) { return book.worksheetNames(); }
-    void worksheet(char * sheet_name)
-    {
-        auto list = book.worksheetNames();
-        for(auto & name: list)
-        {
-            if( name == sheet_name )
-            {
-                sheet = book.worksheet(sheet_name);
-                return;
-            }
-        }
-        book.addWorksheet(sheet_name);
-        sheet = book.worksheet(sheet_name);
-    }
-    void set_sheet_name(char * sheet_name)            { sheet.setName(sheet_name);                                      }
-    void set_cell_value(char * cell_name, int val)    { sheet.cell(OpenXLSX::XLCellReference(cell_name)).value() = val; }
-    void set_cell_value(char * cell_name, float val)  { sheet.cell(OpenXLSX::XLCellReference(cell_name)).value() = val; }
-    void set_cell_value(char * cell_name, char * val) { sheet.cell(OpenXLSX::XLCellReference(cell_name)).value() = val; }
-    OpenXLSXCtrl::Type get_cell(char * cell_name, int & val_int, float & val_float, std::string & str) const
-    {
-        switch( (sheet.cell(OpenXLSX::XLCellReference(cell_name)).value()).type() )
-        {
-        case OpenXLSX::XLValueType::Empty:
-            return Empty;
-        case OpenXLSX::XLValueType::Boolean:
-            if( (sheet.cell(OpenXLSX::XLCellReference(cell_name)).value()).get<bool>() ) { val_int = 1; }
-            else                    { val_int = 0; }
-            return Boolean;
-        case OpenXLSX::XLValueType::Integer:
-            val_int = static_cast<int>((sheet.cell(OpenXLSX::XLCellReference(cell_name)).value()).get<int64_t>());
-            return Integer;
-        case OpenXLSX::XLValueType::Float:
-            val_float = static_cast<float>((sheet.cell(OpenXLSX::XLCellReference(cell_name)).value()).get<double>());
-            return Float;
-        case OpenXLSX::XLValueType::String:
-            str = (sheet.cell(OpenXLSX::XLCellReference(cell_name)).value()).get<std::string>();
-            return String;
-        case OpenXLSX::XLValueType::Error:
-        default:
-            break;
-        }
-        return Error;
-    }
-    void save(void)  { xlsx.save();  }
-    void close(void) { xlsx.close(); }
-};
-
 class BinaryControl
 {
 protected:
@@ -808,6 +522,14 @@ protected:
 
 public:
     BinaryControl(void) : length(0), compress_size(0), pos(0), data(nullptr) { }
+    BinaryControl(size_t size_) : length(0), compress_size(0), pos(0), data(nullptr) { alloc(size_); }
+    BinaryControl(std::string & src)
+      : length(0), compress_size(0), pos(0), data(nullptr)
+    {
+        auto size = src.size();
+        alloc(size);
+        length = this->write(0, static_cast<mrb_int>(size), src);
+    }
     virtual ~BinaryControl(void)
     {
         std::lock_guard<std::mutex> lock(mtx);
@@ -824,6 +546,21 @@ public:
         pos           = 0;
         if( nullptr != data ) { std::free(data); data = nullptr;                        }
         if( 0 < size )        { data = static_cast<unsigned char *>(std::malloc(size)); }
+    }
+    size_t resize(size_t size)
+    {
+        if(length < size)
+        {
+            auto temp = std::realloc(data, size);
+            if(nullptr == temp) { return length; }
+            data = static_cast<unsigned char *>(temp);
+        }
+        this->length = size;
+        return this->length;
+    }
+    unsigned char * ptr(void)
+    {
+        return data;
     }
     size_t size(void) const
     {
@@ -990,16 +727,24 @@ public:
         }
         return len;
     }
-    uint32_t write(mrb_int address, mrb_int size, std::string & in_data)
+    uint32_t write(mrb_int address, mrb_int size, std::string & src)
     {
-        uint32_t cnt = 0;
-        auto length = this->size();
-        std::lock_guard<std::mutex> lock(mtx);
-        for(auto in_pos = 0; ((cnt < size) && (address < length)); cnt ++, address ++, in_pos += 2)
+        size_t cnt = 0,  len = 0, max = src.size();
+        unsigned char val = 0;
+        const unsigned char * str = reinterpret_cast<const unsigned char *>(src.c_str());
+        for(auto idx = 0; idx < max; idx ++)
         {
-            auto temp = in_data.substr(in_pos, 2);
-            auto val  = stoi(temp, 0, 16);
-            data[address] = static_cast<unsigned char>(val);
+            unsigned char tmp = toValue(str[idx]);
+            if(tmp <= 0x0F)
+            {
+                val = (val << 4) | tmp;
+                len ++;
+                if( 0 == (len & 1) )
+                {
+                    data[cnt] = val;
+                    cnt ++;
+                }
+            }
         }
         return cnt;
     }
@@ -1016,7 +761,7 @@ public:
         }
         return idx;
     }
-    bool toItems(mrb_state * mrb, uint32_t address, std::string & format_, mrb_value & array)
+    bool get(mrb_state * mrb, uint32_t address, std::string & format_, mrb_value & array)
     {
         auto state = ' ';
         std::string num;
@@ -1041,7 +786,7 @@ public:
                         address += size;
                     }
                     break;
-                case 'h':
+                case 'H':
                     {
                         mrb_int addr = address;
                         mrb_int size = static_cast<unsigned int>(stoi(num));
@@ -1065,14 +810,15 @@ public:
                 case 'd': { DWord temp; std::memcpy(&(temp.buff[0]), &(data[address]), 4); mrb_ary_push(mrb, array, mrb_int_value(mrb, temp.uint32));  address += 4; } break;
                 case 'i': { DWord temp; std::memcpy(&(temp.buff[0]), &(data[address]), 4); mrb_ary_push(mrb, array, mrb_int_value(mrb, temp.int32));   address += 4; } break;
                 case 'f': { DWord temp; std::memcpy(&(temp.buff[0]), &(data[address]), 4); mrb_ary_push(mrb, array, mrb_float_value(mrb, temp.value)); address += 4; } break;
+
                 case 'W': { Word temp;  for(auto idx = 0; idx < 2; idx ++) { temp.buff[idx] = data[address + (1-idx)]; } mrb_ary_push(mrb, array, mrb_int_value(mrb, temp.uint16));  address += 2; } break;
                 case 'S': { Word temp;  for(auto idx = 0; idx < 2; idx ++) { temp.buff[idx] = data[address + (1-idx)]; } mrb_ary_push(mrb, array, mrb_int_value(mrb, temp.int16));   address += 2; } break;
                 case 'D': { DWord temp; for(auto idx = 0; idx < 4; idx ++) { temp.buff[idx] = data[address + (3-idx)]; } mrb_ary_push(mrb, array, mrb_int_value(mrb, temp.uint32));  address += 4; } break;
                 case 'I': { DWord temp; for(auto idx = 0; idx < 4; idx ++) { temp.buff[idx] = data[address + (3-idx)]; } mrb_ary_push(mrb, array, mrb_int_value(mrb, temp.int32));   address += 4; } break;
                 case 'F': { DWord temp; for(auto idx = 0; idx < 4; idx ++) { temp.buff[idx] = data[address + (3-idx)]; } mrb_ary_push(mrb, array, mrb_float_value(mrb, temp.value)); address += 4; } break;
-                case 'A': state = t;   break;
-                case 'H': state = 'h'; break;
-                case 'h': state = t;   break;
+
+                case 'A': state = t; break;
+                case 'H': state = t; break;
                 default:
                     break;
                 }
@@ -1081,7 +827,7 @@ public:
         pos = address;
         return true;
     }
-    mrb_int fromItems(mrb_state * mrb, uint32_t address, std::string & format_, mrb_value & array)
+    mrb_int set(mrb_state * mrb, uint32_t address, std::string & format_, mrb_value & array)
     {
         mrb_int size = 0;
         auto format = format_ + ' ';
@@ -1118,12 +864,7 @@ public:
                     auto item = mrb_ary_shift(mrb, array);
                     char * msg = RSTR_PTR(mrb_str_ptr(item));
                     std::string data(msg);
-                    for(auto str_pos = data.find_first_of(" "); str_pos != std::string::npos; str_pos = data.find_first_of(" "))
-                    {
-                        data.erase(str_pos, 1);
-                    }
-                    mrb_int sz = (data.size() / 2);
-                    auto w_size = write(address, sz, data);
+                    auto w_size = write(address, (data.size() / 2), data);
                     address += w_size;
                     size += w_size;
                 }
@@ -1135,6 +876,299 @@ public:
         pos = address;
         return size;
     }
+};
+
+class SerialMonitor : public MyEntity::TimerHandler
+{
+public:
+    enum State
+    {
+        GAP = 0,
+        TIME_OUT_1,
+        TIME_OUT_2,
+        TIME_OUT_3,
+        CACHE_FULL,
+        CLOSE,
+        NONE
+    };
+    struct ReciveInfo
+    {
+        enum State      state;
+        unsigned int    cnt;
+        unsigned char * buff;
+    };
+protected:
+    std::string                              arg;
+    std::vector<size_t>                      timer;
+    std::map<SerialMonitor *, std::string> & res_list;
+    SerialControl *                          com;
+    MyEntity::OneShotTimerEventer<size_t> *  tevter;
+    unsigned int                             cache_size;
+    bool                                     rcv_enable;
+    ReciveInfo                               cache;
+    std::thread                              th_recive;
+    std::mutex                               mtx;
+    std::condition_variable                  cond;
+    std::list<ReciveInfo>                    rcv_cache;
+public:
+    SerialMonitor(mrb_value & self, const char * arg_, std::vector<size_t> & timer_default, std::map<SerialMonitor *, std::string> & list, std::string def_boud, bool rts_ctrl)
+      : arg(arg_), timer(timer_default), res_list(list), com(nullptr), tevter(nullptr), cache_size(1024), rcv_enable(true)
+    {   /* split */
+        std::vector<std::string> args;
+        for( auto&& item : split( arg, "," ) )
+        {
+            args.push_back(item);
+        }
+        std::string name(args[0]);
+        std::string baud(def_boud);
+        SerialControl::Profile info;
+        SerialControl::hasBaudRate(baud, info);
+        if(1 < args.size())
+        {
+            for(auto idx = 1; idx < args.size(); idx ++)
+            {
+                auto & arg = args[idx];
+                if      ( std::regex_match(arg, std::regex("one")))        { info.stop = SerialControl::one; }
+                else if ( std::regex_match(arg, std::regex("ONE")))        { info.stop = SerialControl::one; }
+                else if ( std::regex_match(arg, std::regex("two")))        { info.stop = SerialControl::two; }
+                else if ( std::regex_match(arg, std::regex("TWO")))        { info.stop = SerialControl::two; }
+                else if ( std::regex_match(arg, std::regex("none")))       { info.parity = SerialControl::none; }
+                else if ( std::regex_match(arg, std::regex("NONE")))       { info.parity = SerialControl::none; }
+                else if ( std::regex_match(arg, std::regex("even")))       { info.parity = SerialControl::even; }
+                else if ( std::regex_match(arg, std::regex("EVEN")))       { info.parity = SerialControl::even; }
+                else if ( std::regex_match(arg, std::regex("odd")))        { info.parity = SerialControl::odd; }
+                else if ( std::regex_match(arg, std::regex("ODD")))        { info.parity = SerialControl::odd; }
+                else if ( std::regex_match(arg, std::regex("GAP=[0-9]+"))) { timer[0] = stoi(std::regex_replace(arg, std::regex("GAP=([0-9]+)"), "$1")); }
+                else if ( std::regex_match(arg, std::regex("TO1=[0-9]+"))) { timer[1] = stoi(std::regex_replace(arg, std::regex("TO1=([0-9]+)"), "$1")); }
+                else if ( std::regex_match(arg, std::regex("TO2=[0-9]+"))) { timer[2] = stoi(std::regex_replace(arg, std::regex("TO2=([0-9]+)"), "$1")); }
+                else if ( std::regex_match(arg, std::regex("TO3=[0-9]+"))) { timer[3] = stoi(std::regex_replace(arg, std::regex("TO3=([0-9]+)"), "$1")); }
+                else
+                {
+                    if( !SerialControl::hasBaudRate(arg, info) )
+                    {
+                        info.baud = stoi(arg);
+                    }
+                }
+            }
+        }
+        com = SerialControl::createObject(name.c_str(), info.baud, info.parity, info.stop, rts_ctrl);
+        cache.buff  = new unsigned char [cache_size];
+        cache.cnt   = 0;
+        cache.state = NONE;
+        std::thread temp(&SerialMonitor::recive, this, 0);
+        th_recive.swap(temp);
+    }
+    virtual ~SerialMonitor(void)
+    {
+        this->close();
+    }
+    void close(void)
+    {
+        std::unique_lock<std::mutex> lock(mtx);
+        rcv_enable = false;
+        if(nullptr != com)
+        {
+            try { com->close(); } catch(...) { }
+            auto lamda = [this]
+            {
+                if(cache.state == CLOSE)
+                {
+                    return true;
+                }
+                return false;
+            };
+            cond.wait(lock, lamda);
+            th_recive.detach();
+            delete com;
+            com = nullptr;
+        }
+        if(nullptr != cache.buff)
+        {
+            delete [] cache.buff;
+            cache.buff = nullptr;
+        }
+        cache.cnt   = 0;
+        for(auto & item : rcv_cache)
+        {
+            delete [] item.buff;
+            item.buff = nullptr;
+        }
+        rcv_cache.clear();
+        res_list.erase(this);
+    }
+    void send(std::string data, unsigned int timer)
+    {
+        if( nullptr != com)
+        {
+            BinaryControl bin(data);
+            if(0 < bin.size())
+            {
+                try { com->send(bin.ptr(), bin.size()); } catch(...) { }
+                std::this_thread::sleep_for(std::chrono::milliseconds(timer));
+                if( nullptr != tevter)
+                {
+                    std::lock_guard<std::mutex> lock(mtx);
+                    tevter->restart();
+                }
+            }
+        }
+    }
+    SerialMonitor::State recive_wait(std::string & data)
+    {
+        ReciveInfo rcv_info = { NONE, 0, nullptr };
+        auto lamda = [this, &rcv_info]
+        {
+            if(cache.state == CLOSE)
+            {
+                this->close();
+                return true;
+            }
+            if(0 < rcv_cache.size())
+            {
+                rcv_info = *(rcv_cache.begin());
+                rcv_cache.pop_front();
+                return true;
+            }
+            return false;
+        };
+        std::unique_lock<std::mutex> lock(mtx);
+        cond.wait(lock, lamda);
+        for(unsigned int idx = 0; idx < rcv_info.cnt; idx ++)
+        {
+            char temp[4];
+            sprintf(temp, "%02X", rcv_info.buff[idx]);
+            temp[2] = '\0';
+            data += temp;
+        }
+        delete [] rcv_info.buff;
+        return rcv_info.state;
+    }
+    void recive(size_t id)
+    {
+        MyEntity::OneShotTimerEventer timeout_evter(timer, *this);
+        tevter = &timeout_evter;
+        while(rcv_enable)
+        {
+            if(nullptr == com) { break; }
+            unsigned char data;
+            size_t len;
+            try { len = com->read(&(data), 1); } catch(...) { break; }
+            if(0 == len) { break; }
+            std::lock_guard<std::mutex> lock(mtx);
+            if(rcv_enable)
+            {
+                 timeout_evter.restart();
+                 cache.buff[cache.cnt] = data;
+                 cache.cnt += len;
+                 if(cache_size <= cache.cnt)
+                 {
+                     cache.state = CACHE_FULL;
+                     rcv_cache.push_back(cache);
+                     cache.buff  = new unsigned char [cache_size];
+                     cache.cnt   = 0;
+                     cond.notify_all();
+                 }
+            }
+        }
+        std::lock_guard<std::mutex> lock(mtx);
+        rcv_enable = false;
+        cache.state = CLOSE;
+        cache.cnt   = 0;
+        rcv_cache.push_back(cache);
+        cache.buff  = new unsigned char [cache_size];
+        cache.cnt   = 0;
+        cond.notify_all();
+    }
+    virtual void handler(unsigned int idx)
+    {
+        static const enum State evt_state[] = { GAP, TIME_OUT_1, TIME_OUT_2, TIME_OUT_3 };
+        std::lock_guard<std::mutex> lock(mtx);
+        if(CLOSE != cache.state)
+        {
+            if(idx < __ArrayCount(evt_state))
+            {
+                if( !com->rts_status() )
+                {
+                    cache.state = evt_state[idx];
+                    rcv_cache.push_back(cache);
+                    cache.buff = new unsigned char [cache_size];
+                    cache.cnt  = 0;
+                    cond.notify_all();
+                }
+            }
+        }
+    }
+};
+
+class OpenXLSXCtrl
+{
+public:
+    enum Type
+    {
+        Empty,
+        Boolean,
+        Integer,
+        Float,
+        Error,
+        String
+    };
+protected:
+    OpenXLSX::XLDocument  xlsx;
+    OpenXLSX::XLWorkbook  book;
+    OpenXLSX::XLWorksheet sheet;
+
+public:
+    OpenXLSXCtrl(void)          { }
+    virtual ~OpenXLSXCtrl(void) { }
+    void create(char * fname)                        { xlsx.create(fname);           }
+    void open(char * fname)                          { xlsx.open(fname);             }
+    void workbook(void)                              { book = xlsx.workbook();       }
+    std::vector<std::string> getWorkSheetNames(void) { return book.worksheetNames(); }
+    void worksheet(char * sheet_name)
+    {
+        auto list = book.worksheetNames();
+        for(auto & name: list)
+        {
+            if( name == sheet_name )
+            {
+                sheet = book.worksheet(sheet_name);
+                return;
+            }
+        }
+        book.addWorksheet(sheet_name);
+        sheet = book.worksheet(sheet_name);
+    }
+    void set_sheet_name(char * sheet_name)            { sheet.setName(sheet_name);                                      }
+    void set_cell_value(char * cell_name, int val)    { sheet.cell(OpenXLSX::XLCellReference(cell_name)).value() = val; }
+    void set_cell_value(char * cell_name, float val)  { sheet.cell(OpenXLSX::XLCellReference(cell_name)).value() = val; }
+    void set_cell_value(char * cell_name, char * val) { sheet.cell(OpenXLSX::XLCellReference(cell_name)).value() = val; }
+    OpenXLSXCtrl::Type get_cell(char * cell_name, int & val_int, float & val_float, std::string & str) const
+    {
+        switch( (sheet.cell(OpenXLSX::XLCellReference(cell_name)).value()).type() )
+        {
+        case OpenXLSX::XLValueType::Empty:
+            return Empty;
+        case OpenXLSX::XLValueType::Boolean:
+            if( (sheet.cell(OpenXLSX::XLCellReference(cell_name)).value()).get<bool>() ) { val_int = 1; }
+            else                    { val_int = 0; }
+            return Boolean;
+        case OpenXLSX::XLValueType::Integer:
+            val_int = static_cast<int>((sheet.cell(OpenXLSX::XLCellReference(cell_name)).value()).get<int64_t>());
+            return Integer;
+        case OpenXLSX::XLValueType::Float:
+            val_float = static_cast<float>((sheet.cell(OpenXLSX::XLCellReference(cell_name)).value()).get<double>());
+            return Float;
+        case OpenXLSX::XLValueType::String:
+            str = (sheet.cell(OpenXLSX::XLCellReference(cell_name)).value()).get<std::string>();
+            return String;
+        case OpenXLSX::XLValueType::Error:
+        default:
+            break;
+        }
+        return Error;
+    }
+    void save(void)  { xlsx.save();  }
+    void close(void) { xlsx.close(); }
 };
 
 class Application
@@ -1338,12 +1372,12 @@ public:
     }
     mrb_value smon_wait(mrb_state * mrb, mrb_value self)
     {
-        mrb_value proc = mrb_nil_value();
-        mrb_get_args(mrb, "&", &proc);
-        if (!mrb_nil_p(proc))
+        SerialMonitor * smon = static_cast<SerialMonitor *>(DATA_PTR(self));
+        if(nullptr != smon)
         {
-            SerialMonitor * smon = static_cast<SerialMonitor *>(DATA_PTR(self));
-            if(nullptr != smon)
+            mrb_value proc = mrb_nil_value();
+            mrb_get_args(mrb, "&", &proc);
+            if (!mrb_nil_p(proc))
             {
                 std::string data;
                 auto state = smon->recive_wait(data);
@@ -1417,6 +1451,8 @@ public:
         if(nullptr != smon)
         {
             smon->close();
+            delete smon;
+            DATA_PTR(self) = nullptr;
         }
         return self;
     }
@@ -1654,13 +1690,11 @@ public:
                     }
                     else
                     {
-                        for(auto pos = data.find_first_of(" "); pos != std::string::npos; pos = data.find_first_of(" "))
-                        {
-                            data.erase(pos, 1);
-                        }
-                        mrb_int size = (data.size() / 2);
-                        bedit->alloc(size);
-                        if(0 == bedit->write(0, size, data)) { bedit->alloc(0); }
+                        mrb_int max = (data.size() / 2);
+                        bedit->alloc(max);
+                        auto len = bedit->write(0, max, data);
+                        if(0 == len) { bedit->alloc(0);    }
+                        else         { bedit->resize(len); }
                     }
                 }
                 break;
@@ -1851,16 +1885,8 @@ public:
             if(nullptr != data_ptr)
             {
                 std::string data(data_ptr);
-                for(auto pos = data.find_first_of(" "); pos != std::string::npos; pos = data.find_first_of(" "))
-                {
-                    data.erase(pos, 1);
-                }
-                if(0 == size) { size = data.size() / 2; }
-                if(0 < size)
-                {
-                    auto wsize = bedit->write(address, size, data);
-                    return mrb_int_value(mrb, wsize);
-                }
+                auto wsize = bedit->write(address, size, data);
+                return mrb_int_value(mrb, wsize);
             }
         }
         return mrb_int_value(mrb, 0);
@@ -1922,7 +1948,7 @@ public:
             {
                 std::string fmt(fmt_ptr);
                 mrb_value arry = mrb_ary_new(mrb);
-                if( bedit->toItems(mrb, address, fmt, arry) )
+                if( bedit->get(mrb, address, fmt, arry) )
                 {
                     struct RArray *rarry = mrb_ary_ptr(arry);
                     mrb_int len = ARY_LEN(rarry);
@@ -1979,7 +2005,7 @@ public:
             if(nullptr!=fmt_ptr)
             {
                 std::string fmt(fmt_ptr);
-                return mrb_int_value(mrb, bedit->fromItems(mrb, address, fmt, arry));
+                return mrb_int_value(mrb, bedit->set(mrb, address, fmt, arry));
             }
         }
         return mrb_nil_value();

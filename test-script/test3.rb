@@ -52,10 +52,11 @@ def test_smon()
       print "finish: ", arg, "\n"
     end
   end
-
   str = Core.gets()
-  rep = Core.reg_replace(str, '01020304', '11121314')
-  printf("test: %s -> %s\n", str, rep)
+  th_s.each do |array|
+    ( th, smon ) = array;
+    smon.close
+  end
   th_s.each do |array|
     ( th, smon ) = array;
     th.join
