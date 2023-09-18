@@ -355,6 +355,7 @@ static mrb_value mrb_bedit_write(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_bedit_dump(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_bedit_get(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_bedit_set(mrb_state * mrb, mrb_value self);
+static mrb_value mrb_bedit_pos(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_bedit_compress(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_bedit_uncompress(mrb_state * mrb, mrb_value self);
 static void mrb_bedit_context_free(mrb_state * mrb, void * ptr);
@@ -875,6 +876,10 @@ public:
         }
         pos = address;
         return size;
+    }
+    inline size_t ref_pos(void) const
+    {
+        return pos;
     }
 };
 
@@ -2010,6 +2015,15 @@ public:
         }
         return mrb_nil_value();
     }
+    mrb_value bedit_pos(mrb_state * mrb, mrb_value self)
+    {
+        BinaryControl * bedit = static_cast<BinaryControl *>(DATA_PTR(self));
+        if(nullptr != bedit)
+        {
+            return mrb_int_value(mrb, bedit->ref_pos());
+        }
+        return mrb_nil_value();
+    }
 
     mrb_value bedit_compress(mrb_state * mrb, mrb_value self)
     {
@@ -2093,32 +2107,6 @@ public:
             mrb_define_method( mrb, thread_class, "synchronize",        mrb_thread_sync,        MRB_ARGS_NONE()         );
             mrb_define_method( mrb, thread_class, "notify",             mrb_thread_notify,      MRB_ARGS_NONE()         );
 
-            /* Class Smon */
-            struct RClass * smon_class = mrb_define_class_under( mrb, mrb->kernel_module, "Smon", mrb->object_class );
-            mrb_define_const(  mrb, smon_class, "GAP",                  mrb_fixnum_value(SerialMonitor::GAP)            );
-            mrb_define_const(  mrb, smon_class, "TO1",                  mrb_fixnum_value(SerialMonitor::TIME_OUT_1)     );
-            mrb_define_const(  mrb, smon_class, "TO2",                  mrb_fixnum_value(SerialMonitor::TIME_OUT_2)     );
-            mrb_define_const(  mrb, smon_class, "TO3",                  mrb_fixnum_value(SerialMonitor::TIME_OUT_3)     );
-            mrb_define_const(  mrb, smon_class, "CLOSE",                mrb_fixnum_value(SerialMonitor::CLOSE)          );
-            mrb_define_const(  mrb, smon_class, "CACHE_FULL",           mrb_fixnum_value(SerialMonitor::CACHE_FULL)     );
-            mrb_define_const(  mrb, smon_class, "NONE",                 mrb_fixnum_value(SerialMonitor::NONE)           );
-            mrb_define_method( mrb, smon_class, "initialize",           mrb_smon_initialize,    MRB_ARGS_REQ( 2 )       );
-            mrb_define_method( mrb, smon_class, "wait",                 mrb_smon_wait,          MRB_ARGS_ARG( 2, 1 )    );
-            mrb_define_method( mrb, smon_class, "send",                 mrb_smon_send,          MRB_ARGS_ARG( 2, 1 )    );
-            mrb_define_method( mrb, smon_class, "close",                mrb_smon_close,         MRB_ARGS_NONE()         );
-
-            /* Class OpenXLSX */
-            struct RClass * xlsx_class = mrb_define_class_under( mrb, mrb->kernel_module, "OpenXLSX", mrb->object_class );
-            mrb_define_method( mrb, xlsx_class, "initialize",       mrb_xlsx_initialize,        MRB_ARGS_REQ( 2 )       );
-            mrb_define_method( mrb, xlsx_class, "create",           mrb_xlsx_create,            MRB_ARGS_ARG( 1, 1 )    );
-            mrb_define_method( mrb, xlsx_class, "open",             mrb_xlsx_open,              MRB_ARGS_ARG( 1, 1 )    );
-            mrb_define_method( mrb, xlsx_class, "sheet",            mrb_xlsx_worksheet,         MRB_ARGS_ARG( 1, 1 )    );
-            mrb_define_method( mrb, xlsx_class, "sheet_names",      mrb_xlsx_sheet_names,       MRB_ARGS_NONE()         );
-            mrb_define_method( mrb, xlsx_class, "setSheetName",     mrb_xlsx_set_seet_name,     MRB_ARGS_ARG( 1, 1 )    );
-            mrb_define_method( mrb, xlsx_class, "set_value",        mrb_xlsx_set_value,         MRB_ARGS_ARG( 2, 1 )    );
-            mrb_define_method( mrb, xlsx_class, "cell",             mrb_xlsx_cell,              MRB_ARGS_ARG( 1, 1 )    );
-            mrb_define_method( mrb, xlsx_class, "save",             mrb_xlsx_save,              MRB_ARGS_NONE()         );
-
             /* Class BinEdit */
             struct RClass * bedit_class = mrb_define_class_under( mrb, mrb->kernel_module, "BinEdit", mrb->object_class );
             mrb_define_method( mrb, bedit_class, "initialize",      mrb_bedit_initialize,       MRB_ARGS_ANY()          );
@@ -2132,6 +2120,33 @@ public:
             mrb_define_method( mrb, bedit_class, "dump",            mrb_bedit_dump,             MRB_ARGS_ARG( 2, 1 )    );
             mrb_define_method( mrb, bedit_class, "get",             mrb_bedit_get,              MRB_ARGS_ARG( 2, 1 )    );
             mrb_define_method( mrb, bedit_class, "set",             mrb_bedit_set,              MRB_ARGS_ARG( 3, 1 )    );
+            mrb_define_method( mrb, bedit_class, "pos",             mrb_bedit_pos,              MRB_ARGS_NONE()         );
+
+            /* Class Smon */
+            struct RClass * smon_class = mrb_define_class_under( mrb, mrb->kernel_module, "Smon", mrb->object_class     );
+            mrb_define_const(  mrb, smon_class, "GAP",              mrb_fixnum_value(SerialMonitor::GAP)                );
+            mrb_define_const(  mrb, smon_class, "TO1",              mrb_fixnum_value(SerialMonitor::TIME_OUT_1)         );
+            mrb_define_const(  mrb, smon_class, "TO2",              mrb_fixnum_value(SerialMonitor::TIME_OUT_2)         );
+            mrb_define_const(  mrb, smon_class, "TO3",              mrb_fixnum_value(SerialMonitor::TIME_OUT_3)         );
+            mrb_define_const(  mrb, smon_class, "CLOSE",            mrb_fixnum_value(SerialMonitor::CLOSE)              );
+            mrb_define_const(  mrb, smon_class, "CACHE_FULL",       mrb_fixnum_value(SerialMonitor::CACHE_FULL)         );
+            mrb_define_const(  mrb, smon_class, "NONE",             mrb_fixnum_value(SerialMonitor::NONE)               );
+            mrb_define_method( mrb, smon_class, "initialize",       mrb_smon_initialize,    MRB_ARGS_REQ( 2 )           );
+            mrb_define_method( mrb, smon_class, "wait",             mrb_smon_wait,          MRB_ARGS_ARG( 2, 1 )        );
+            mrb_define_method( mrb, smon_class, "send",             mrb_smon_send,          MRB_ARGS_ARG( 2, 1 )        );
+            mrb_define_method( mrb, smon_class, "close",            mrb_smon_close,         MRB_ARGS_NONE()             );
+
+            /* Class OpenXLSX */
+            struct RClass * xlsx_class = mrb_define_class_under( mrb, mrb->kernel_module, "OpenXLSX", mrb->object_class );
+            mrb_define_method( mrb, xlsx_class, "initialize",       mrb_xlsx_initialize,        MRB_ARGS_REQ( 2 )       );
+            mrb_define_method( mrb, xlsx_class, "create",           mrb_xlsx_create,            MRB_ARGS_ARG( 1, 1 )    );
+            mrb_define_method( mrb, xlsx_class, "open",             mrb_xlsx_open,              MRB_ARGS_ARG( 1, 1 )    );
+            mrb_define_method( mrb, xlsx_class, "sheet",            mrb_xlsx_worksheet,         MRB_ARGS_ARG( 1, 1 )    );
+            mrb_define_method( mrb, xlsx_class, "sheet_names",      mrb_xlsx_sheet_names,       MRB_ARGS_NONE()         );
+            mrb_define_method( mrb, xlsx_class, "setSheetName",     mrb_xlsx_set_seet_name,     MRB_ARGS_ARG( 1, 1 )    );
+            mrb_define_method( mrb, xlsx_class, "set_value",        mrb_xlsx_set_value,         MRB_ARGS_ARG( 2, 1 )    );
+            mrb_define_method( mrb, xlsx_class, "cell",             mrb_xlsx_cell,              MRB_ARGS_ARG( 1, 1 )    );
+            mrb_define_method( mrb, xlsx_class, "save",             mrb_xlsx_save,              MRB_ARGS_NONE()         );
 
             /* exec mRuby Script */
             extern const uint8_t default_options[];
@@ -2208,6 +2223,7 @@ mrb_value mrb_bedit_memcpy(mrb_state * mrb, mrb_value self)         { auto resul
 mrb_value mrb_bedit_dump(mrb_state * mrb, mrb_value self)           { auto result = (Application::getObject())->bedit_dump(mrb, self);   mrb_garbage_collect(mrb);  return result; }
 mrb_value mrb_bedit_get(mrb_state * mrb, mrb_value self)            { auto result = (Application::getObject())->bedit_get(mrb, self);    mrb_garbage_collect(mrb);  return result; }
 mrb_value mrb_bedit_set(mrb_state * mrb, mrb_value self)            { auto result = (Application::getObject())->bedit_set(mrb, self);    mrb_garbage_collect(mrb);  return result; }
+mrb_value mrb_bedit_pos(mrb_state * mrb, mrb_value self)            { auto result = (Application::getObject())->bedit_pos(mrb, self);                               return result; }
 
 void mrb_thread_context_free(mrb_state * mrb, void * ptr)
 {
