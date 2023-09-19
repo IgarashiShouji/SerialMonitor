@@ -19,10 +19,21 @@ def test2(fname)
 end
 def test3()
   print "test 3: memset, memcpy\n"
-  bin = BinEdit.new('00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000 ')
-  bin.set(0, 'dfwbcsifAH',  [ 0x11223344, 1.0, 0xaabb, 0x99, -10, -3, -2, 0.1, '01234', 'AABBCC' ])
+  bin = BinEdit.new('00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000 ')
   print "  ", bin.dump(), "\n"
-  print "  ", bin.get(0, 'dfwbcsifA5H3'), "\n"
+  data = [ 0x11223344, 0.1, 0xaabb, 0x99, -10, -3, -2, 0.1, '01234', 'AABBCCDD' ];
+  print "  ", data, "\n"
+  bin.set(0, 'dfwbcsiFAH',  data)
+  print "  ", bin.dump(), "\n"
+  print "  ", bin.get(0, 'dfwbcsiFA5H4'), "\n"
+
+  bin = BinEdit.new(bin.length, 0x00)
+  print "  ", bin.dump(), "\n"
+  data = [ 0x11223344, 0.1, 0xaabb, 0x99, -10, -3, -2, 0.1, '01234', 'AABBCCDD' ];
+  print "  ", data, "\n"
+  bin.set(0, 'dfwbcsiFah',  data)
+  print "  ", bin.dump(), "\n"
+  print "  ", bin.get(0, 'dfwbcsiFa5h4'), "\n"
 
   bin = BinEdit.new('00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000 ')
   bin.set('DFWbcSIFA',  [ 0x11223344, 1.0, 0xaabb, 0x99, -10, -3, -2, 0.1, '987' ])

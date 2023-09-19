@@ -730,37 +730,114 @@ public:
     }
     uint32_t write(mrb_int address, mrb_int size, std::string & src)
     {
-        size_t cnt = 0,  len = 0, max = src.size();
-        unsigned char val = 0;
-        const unsigned char * str = reinterpret_cast<const unsigned char *>(src.c_str());
-        for(auto idx = 0; idx < max; idx ++)
+        size_t cnt = 0;
+        auto length = this->size();
+        if(address < length)
         {
-            unsigned char tmp = toValue(str[idx]);
-            if(tmp <= 0x0F)
+            length -= address;
+            if(length < size) { size = length; }
+            if(0 < size)
             {
-                val = (val << 4) | tmp;
-                len ++;
-                if( 0 == (len & 1) )
+                 const unsigned char * str = reinterpret_cast<const unsigned char *>(src.c_str());
+                 unsigned char val = 0;
+                 auto str_len = src.size();
+                 for(auto idx = 0, len = 0; (cnt < size) && (idx < str_len); idx ++)
+                 {
+                     unsigned char tmp = toValue(str[idx]);
+                     if(tmp <= 0x0F)
+                     {
+                         val = (val << 4) | tmp;
+                         len ++;
+                         if(0 == (len & 1))
+                         {
+                             data[address + cnt] = val;
+                             cnt ++;
+                         }
+                     }
+                 }
+            }
+        }
+        return cnt;
+    }
+    uint32_t write_big(mrb_int address, mrb_int size, std::string & src)
+    {
+        size_t cnt = 0;
+        auto length = this->size();
+        if(address < length)
+        {
+            length -= address;
+            if(length < size) { size = length; }
+            if(0 < size)
+            {
+                unsigned char * data = static_cast<unsigned char *>(std::malloc(size));
+                const unsigned char * str = reinterpret_cast<const unsigned char *>(src.c_str());
+                unsigned char val = 0;
+                auto str_len = src.size();
+                for(auto idx = 0, len = 0; (cnt < size) && (idx < str_len); idx ++)
                 {
-                    data[cnt] = val;
-                    cnt ++;
+                    unsigned char tmp = toValue(str[idx]);
+                    if(tmp <= 0x0F)
+                    {
+                        val = (val << 4) | tmp;
+                        len ++;
+                        if(0 == (len & 1))
+                        {
+                            data[cnt] = val;
+                            cnt ++;
+                        }
+                    }
                 }
+                for(size_t idx = 0, top = cnt - 1; idx < cnt; idx ++)
+                {
+                    this->data[address + (top - idx)] = data[idx];
+                }
+                std::free(data);
             }
         }
         return cnt;
     }
     uint32_t dump(mrb_int address, mrb_int size, std::string & output)
     {
-        uint32_t idx = 0;
+        uint32_t cnt = 0;
         auto length = this->size();
-        std::lock_guard<std::mutex> lock(mtx);
-        for( ; (idx < size) && (address < length); idx ++, address ++)
+        if(address < length)
         {
-            char temp[4] = { 0 };
-            sprintf(temp, "%02X", data[address]);
-            output += temp;
+            length -= address;
+            if(length < size) { size = length; }
+            if(0 < size)
+            {
+                std::lock_guard<std::mutex> lock(mtx);
+                for( ; (cnt < size); cnt ++)
+                {
+                    char temp[4] = { 0 };
+                    sprintf(temp, "%02X", data[address + cnt]);
+                    output += temp;
+                }
+            }
         }
-        return idx;
+        return cnt;
+    }
+    uint32_t dump_big(mrb_int address, mrb_int size, std::string & output)
+    {
+        uint32_t cnt = 0;
+        auto length = this->size();
+        if(address < length)
+        {
+            length -= address;
+            if(length < size) { size = length; }
+            if(0 < size)
+            {
+                auto top = size - 1;
+                std::lock_guard<std::mutex> lock(mtx);
+                for( ; (cnt < size); cnt ++)
+                {
+                    char temp[4] = { 0 };
+                    sprintf(temp, "%02X", data[address + (top - cnt)]);
+                    output += temp;
+                }
+            }
+        }
+        return cnt;
     }
     bool get(mrb_state * mrb, uint32_t address, std::string & format_, mrb_value & array)
     {
@@ -769,6 +846,7 @@ public:
         auto format = format_ + ' ';
         for(auto t: format)
         {
+            auto length = this->size();
             if(('0' <= t) && (t <= '9'))
             {
                 num += t;
@@ -777,13 +855,52 @@ public:
             {
                 switch(state)
                 {
+                case 'a':
+                    {
+                        size_t size = stoi(num);
+                        if(address < length)
+                        {
+                            length -= address;
+                            if(length < size) { size = length; }
+                            if(0 < size)
+                            {
+                                char str[size + 1];
+                                str[size] = '\0';
+                                std::memcpy(str, &(data[address]), size);
+                                mrb_ary_push(mrb, array, mrb_str_new_cstr(mrb, str));
+                                address += size;
+                            }
+                        }
+                    }
+                    break;
                 case 'A':
                     {
                         size_t size = stoi(num);
-                        char str[size + 1];
-                        str[size] = '\0';
-                        std::memcpy(str, &(data[address]), size);
-                        mrb_ary_push(mrb, array, mrb_str_new_cstr(mrb, str));
+                        if(address < length)
+                        {
+                            length -= address;
+                            if(length < size) { size = length; }
+                            if(0 < size)
+                            {
+                                char str[size + 1];
+                                str[size] = '\0';
+                                for(size_t idx = 0, top = size - 1; idx < size; idx ++)
+                                {
+                                    str[top - idx] = data[address + idx];
+                                }
+                                mrb_ary_push(mrb, array, mrb_str_new_cstr(mrb, str));
+                                address += size;
+                            }
+                        }
+                    }
+                    break;
+                case 'h':
+                    {
+                        mrb_int addr = address;
+                        mrb_int size = static_cast<unsigned int>(stoi(num));
+                        std::string hex;
+                        dump(addr, size, hex);
+                        mrb_ary_push(mrb, array, mrb_str_new_cstr(mrb, hex.c_str()));
                         address += size;
                     }
                     break;
@@ -792,7 +909,7 @@ public:
                         mrb_int addr = address;
                         mrb_int size = static_cast<unsigned int>(stoi(num));
                         std::string hex;
-                        dump(addr, size, hex);
+                        dump_big(addr, size, hex);
                         mrb_ary_push(mrb, array, mrb_str_new_cstr(mrb, hex.c_str()));
                         address += size;
                     }
@@ -819,7 +936,9 @@ public:
                 case 'F': { DWord temp; for(auto idx = 0; idx < 4; idx ++) { temp.buff[idx] = data[address + (3-idx)]; } mrb_ary_push(mrb, array, mrb_float_value(mrb, temp.value)); address += 4; } break;
 
                 case 'A': state = t; break;
+                case 'a': state = t; break;
                 case 'H': state = t; break;
+                case 'h': state = t; break;
                 default:
                     break;
                 }
@@ -834,6 +953,7 @@ public:
         auto format = format_ + ' ';
         for(auto t: format)
         {
+            auto length = this->size();
             switch(t)
             {
             case 'c': { DWord temp; temp.val    = static_cast< int8_t >(mrb_integer(mrb_ary_shift(mrb, array))); data[address] = temp.data; address += 1; size += 1; } break;
@@ -850,17 +970,48 @@ public:
             case 'D': { DWord temp; temp.uint32 = static_cast<uint32_t>(mrb_integer(mrb_ary_shift(mrb, array))); for(auto idx = 0; idx < 4; idx ++) { data[address + (3-idx)] = temp.buff[idx]; } address += 4; size += 4; } break;
             case 'F': { DWord temp; temp.value  = static_cast<float>(mrb_float(mrb_ary_shift(mrb, array)));      for(auto idx = 0; idx < 4; idx ++) { data[address + (3-idx)] = temp.buff[idx]; } address += 4; size += 4; } break;
 
+            case 'a':
+                {
+                    auto item = mrb_ary_shift(mrb, array);
+                    if(address < length)
+                    {
+                        length -= address;
+                        char * msg = RSTR_PTR(mrb_str_ptr(item));
+                        size_t msg_sz = strlen(msg);
+                        if(length < msg_sz) { msg_sz = length; }
+                        std::memcpy(&(data[address]), msg, msg_sz);
+                        address += msg_sz;
+                        size += msg_sz;
+                    }
+                }
+                break;
             case 'A':
                 {
                     auto item = mrb_ary_shift(mrb, array);
-                    char * msg = RSTR_PTR(mrb_str_ptr(item));
-                    size_t msg_sz = strlen(msg);
-                    std::memcpy(&(data[address]), msg, msg_sz);
-                    address += msg_sz;
-                    size += msg_sz;
+                    if(address < length)
+                    {
+                        char * msg = RSTR_PTR(mrb_str_ptr(item));
+                        size_t msg_sz = strlen(msg);
+                        for(size_t idx = 0, top = msg_sz - 1; idx < msg_sz; idx ++)
+                        {
+                            data[address + idx] = msg[top - idx];
+                        }
+                        address += msg_sz;
+                        size += msg_sz;
+                    }
                 }
                 break;
             case 'H':
+                {
+                    auto item = mrb_ary_shift(mrb, array);
+                    char * msg = RSTR_PTR(mrb_str_ptr(item));
+                    std::string data(msg);
+                    auto w_size = write_big(address, (data.size() / 2), data);
+                    address += w_size;
+                    size += w_size;
+                }
+                break;
+            case 'h':
                 {
                     auto item = mrb_ary_shift(mrb, array);
                     char * msg = RSTR_PTR(mrb_str_ptr(item));
@@ -1727,6 +1878,15 @@ public:
                     }
                 }
             }
+            else if(  (MRB_TT_INTEGER == mrb_type(argv[0]))
+                    &&(MRB_TT_INTEGER == mrb_type(argv[1])))
+            {
+                bedit->alloc(static_cast<int>(mrb_integer(argv[0])));
+                bedit->memset(0, mrb_integer(argv[1]), bedit->size());
+            }
+            else
+            {
+            }
             break;
         case 3:
             if(  (MRB_TT_OBJECT  == mrb_type(argv[0]))
@@ -2294,7 +2454,7 @@ int main(int argc, char * argv[])
         store( parsing_result, argmap );
         notify( argmap );
 
-        auto SoftwareRevision = "0.10.01";
+        auto SoftwareRevision = "0.10.02";
         if(argmap.count("help-misc"))
         {
             std::cout << "smon Software revision " << SoftwareRevision << std::endl;
