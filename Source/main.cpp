@@ -2445,6 +2445,7 @@ int main(int argc, char * argv[])
             ("sum,s",          boost::program_options::value<std::string>(),    "calclate checksum of XOR"                        )
             ("float,f",        boost::program_options::value<std::string>(),    "hex to float value"                              )
             ("floatl,F",       boost::program_options::value<std::string>(),    "litle endian hex to float value"                 )
+            ("read-bin-to-xlsx",                                                "read binary to xlsx file"                        )
             ("mruby-script,m", boost::program_options::value<std::string>(),    "execute mruby script"                            )
             ("help,h",                                                          "help"                                            )
             ("help-misc",                                                       "display of exsample and commet, ext class ...etc");

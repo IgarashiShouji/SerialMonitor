@@ -1,3 +1,120 @@
+class BinEdit
+  def self.hexToArray(format, hex_string)
+    bin = BinEdit.new(hex_string)
+    return bin.get(format)
+  end
+  def self.readBinToXlsx(bin_file, xls_file)
+    xls = OpenXLSX.new
+    bin = BinEdit.new(sprintf("file:%s", bin_file))
+    xls.open(xls_file) do
+      list = Array.new
+      xls.sheet_names do |sheet_name|
+        printf("sheet name: %s\n", sheet_name)
+        xls.sheet(sheet_name) do
+          blank_cnt = 0
+          list_type = Array.new
+          address = nil; format = ''; row_top = nil;
+          (4..0xffff).each do |row|
+            addr = xls.cell(sprintf('B%d', row))
+            name = xls.cell(sprintf('C%d', row))
+            type = xls.cell(sprintf('D%d', row))
+            if nil == type then
+              if nil != address then
+                list.push( [ row_top, address, bin.get(address, format), list_type, bin.pos ] )
+              end
+              address = nil; format = ''; row_top = nil
+              list_type = Array.new
+              blank_cnt += 1
+              if 3 < blank_cnt then
+                break;
+              end
+            else
+              if nil != addr then
+                if nil != address then
+                  list.push( [ row_top, address, bin.get(address, format), list_type, bin.pos ] )
+                  address = nil; format = ''; row_top = nil
+                  list_type = Array.new
+                end
+                if addr =~ /0x/ then
+                  address = (addr.gsub(/0x/, '')).to_i(16)
+                else
+                  address = addr.to_i;
+                end
+                row_top = row
+              end
+              if nil != address then
+                add = ' '
+                case type
+                when 'uint8'  then; add = 'b';
+                when  'int8'  then; add = 'c';
+                when 'uint16' then; add = 'w';
+                when  'int16' then; add = 's';
+                when 'uint32' then; add = 'd';
+                when  'int32' then; add = 'i';
+                when 'UINT16' then; add = 'W';
+                when  'INT16' then; add = 'S';
+                when 'UINT32' then; add = 'D';
+                when  'INT32' then; add = 'I';
+                when  'float' then; add = 'f';
+                when  'FLOAT' then; add = 'F';
+                else
+                  if    type =~ /^ASCII/ then
+                    num = type.gsub(/^ASCII/, '')
+                    num.gsub!(/[^0-9]/, '')
+                    add = 'A' + num
+                  elsif type =~ /^ascii/ then
+                    num = type.gsub(/^ascii/, '')
+                    num.gsub!(/[^0-9]/, '')
+                    add = 'a' + num
+                  elsif type =~ /^HEX/ then
+                    num = type.gsub(/^HEX/, '')
+                    num.gsub!(/[^0-9]/, '')
+                    add = 'H' + num
+                  elsif type =~ /^hex/ then
+                    num = type.gsub(/^hex/, '')
+                    num.gsub!(/[^0-9]/, '')
+                    add = 'h' + num
+                  else
+                    list_type.push('-')
+                    next;
+                  end
+                end
+                format += add
+                list_type.push(add)
+              end
+              blank_cnt = 0
+            end
+          end
+          list.each do |row_top, address, data, types, next_addr|
+            printf("%04X - %04X : ", address, next_addr); print data, "\n"
+            idx = 0;
+            types.each_with_index do |type, tidx|
+              cel = sprintf("E%d", row_top + tidx)
+              if    type =~ /[bc]/ then
+                xls.set_value(cel, data[idx].to_i)
+              elsif type =~ /[wsWS]/ then
+                xls.set_value(cel, data[idx].to_i)
+              elsif type =~ /[diDI]/ then
+                xls.set_value(cel, data[idx].to_i)
+              elsif type =~ /[fF]/ then
+                xls.set_value(cel, data[idx].to_f)
+              elsif type =~ /[AHah]/ then
+                xls.set_value(cel, sprintf("%s", data[idx]))
+              else
+                next;
+              end
+              idx += 1
+            end
+          end
+        end
+        list.clear()
+        print "\n"
+        true;
+      end
+      xls.save()
+    end
+  end
+end
 class Core
   def self.__CheckOptions()
     opts = Args.new
@@ -22,16 +139,25 @@ class Core
         printf("%s: %s\n", Core.float_l(opts['floatl']), opts['floatl']);
         exit 0
       end
+      if nil != opts['read-bin-to-xlsx'] then
+        opts = Args.new()
+        if 2 == opts.size() then
+          if (File.exist?(opts[0]) && File.exist?(opts[1])) then
+            if opts[1] =~ /xls/ then
+              BinEdit.readBinToXlsx(opts[0], opts[1])
+              print "end\n"
+              exit 0
+            end
+          end
+        end
+        print "smon --read-bin-to-xlsx [binary file] [xlsx file]\n"
+        print "\n"
+        exit 0
+      end
     end
   end
 end
 Core.__CheckOptions()
-class BinEdit
-  def self.hexToArray(format, hex_string)
-    bin = BinEdit.new(hex_string)
-    return bin.get(format)
-  end
-end
 class SendWaitEventer
   def initilize
   end
