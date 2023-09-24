@@ -80,7 +80,7 @@ ComList::ComList(void)
                 }
                 buf=(LPTSTR)LocalAlloc(LPTR, size*2);
             }
-            str += ":";
+            str += ": ";
             toUTF8(str, icd, buf, size);
             if(buf)
             {

@@ -2237,19 +2237,18 @@ public:
         if( nullptr != mrb )
         {
             /* Class Core */
-            struct RClass * calc_class = mrb_define_class_under( mrb, mrb->kernel_module, "Core", mrb->object_class );
-            mrb_define_module_function(mrb, calc_class, "crc16",        mrb_core_crc16,         MRB_ARGS_ARG( 1, 1 )    );
-            mrb_define_module_function(mrb, calc_class, "crc8",         mrb_core_crc8,          MRB_ARGS_ARG( 1, 1 )    );
-            mrb_define_module_function(mrb, calc_class, "sum",          mrb_core_sum,           MRB_ARGS_ARG( 1, 1 )    );
-            mrb_define_module_function(mrb, calc_class, "float",        mrb_core_float,         MRB_ARGS_ARG( 1, 1 )    );
-            mrb_define_module_function(mrb, calc_class, "float_l",      mrb_core_float_l,       MRB_ARGS_ARG( 1, 1 )    );
-            mrb_define_module_function(mrb, calc_class, "to_hex",       mrb_core_to_hex,        MRB_ARGS_ARG( 2, 1 )    );
-            mrb_define_module_function(mrb, calc_class, "reg_match",    mrb_core_reg_match,     MRB_ARGS_ARG( 2, 1 )    );
-            mrb_define_module_function(mrb, calc_class, "reg_replace",  mrb_core_reg_replace,   MRB_ARGS_ARG( 3, 1 )    );
-            mrb_define_module_function(mrb, calc_class, "gets",         mrb_core_gets,          MRB_ARGS_ANY()          );
-            mrb_define_module_function(mrb, calc_class, "exists",       mrb_core_exists,        MRB_ARGS_ARG( 1, 1 )    );
-            mrb_define_module_function(mrb, calc_class, "timestamp",    mrb_core_file_timestamp,MRB_ARGS_ARG( 1, 1 )    );
-            mrb_define_module_function(mrb, calc_class, "comlist",      mrb_core_comlist,       MRB_ARGS_ANY()          );
+            struct RClass * core_class = mrb_define_class_under( mrb, mrb->kernel_module, "Core", mrb->object_class );
+            mrb_define_module_function(mrb, core_class, "crc16",        mrb_core_crc16,         MRB_ARGS_ARG( 1, 1 )    );
+            mrb_define_module_function(mrb, core_class, "crc8",         mrb_core_crc8,          MRB_ARGS_ARG( 1, 1 )    );
+            mrb_define_module_function(mrb, core_class, "sum",          mrb_core_sum,           MRB_ARGS_ARG( 1, 1 )    );
+            mrb_define_module_function(mrb, core_class, "float",        mrb_core_float,         MRB_ARGS_ARG( 1, 1 )    );
+            mrb_define_module_function(mrb, core_class, "float_l",      mrb_core_float_l,       MRB_ARGS_ARG( 1, 1 )    );
+            mrb_define_module_function(mrb, core_class, "to_hex",       mrb_core_to_hex,        MRB_ARGS_ARG( 2, 1 )    );
+            mrb_define_module_function(mrb, core_class, "reg_match",    mrb_core_reg_match,     MRB_ARGS_ARG( 2, 1 )    );
+            mrb_define_module_function(mrb, core_class, "reg_replace",  mrb_core_reg_replace,   MRB_ARGS_ARG( 3, 1 )    );
+            mrb_define_module_function(mrb, core_class, "gets",         mrb_core_gets,          MRB_ARGS_ANY()          );
+            mrb_define_module_function(mrb, core_class, "exists",       mrb_core_exists,        MRB_ARGS_ARG( 1, 1 )    );
+            mrb_define_module_function(mrb, core_class, "timestamp",    mrb_core_file_timestamp,MRB_ARGS_ARG( 1, 1 )    );
 
             /* Class options */
             struct RClass * opt_class = mrb_define_class_under( mrb, mrb->kernel_module, "Args", mrb->object_class );
@@ -2300,6 +2299,7 @@ public:
             mrb_define_method( mrb, smon_class, "wait",             mrb_smon_wait,          MRB_ARGS_ARG( 2, 1 )        );
             mrb_define_method( mrb, smon_class, "send",             mrb_smon_send,          MRB_ARGS_ARG( 2, 1 )        );
             mrb_define_method( mrb, smon_class, "close",            mrb_smon_close,         MRB_ARGS_NONE()             );
+            mrb_define_module_function(mrb, smon_class, "comlist",  mrb_core_comlist,       MRB_ARGS_ANY()              );
 
             /* Class OpenXLSX */
             struct RClass * xlsx_class = mrb_define_class_under( mrb, mrb->kernel_module, "OpenXLSX", mrb->object_class );
@@ -2439,6 +2439,7 @@ int main(int argc, char * argv[])
     {
         boost::program_options::options_description desc("smon.exe [Options]");
         desc.add_options()
+            ("comlist",                                                         "print com list"                                  )
             ("baud,b",          boost::program_options::value<std::string>(),   "baud rate      Default 1200O1 ex) -b 9600E1"     )
             ("gap,g",           boost::program_options::value<unsigned int>(),  "time out tick. Default   30 ( 30 [ms])"          )
             ("timer,t",         boost::program_options::value<unsigned int>(),  "time out tick. Default  300 (300 [ms])"          )
@@ -2460,7 +2461,7 @@ int main(int argc, char * argv[])
         store( parsing_result, argmap );
         notify( argmap );
 
-        auto SoftwareRevision = "0.10.03";
+        auto SoftwareRevision = "0.11.00";
         if(argmap.count("help-misc"))
         {
             std::cout << "smon Software revision " << SoftwareRevision << std::endl;

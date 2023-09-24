@@ -14,6 +14,7 @@
 #include <thread>
 #include <chrono>
 #include <stdio.h>
+#include <regex>
 
 #include <unistd.h>
 
@@ -185,6 +186,42 @@ bool SerialControl::hasBaudRate(std::string & baud, Profile & info)
 ComList::ComList(void)
   : list(0)
 {
+    auto fp = popen("/bin/ls -l /sys/class/tty/*/device/driver | /bin/grep -v platform/drivers/serial8250 | /bin/awk '{print $9}' | /bin/awk -F'/' '{print $5}'", "r");
+    if( nullptr != fp)
+    {
+        char temp[1024] = {0};
+        for(auto msg = fgets(temp, sizeof(temp), fp); (nullptr != msg) ; msg = fgets(temp, sizeof(temp), fp) )
+        {
+            string dev_name_(msg);
+            auto dev_name = std::regex_replace(dev_name_, std::regex("\\n"), "");
+            if( std::regex_search(dev_name, std::regex("USB")))
+            {
+                std::string info("");
+                char cmd[1024];
+                sprintf(cmd, "/bin/udevadm info /dev/%s | /bin/grep ID_SERIAL | /bin/sed -e 's/^.*ID_SERIAL.*=//'", dev_name.c_str());
+                auto fp2 = popen(cmd, "r");
+                if(nullptr != fp2)
+                {
+                    char temp[1024] = {0};
+                    auto msg = fgets(temp, sizeof(temp), fp2);
+                    if(nullptr != msg)
+                    {
+                        info = ": ";
+                        info += msg;
+                        info = std::regex_replace(info, std::regex("\\n"), "");
+                    }
+                    pclose(fp2);
+                }
+                dev_name = "/dev/" + dev_name + info;
+            }
+            else
+            {
+                dev_name = "/dev/" + dev_name;
+            }
+            list.push_back(dev_name);
+        }
+        pclose(fp);
+    }
 }
 
 /**

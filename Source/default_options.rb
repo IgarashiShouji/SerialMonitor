@@ -124,6 +124,12 @@ class Core
   def self.__CheckOptions()
     opts = Args.new
     if nil == opts['mruby-script'] then
+      if nil != opts['comlist'] then
+        Smon.comlist do |name|
+          print name, "\n"
+        end
+        exit 0
+      end
       if nil != opts['crc'] then
         printf("%s: %s\n", Core.crc16(opts['crc']), opts['crc']);
         exit 0

@@ -44,6 +44,11 @@ smon.exe [Device File] [Options]:
  # make -f Makefile.linux
 ~~~
 
+permission エラーになるため、以下のコマンドでアクセス権の追加が必要。
+~~~
+ # sudo chmod a+rw /dev/ttyUSB0
+~~~
+
 ### Mingw
 
 Step1 is build for boost on WSL. Step 2 is build for mruby and other sources.
