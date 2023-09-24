@@ -89,17 +89,22 @@ class BinEdit
             printf("%04X - %04X : ", address, next_addr); print data, "\n"
             idx = 0;
             types.each_with_index do |type, tidx|
+              if 1 < types.length then
+                item = data[idx]
+              else
+                item = data
+              end
               cel = sprintf("E%d", row_top + tidx)
               if    type =~ /[bc]/ then
-                xls.set_value(cel, data[idx].to_i)
+                xls.set_value(cel, item.to_i)
               elsif type =~ /[wsWS]/ then
-                xls.set_value(cel, data[idx].to_i)
+                xls.set_value(cel, item.to_i)
               elsif type =~ /[diDI]/ then
-                xls.set_value(cel, data[idx].to_i)
+                xls.set_value(cel, item.to_i)
               elsif type =~ /[fF]/ then
-                xls.set_value(cel, data[idx].to_f)
+                xls.set_value(cel, item.to_f)
               elsif type =~ /[AHah]/ then
-                xls.set_value(cel, sprintf("%s", data[idx]))
+                xls.set_value(cel, sprintf("%s", item))
               else
                 next;
               end

@@ -1296,8 +1296,13 @@ public:
     }
     void set_sheet_name(char * sheet_name)            { sheet.setName(sheet_name);                                      }
     void set_cell_value(char * cell_name, int val)    { sheet.cell(OpenXLSX::XLCellReference(cell_name)).value() = val; }
-    void set_cell_value(char * cell_name, float val)  { sheet.cell(OpenXLSX::XLCellReference(cell_name)).value() = val; }
     void set_cell_value(char * cell_name, char * val) { sheet.cell(OpenXLSX::XLCellReference(cell_name)).value() = val; }
+    void set_cell_value(char * cell_name, float val)
+    {
+        DWord temp = { .value = val };
+        if((temp.uint32 & 0x7fffff) != 0x7fffff) { sheet.cell(OpenXLSX::XLCellReference(cell_name)).value() = val; }
+        else                                     { sheet.cell(OpenXLSX::XLCellReference(cell_name)).value() = "NaN"; }
+    }
     OpenXLSXCtrl::Type get_cell(char * cell_name, int & val_int, float & val_float, std::string & str) const
     {
         switch( (sheet.cell(OpenXLSX::XLCellReference(cell_name)).value()).type() )
@@ -2455,7 +2460,7 @@ int main(int argc, char * argv[])
         store( parsing_result, argmap );
         notify( argmap );
 
-        auto SoftwareRevision = "0.10.02";
+        auto SoftwareRevision = "0.10.03";
         if(argmap.count("help-misc"))
         {
             std::cout << "smon Software revision " << SoftwareRevision << std::endl;
