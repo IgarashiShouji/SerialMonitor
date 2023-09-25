@@ -5,9 +5,9 @@ AR=ar
 CFLAGS_COMMON=-I ./Include -I ./MyUtilities/Include -I ./mruby/include -I ./OpenXLSX/OpenXLSX -I ./OpenXLSX/OpenXLSX/headers -I ./OpenXLSX/build/OpenXLSX -I ./OpenXLSX/Examples/external/nowide/include -I /lz4/lib --input-charset=UTF-8 --exec-charset=UTF-8
 LIBS_COMMON=-L ./Objects -L ./MyUtilities -L OpenXLSX/build/output/ -L ./lz4/lib/ -lSerialMonitor -lUtilities -lmruby -lOpenXLSX -llz4
 
-CFLAGS=-g $(CFLAGS_COMMON) -I ./mruby/build/host/include -pipe -O3 -march=native
-LIBS=-L ./mruby/build/host/lib $(LIBS_COMMON) -lboost_program_options -lboost_filesystem -lpthread
-AR_OBJS=Objects/SerialControl-linux.o Objects/default_options.o Objects/default_script.o Objects/help.o
+CFLAGS=-g -I ./boost-x64/include $(CFLAGS_COMMON) -I ./mruby/build/host/include -pipe -O3 -march=native
+LIBS=-static -L ./mruby/build/host/lib -L ./boost-x64/lib $(LIBS_COMMON) -lboost_program_options -lboost_filesystem -lws2_32 -lsetupapi -lksguid -lole32 -lwinmm -ldsound -liconv
+AR_OBJS=Objects/SerialControl-mingw.o Objects/default_options.o Objects/default_script.o Objects/ComList-mingw.o Objects/help.o
 MAIN_DEPS=Objects/main.o MyUtilities/libUtilities.a mruby/build/host/lib/libmruby.a OpenXLSX/build/output/libOpenXLSX.a Objects/libSerialMonitor.a Objects
 CPPFLAGS=-std=c++17 $(CFLAGS)
 
@@ -26,7 +26,7 @@ document: Doxygen/html/index.html
 
 Doxygen:
 	mkdir -p Doxygen
-Doxygen/html/index.html: Doxygen Doxyfile Source/main.cpp Source/SerialControl-linux.cpp Include/SerialControl.hpp
+Doxygen/html/index.html: Doxygen Doxyfile Source/main.cpp Source/SerialControl-mingw.cpp Include/SerialControl.hpp
 	doxygen Doxyfile
 
 MyUtilities/libUtilities.a:
@@ -34,7 +34,7 @@ MyUtilities/libUtilities.a:
 mruby/build/host/lib/libmruby.a:
 	/bin/bash build-mruby.sh
 OpenXLSX/build/output/libOpenXLSX.a:
-	/bin/bash build-OpenXLSX.sh
+	/bin/bash build-mingw-OpenXLSX.sh
 lz4/lib/liblz4.a:
 	/bin/bash build-lz4.sh
 
@@ -47,13 +47,14 @@ Objects/%.o: Source/%.c
 	$(CPP) $(CFLAGS) -c -o $@ $<
 
 Objects/main.o:                Source/main.cpp                Include/SerialControl.hpp MyUtilities/libUtilities.a mruby/build/host/lib/libmruby.a OpenXLSX/build/output/libOpenXLSX.a lz4/lib/liblz4.a
-Objects/SerialControl-linux.o: Source/SerialControl-linux.cpp Include/SerialControl.hpp MyUtilities/libUtilities.a mruby/build/host/lib/libmruby.a OpenXLSX/build/output/libOpenXLSX.a lz4/lib/liblz4.a
+Objects/SerialControl-mingw.o: Source/SerialControl-mingw.cpp Include/SerialControl.hpp MyUtilities/libUtilities.a mruby/build/host/lib/libmruby.a OpenXLSX/build/output/libOpenXLSX.a lz4/lib/liblz4.a
 Objects/default_options.o:     Source/default_options.c
 Objects/default_script.o:      Source/default_script.c
 Source/default_options.c:      Source/default_options.rb mruby/build/host/lib/libmruby.a
 	./mruby/bin/mrbc -Bdefault_options $<
 Source/default_script.c:      Source/default_script.rb  mruby/build/host/lib/libmruby.a
 	./mruby/bin/mrbc -Bdefault_script $<
+Objects/ComList-mingw.o: Source/ComList-mingw.cpp
 Objects/help.o: Source/help.s Source/help.txt
 	yes | lz4 Source/help.txt
-	g++ -c -Wa,--noexecstac -o $@ $<
+	g++ -c -o $@ $<

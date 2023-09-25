@@ -2439,7 +2439,7 @@ int main(int argc, char * argv[])
     {
         boost::program_options::options_description desc("smon.exe [Options]");
         desc.add_options()
-            ("comlist",                                                         "print com list"                                  )
+            ("comlist",                                                         "print com port list"                             )
             ("baud,b",          boost::program_options::value<std::string>(),   "baud rate      Default 1200O1 ex) -b 9600E1"     )
             ("gap,g",           boost::program_options::value<unsigned int>(),  "time out tick. Default   30 ( 30 [ms])"          )
             ("timer,t",         boost::program_options::value<unsigned int>(),  "time out tick. Default  300 (300 [ms])"          )
