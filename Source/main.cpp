@@ -11,6 +11,7 @@
 #include "Entity.hpp"
 #include "SerialControl.hpp"
 #include "ComList.hpp"
+#include "PipeList.hpp"
 #include "lz4.h"
 
 #include <boost/program_options.hpp>
@@ -50,6 +51,9 @@
 #include <mruby/dump.h>
 
 #include <OpenXLSX.hpp>
+
+/* static const */
+static const char *  SoftwareRevision = "0.12.1";
 
 /* class Options */
 static mrb_value mrb_opt_initialize(mrb_state * mrb, mrb_value self);
@@ -296,6 +300,24 @@ static mrb_value mrb_core_comlist(mrb_state* mrb, mrb_value self)
     {
         ComList com;
         std::vector<std::string> & list = com.ref();
+        for(auto & com_name: list)
+        {
+            mrb_value argv[1];
+            argv[0] = mrb_str_new_cstr(mrb, com_name.c_str());
+            mrb_yield_argv(mrb, proc, 1, &(argv[0]));
+        }
+        return mrb_int_value(mrb, list.size());
+    }
+    return mrb_int_value(mrb, 0);
+}
+static mrb_value mrb_core_pipelist(mrb_state* mrb, mrb_value self)
+{
+    mrb_value proc;
+    mrb_get_args(mrb, "&", &proc);
+    if (!mrb_nil_p(proc))
+    {
+        PipeList pipe;
+        std::vector<std::string> & list = pipe.ref();
         for(auto & com_name: list)
         {
             mrb_value argv[1];
@@ -1272,11 +1294,12 @@ protected:
     OpenXLSX::XLDocument  xlsx;
     OpenXLSX::XLWorkbook  book;
     OpenXLSX::XLWorksheet sheet;
+    std::string           fileName;
 
 public:
     OpenXLSXCtrl(void)          { }
     virtual ~OpenXLSXCtrl(void) { }
-    void create(char * fname)                        { xlsx.create(fname);           }
+    void create(char * fname)                        { fileName = std::string(fname); xlsx.create(fileName); }
     void open(char * fname)                          { xlsx.open(fname);             }
     void workbook(void)                              { book = xlsx.workbook();       }
     std::vector<std::string> getWorkSheetNames(void) { return book.worksheetNames(); }
@@ -2300,6 +2323,7 @@ public:
             mrb_define_method( mrb, smon_class, "send",             mrb_smon_send,          MRB_ARGS_ARG( 2, 1 )        );
             mrb_define_method( mrb, smon_class, "close",            mrb_smon_close,         MRB_ARGS_NONE()             );
             mrb_define_module_function(mrb, smon_class, "comlist",  mrb_core_comlist,       MRB_ARGS_ANY()              );
+            mrb_define_module_function(mrb, smon_class, "pipelist", mrb_core_pipelist,      MRB_ARGS_ANY()              );
 
             /* Class OpenXLSX */
             struct RClass * xlsx_class = mrb_define_class_under( mrb, mrb->kernel_module, "OpenXLSX", mrb->object_class );
@@ -2439,6 +2463,7 @@ int main(int argc, char * argv[])
     {
         boost::program_options::options_description desc("smon.exe [Options]");
         desc.add_options()
+            ("pipelist",                                                        "print pipe name list"                            )
             ("comlist",                                                         "print com port list"                             )
             ("baud,b",          boost::program_options::value<std::string>(),   "baud rate      Default 1200O1 ex) -b 9600E1"     )
             ("gap,g",           boost::program_options::value<unsigned int>(),  "time out tick. Default   30 ( 30 [ms])"          )
@@ -2461,10 +2486,9 @@ int main(int argc, char * argv[])
         store( parsing_result, argmap );
         notify( argmap );
 
-        auto SoftwareRevision = "0.11.00";
         if(argmap.count("help-misc"))
         {
-            std::cout << "smon Software revision " << SoftwareRevision << std::endl;
+            std::cout << "smon Revision " << SoftwareRevision << std::endl;
             std::cout << std::endl;
             std::cout << desc << std::endl;
             std::cout << help_msg << std::endl;
@@ -2476,7 +2500,7 @@ int main(int argc, char * argv[])
 
         if(argmap.count("help"))
         {
-            std::cout << "smon Software revision " << SoftwareRevision << std::endl;
+            std::cout << "smon Revision " << SoftwareRevision << std::endl;
             std::cout << std::endl;
             std::cout << desc << std::endl;
             return 0;

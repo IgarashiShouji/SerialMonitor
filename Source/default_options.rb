@@ -130,6 +130,12 @@ class Core
         end
         exit 0
       end
+      if nil != opts['pipelist'] then
+        Smon.pipelist do |name|
+          print name, "\n"
+        end
+        exit 0
+      end
       if nil != opts['crc'] then
         printf("%s: %s\n", Core.crc16(opts['crc']), opts['crc']);
         exit 0

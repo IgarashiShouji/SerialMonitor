@@ -1,17 +1,23 @@
 /**
- * Print COM list on microsoft windows
+ * microsoft windows api adapter
  *
- * @file    ComList.cpp
- * @brief   get COM list on Microsoft Windows
+ * @file    mingw-api.cpp
+ * @brief   this file is adapter of Microsoft Windows API
  * @author  Shouji, Igarashi
  *
- * (c) 2019 Shouji, Igarashi.
+ * (c) 2024 Shouji, Igarashi.
  *
  * @see string
  * @see vector
  */
-
+#include "Entity.hpp"
+#include "SerialControl.hpp"
 #include "ComList.hpp"
+#include "PipeList.hpp"
+#include <thread>
+#include <chrono>
+#include <string>
+#include <list>
 #include <windows.h>
 #include <setupapi.h>
 #include <initguid.h>
@@ -42,6 +48,7 @@ static void toUTF8(string & dst, iconv_t & icd, char * src, size_t size)
     }
 }
 
+/* --------------------------------------------------------------------------------<< ComList >>-------------------------------------------------------------------------------- */
 /**
  * constractor on ComList: create COM list
  */
@@ -50,7 +57,8 @@ ComList::ComList(void)
     HDEVINFO hDevInfo = SetupDiGetClassDevs(&GUID_DEVINTERFACE_COMPORT, 0, 0, DIGCF_PRESENT|DIGCF_DEVICEINTERFACE);
     if(0 != hDevInfo)
     {
-        iconv_t icd = iconv_open("UTF-8", "cp932");
+        //iconv_t icd = iconv_open("UTF-8", "cp932");
+        iconv_t icd = iconv_open("cp932", "cp932");
         SP_DEVINFO_DATA Data={ sizeof(SP_DEVINFO_DATA) };
         Data.cbSize = sizeof(Data);
         for(int cnt=0; SetupDiEnumDeviceInfo(hDevInfo, cnt, &Data); cnt++)
@@ -102,7 +110,41 @@ ComList::~ComList(void)
 /**
  * reference of COM list
  */
-vector<string> & ComList::ref(void)
+std::vector<string> & ComList::ref(void)
+{
+    return list;
+}
+
+
+/* --------------------------------------------------------------------------------<< PipeList >>-------------------------------------------------------------------------------- */
+/**
+ * constractor on PipeList: create pipe name list
+ */
+PipeList::PipeList(void)
+{
+    WIN32_FIND_DATAA fd{};
+    auto hFind = FindFirstFileA(R"(\\.\pipe\*.*)", &fd);
+    if(hFind != INVALID_HANDLE_VALUE)
+    {
+        do
+        {
+            list.push_back(std::string(fd.cFileName));
+        } while (FindNextFile(hFind, &fd));
+        FindClose(hFind);
+    }
+}
+
+/**
+ * destractor on PipeList
+ */
+PipeList::~PipeList(void)
+{
+}
+
+/**
+ * reference of COM list
+ */
+std::vector<string> & PipeList::ref(void)
 {
     return list;
 }
