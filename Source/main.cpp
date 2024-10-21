@@ -53,7 +53,7 @@
 #include <OpenXLSX.hpp>
 
 /* static const */
-static const char *  SoftwareRevision = "0.12.1";
+static const char *  SoftwareRevision = "0.13.1";
 
 /* class Options */
 static mrb_value mrb_opt_initialize(mrb_state * mrb, mrb_value self);
@@ -329,6 +329,11 @@ static mrb_value mrb_core_pipelist(mrb_state* mrb, mrb_value self)
     return mrb_int_value(mrb, 0);
 }
 
+/* class CppRegexp */
+static mrb_value mrb_cppregexp_initialize(mrb_state * mrb, mrb_value self);
+static mrb_value mrb_cppregexp_match(mrb_state * mrb, mrb_value self);
+static mrb_value mrb_cppregexp_replace(mrb_state * mrb, mrb_value self);
+static void mrb_regexp_context_free(mrb_state * mrb, void * ptr);
 
 /* class thread */
 static mrb_value mrb_thread_initialize(mrb_state * mrb, mrb_value self);
@@ -404,6 +409,37 @@ static unsigned char toValue(unsigned char data)
 }
 
 /* class */
+class CppRegexp
+{
+private:
+    bool        active;
+    std::regex  reg;
+public:
+    CppRegexp(void) : active(false),reg("") { }
+    CppRegexp(const char * str_reg) : active(true), reg(str_reg) { }
+    virtual ~CppRegexp(void) {}
+    bool match(const char * str)
+    {
+        if(active)
+        {
+            if( std::regex_search(str, reg) )
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+    bool replace(const char * str, const char * rep)
+    {
+        if(match(str))
+        {
+            auto result = std::regex_replace(str, reg, rep);
+            return true;
+        }
+        return false;
+    }
+};
+
 class WorkerThread
 {
 public:
@@ -1294,13 +1330,12 @@ protected:
     OpenXLSX::XLDocument  xlsx;
     OpenXLSX::XLWorkbook  book;
     OpenXLSX::XLWorksheet sheet;
-    std::string           fileName;
 
 public:
     OpenXLSXCtrl(void)          { }
     virtual ~OpenXLSXCtrl(void) { }
-    void create(char * fname)                        { fileName = std::string(fname); xlsx.create(fileName); }
-    void open(char * fname)                          { xlsx.open(fname);             }
+    void create(std::string fname)                   { xlsx.create(fname); }
+    void open(std::string fname)                     { xlsx.open(fname);             }
     void workbook(void)                              { book = xlsx.workbook();       }
     std::vector<std::string> getWorkSheetNames(void) { return book.worksheetNames(); }
     void worksheet(char * sheet_name)
@@ -1438,6 +1473,108 @@ public:
         }
         return mrb_nil_value();
     }
+
+    mrb_value cppregexp_init(mrb_state * mrb, mrb_value self)
+    {
+        static const struct mrb_data_type mrb_cpp_regexp_context_type =
+        {
+            "mrb_cpp_regexp_context", mrb_regexp_context_free,
+        };
+        mrb_value       proc = mrb_nil_value();
+        mrb_int         argc;
+        mrb_value *     argv;
+        mrb_get_args(mrb, "&*", &proc, &argv, &argc);
+        CppRegexp * regexp = nullptr;
+        char *      str_reg = nullptr;
+        switch(argc)
+        {
+        case 1:
+            if(MRB_TT_STRING == mrb_type(argv[0]))
+            {
+                struct RString * str = mrb_str_ptr(argv[0]);
+                str_reg = RSTR_PTR(str);
+                regexp = new CppRegexp(str_reg);
+            }
+            else if(MRB_TT_CDATA ==  mrb_type(argv[0]))
+            {
+                printf( "check in\n");
+                struct RString * str = mrb_str_ptr(argv[0]);
+                str_reg = RSTR_PTR(str);
+                printf("arg: %x\n", str_reg);
+                printf( "check out\n");
+            }
+            break;
+        default:
+            break;
+        }
+        if( nullptr == regexp) { regexp = new CppRegexp(); }
+        mrb_data_init(self, regexp, &mrb_cpp_regexp_context_type);
+        return self;
+    }
+    mrb_value cppregexp_match(mrb_state * mrb, mrb_value self)
+    {
+        mrb_value ret = mrb_nil_value();
+        CppRegexp * reg = static_cast<CppRegexp *>(DATA_PTR(self));
+        if(nullptr != reg)
+        {
+            mrb_value       proc = mrb_nil_value();
+            mrb_int         argc;
+            mrb_value *     argv;
+            mrb_get_args(mrb, "&*", &proc, &argv, &argc);
+            switch(argc)
+            {
+            case 0:
+                break;
+            case 1:
+                if(MRB_TT_STRING == mrb_type(argv[0]))
+                {
+                    char * str = RSTR_PTR(mrb_str_ptr(argv[0]));
+                    if(reg->match(str))
+                    {
+                        return mrb_bool_value(true);
+                    }
+                }
+                break;
+            default:
+                break;
+            }
+        }
+        return mrb_bool_value(false);
+    }
+    mrb_value cppregexp_replace(mrb_state * mrb, mrb_value self)
+    {
+        mrb_value ret = mrb_nil_value();
+        CppRegexp * reg = static_cast<CppRegexp *>(DATA_PTR(self));
+        if(nullptr != reg)
+        {
+            mrb_value       proc = mrb_nil_value();
+            mrb_int         argc;
+            mrb_value *     argv;
+            mrb_get_args(mrb, "&*", &proc, &argv, &argc);
+            switch(argc)
+            {
+            case 0:
+            case 1:
+                break;
+            case 2:
+                if(  (MRB_TT_STRING == mrb_type(argv[0]))
+                   &&(MRB_TT_STRING == mrb_type(argv[1])))
+                {
+                    char * str = RSTR_PTR(mrb_str_ptr(argv[0]));
+                    char * rep = RSTR_PTR(mrb_str_ptr(argv[0]));
+                    if(reg->replace(str, rep))
+                    {
+                        return mrb_bool_value(true);
+                    }
+                }
+                break;
+            default:
+                break;
+            }
+        }
+        return mrb_bool_value(false);
+    }
+
 
     mrb_value thread_init(mrb_state * mrb, mrb_value self)
     {
@@ -2279,6 +2416,12 @@ public:
             mrb_define_method( mrb, opt_class, "size",                  mrb_opt_size,           MRB_ARGS_NONE()         );
             mrb_define_method( mrb, opt_class, "[]",                    mrb_opt_get,            MRB_ARGS_ARG( 1, 1 )    );
 
+            /* Class CppRegexp */
+            struct RClass * cppregexp_class = mrb_define_class_under( mrb, mrb->kernel_module, "CppRegexp", mrb->object_class );
+            mrb_define_method( mrb, cppregexp_class, "initialize",     mrb_cppregexp_initialize,  MRB_ARGS_ANY()        );
+            mrb_define_method( mrb, cppregexp_class, "match",          mrb_cppregexp_match,       MRB_ARGS_ANY()        );
+            mrb_define_method( mrb, cppregexp_class, "replace",        mrb_cppregexp_replace,     MRB_ARGS_ANY()        );
+
             /* Class Thread */
             struct RClass * thread_class = mrb_define_class_under( mrb, mrb->kernel_module, "WorkerThread", mrb->object_class );
             mrb_define_const(  mrb, thread_class, "STOP",               mrb_fixnum_value(WorkerThread::Stop)            );
@@ -2378,6 +2521,10 @@ mrb_value mrb_opt_initialize(mrb_state * mrb, mrb_value self)       { auto resul
 mrb_value mrb_opt_size(mrb_state * mrb, mrb_value self)             { auto result = (Application::getObject())->opt_size(mrb, self);                                return result; }
 mrb_value mrb_opt_get(mrb_state * mrb, mrb_value self)              { auto result = (Application::getObject())->opt_get(mrb, self);                                 return result; }
 
+mrb_value mrb_cppregexp_initialize(mrb_state * mrb, mrb_value self) { auto result = (Application::getObject())->cppregexp_init(mrb, self);                          return result; }
+mrb_value mrb_cppregexp_match(mrb_state * mrb, mrb_value self)      { auto result = (Application::getObject())->cppregexp_match(mrb, self);                         return result; }
+mrb_value mrb_cppregexp_replace(mrb_state * mrb, mrb_value self)    { auto result = (Application::getObject())->cppregexp_replace(mrb, self);                       return result; }
+
 mrb_value mrb_thread_initialize(mrb_state * mrb, mrb_value self)    { auto result = (Application::getObject())->thread_init(mrb, self);                             return result; }
 mrb_value mrb_thread_run(mrb_state * mrb, mrb_value self)           { auto result = (Application::getObject())->thread_run(mrb, self);                              return result; }
 mrb_value mrb_thread_state(mrb_state * mrb, mrb_value self)         { auto result = (Application::getObject())->thread_state(mrb, self);                            return result; }
@@ -2414,6 +2561,14 @@ mrb_value mrb_bedit_get(mrb_state * mrb, mrb_value self)            { auto resul
 mrb_value mrb_bedit_set(mrb_state * mrb, mrb_value self)            { auto result = (Application::getObject())->bedit_set(mrb, self);    mrb_garbage_collect(mrb);  return result; }
 mrb_value mrb_bedit_pos(mrb_state * mrb, mrb_value self)            { auto result = (Application::getObject())->bedit_pos(mrb, self);                               return result; }
 
+void mrb_regexp_context_free(mrb_state * mrb, void * ptr)
+{
+    if(nullptr != ptr)
+    {
+        CppRegexp * cppreg = static_cast<CppRegexp *>(ptr);
+        delete cppreg;
+    }
+}
 void mrb_thread_context_free(mrb_state * mrb, void * ptr)
 {
 //    printf("%s:%d: %s\n", __FILE__, __LINE__, __FUNCTION__);
