@@ -53,7 +53,7 @@ Source/default_options.c: Source/default_options.rb mruby/build/cross-mingw/lib/
 	./mruby/bin/mrbc -Bdefault_options $<
 Source/default_script.c: Source/default_script.rb   mruby/build/cross-mingw/lib/libmruby.a
 	./mruby/bin/mrbc -Bdefault_script $<
-Objects/mingw-api.o: Source/mingw-api.cpp
+Objects/mingw-api.o: Source/mingw-api.cpp MyUtilities/libUtilities.a
 Objects/help.o: Source/help.s Source/help.txt
 	yes | lz4 Source/help.txt
 	$(CPP) -c -o $@ $<
