@@ -156,6 +156,10 @@ class Core
         printf("%s: %s\n", Core.float_l(opts['floatl']), opts['floatl']);
         exit 0
       end
+      if nil != opts['makeQR'] then
+        printf("%s", Core.makeQR(opts['makeQR']));
+        exit 0
+      end
       if nil != opts['read-bin-to-xlsx'] then
         opts = Args.new()
         if 2 == opts.size() then
@@ -314,3 +318,60 @@ class Smon
     end
   end
 end
+
+class CppRegexp
+  def self.compile(arg)
+    if arg.class.to_s == 'String' then
+      return CppRegexp.new(arg)
+    end
+    return nil
+  end
+  def === (arg)
+    begin
+      if arg.class.to_s == 'String' then
+        return self.match(str)
+      end
+    rescue
+    end
+    return false
+  end
+  def =~ (arg)
+    begin
+      if arg.class.to_s == 'String' then
+        return self.match(str)
+      end
+    rescue
+    end
+    return false
+  end
+end
+
+#class String
+#  def =~ (arg)
+#    begin
+#      if arg.class.to_s == 'String' then
+#        return Core.reg_match(self, arg)
+#      end
+#      if arg.class.to_s == 'Regexp' then
+#        return (arg =~ self);
+#      end
+#    rescue
+#    end
+#    return false
+#  end
+#  def gsub(*arg, &blk)
+#    begin
+#      if (arg[0].class.to_s == 'String') and (arg[1].class.to_s == 'String') then
+#        return Core.reg_replace(self, arg[0], arg[1])
+#      end
+#      if arg[0].class.to_s == 'Regexp' then
+#        str = arg[0].to_s
+#        str = str[7..(str.length-2)]
+#        #printf("arg.to_s: %s\n", str);
+#        return Core.reg_replace(self, str, arg[1])
+#      end
+#    rescue
+#    end
+#    return self
+#  end
+#end

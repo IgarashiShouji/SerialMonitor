@@ -6,18 +6,17 @@ CFLAGS_COMMON=-I ./Include -I ./MyUtilities/Include -I ./mruby/include -I ./Open
 LIBS_COMMON=-L ./Objects -L ./MyUtilities -L OpenXLSX/build/output/ -lSerialMonitor -lUtilities -lmruby -lOpenXLSX -llz4
 CFLAGS=-g -I /usr/x86_64-w64-mingw32/include $(CFLAGS_COMMON) -I ./mruby/build/cross-mingw/include -pipe -Os -march=native
 LIBS=-static -L ./mruby/build/cross-mingw/lib $(LIBS_COMMON) -lboost_atomic-mt-x64 -lboost_date_time-mt-x64 -lboost_program_options-mt-x64 -lboost_serialization-mt-x64 -lboost_filesystem-mt-x64 -lboost_wserialization-mt-x64 -lboost_system-mt-x64 -lpthread -liconv -lsetupapi -lksguid -lole32 -lwinmm -ldsound -lws2_32
-AR_OBJS=Objects/SerialControl-mingw.o Objects/default_options.o Objects/default_script.o Objects/mingw-api.o Objects/help.o
-#MAIN_DEPS=mruby/build/cross-mingw/lib/libmruby.a OpenXLSX/build/output/libOpenXLSX.a Objects/libSerialMonitor.a Objects
+AR_OBJS=Objects/SerialControl-mingw.o Objects/qrcodegen.o Objects/default_options.o Objects/default_script.o Objects/mingw-api.o Objects/help.o
 MAIN_DEPS=Objects/libSerialMonitor.a MyUtilities/libUtilities.a OpenXLSX/build/output/libOpenXLSX.a mruby/build/cross-mingw/lib/libmruby.a Objects
-CPPFLAGS=-std=c++17 $(CFLAGS)
+CPPFLAGS=-std=c++17 $(CFLAGS) -I QR-Code-generator/cpp/
 
 all: $(Objects) $(TARGET)
 
 clean:
 	rm -rf $(TARGET) Objects/*.[ao]
 
-$(TARGET): Objects/main.o $(MAIN_DEPS)
-	$(CPP) $(CPPFLAGS) $< -o $@ $(LIBS)
+$(TARGET): Objects/main.o $(MAIN_DEPS) Objects/qrcodegen.o
+	$(CPP) $(CPPFLAGS) $< -o $@ Objects/qrcodegen.o $(LIBS)
 
 Objects:
 	mkdir -p Objects
@@ -36,6 +35,8 @@ MyUtilities/libUtilities.a:
 	/bin/bash --norc ./build-MyUtilities.sh MXE
 mruby/build/cross-mingw/lib/libmruby.a:
 	/bin/bash --norc ./build-mruby.sh MXE
+QR-Code-generator/cpp/qrcodegen.cpp:
+	/bin/bash build-QR-Code-generator.sh MXE
 
 Objects/libSerialMonitor.a: $(AR_OBJS)
 	$(AR) rcs $@ $^
@@ -57,3 +58,5 @@ Objects/mingw-api.o: Source/mingw-api.cpp MyUtilities/libUtilities.a
 Objects/help.o: Source/help.s Source/help.txt
 	yes | lz4 Source/help.txt
 	$(CPP) -c -o $@ $<
+Objects/qrcodegen.o: QR-Code-generator/cpp/qrcodegen.cpp
+	$(CPP) $(CPPFLAGS) -c -o $@ $<

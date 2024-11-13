@@ -13,6 +13,7 @@
 #include "ComList.hpp"
 #include "PipeList.hpp"
 #include "lz4.h"
+#include "qrcodegen.hpp"
 
 #include <boost/program_options.hpp>
 #include <boost/filesystem.hpp>
@@ -328,6 +329,51 @@ static mrb_value mrb_core_pipelist(mrb_state* mrb, mrb_value self)
     }
     return mrb_int_value(mrb, 0);
 }
+static std::string makeQRsvg(const std::string & arg)
+{
+    const char *text = arg.c_str();
+    const qrcodegen::QrCode::Ecc errCorLvl = qrcodegen::QrCode::Ecc::LOW;
+    const qrcodegen::QrCode qr = qrcodegen::QrCode::encodeText(text, errCorLvl);
+    int border = 4;
+    if((border * 2) > INT_MAX - qr.getSize())
+    {
+        throw std::overflow_error("Border too large");
+    }
+    std::ostringstream sb;
+    sb << "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n";
+    sb << "<!DOCTYPE svg PUBLIC \"-//W3C//DTD SVG 1.1//EN\" \"http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd\">\n";
+    sb << "<svg xmlns=\"http://www.w3.org/2000/svg\" version=\"1.1\" viewBox=\"0 0 ";
+    sb << (qr.getSize() + border * 2) << " " << (qr.getSize() + border * 2) << "\" stroke=\"none\">\n";
+    sb << "  <rect width=\"100%\" height=\"100%\" fill=\"#FFFFFF\"/>\n";
+    sb << "  <path d=\"";
+    for(int y = 0; y < qr.getSize(); y++)
+    {
+        for(int x = 0; x < qr.getSize(); x++)
+        {
+            if(qr.getModule(x, y))
+            {
+                if(x != 0 || y != 0) { sb << " "; }
+                sb << "M" << (x + border) << "," << (y + border) << "h1v1h-1z";
+            }
+        }
+    }
+    sb << "\" fill=\"#000000\"/>\n";
+    sb << "</svg>\n";
+    return sb.str();
+}
+static mrb_value mrb_core_make_qr(mrb_state* mrb, mrb_value self)
+{
+    char * mruby_arg;
+    mrb_get_args(mrb, "z", &mruby_arg);
+    std::string arg(mruby_arg);
+    if(0 < arg.size())
+    {
+        auto qr_code = makeQRsvg(arg);
+        return mrb_str_new_cstr(mrb, qr_code.c_str());
+    }
+    return mrb_nil_value();
+}
+
 
 /* class CppRegexp */
 static mrb_value mrb_cppregexp_initialize(mrb_state * mrb, mrb_value self);
@@ -1210,6 +1256,22 @@ public:
         rcv_cache.clear();
         res_list.erase(this);
     }
+    void send(BinaryControl & bin, unsigned int timer)
+    {
+        if( nullptr != com)
+        {
+            if(0 < bin.size())
+            {
+                try { com->send(bin.ptr(), bin.size()); } catch(...) { }
+                std::this_thread::sleep_for(std::chrono::milliseconds(timer));
+                if( nullptr != tevter)
+                {
+                    std::lock_guard<std::mutex> lock(mtx);
+                    tevter->restart();
+                }
+            }
+        }
+    }
     void send(std::string data, unsigned int timer)
     {
         if( nullptr != com)
@@ -1334,8 +1396,8 @@ protected:
 public:
     OpenXLSXCtrl(void)          { }
     virtual ~OpenXLSXCtrl(void) { }
-    void create(std::string fname)                   { xlsx.create(fname); }
-    void open(std::string fname)                     { xlsx.open(fname);             }
+    void create(const std::string & fname)           { xlsx.create(fname, true);     }
+    void open(const std::string & fname)             { xlsx.open(fname);             }
     void workbook(void)                              { book = xlsx.workbook();       }
     std::vector<std::string> getWorkSheetNames(void) { return book.worksheetNames(); }
     void worksheet(char * sheet_name)
@@ -1500,7 +1562,7 @@ public:
                 printf( "check in\n");
                 struct RString * str = mrb_str_ptr(argv[0]);
                 str_reg = RSTR_PTR(str);
-                printf("arg: %x\n", str_reg);
+                printf("arg: %s\n", str_reg);
                 printf( "check out\n");
             }
             break;
@@ -1746,14 +1808,34 @@ public:
                     struct RString * str = mrb_str_ptr(argv[0]);
                     msg = RSTR_PTR(str);
                 }
+                else
+                {
+                    const mrb_data_type * src_type = DATA_TYPE(argv[0]);
+                    if( src_type == &mrb_bedit_context_type )
+                    {
+                        BinaryControl * bin = static_cast<BinaryControl *>(DATA_PTR(argv[0]));
+                        smon->send(*bin, timer);
+                    }
+                }
                 break;
             case 2:
-                if(  (MRB_TT_STRING  == mrb_type(argv[0]))
-                   &&(MRB_TT_INTEGER == mrb_type(argv[1])))
+                if(MRB_TT_INTEGER == mrb_type(argv[1]))
                 {
-                    struct RString * str = mrb_str_ptr(argv[0]);
-                    msg = RSTR_PTR(str);
                     timer = mrb_integer(argv[1]);
+                    if(MRB_TT_STRING  == mrb_type(argv[0]))
+                    {
+                        struct RString * str = mrb_str_ptr(argv[0]);
+                        msg = RSTR_PTR(str);
+                    }
+                    else
+                    {
+                        const mrb_data_type * src_type = DATA_TYPE(argv[0]);
+                        if( src_type == &mrb_bedit_context_type )
+                        {
+                            BinaryControl * bin = static_cast<BinaryControl *>(DATA_PTR(argv[0]));
+                            smon->send(*bin, timer);
+                        }
+                    }
                 }
                 break;
             default:
@@ -1800,7 +1882,8 @@ public:
             if(nullptr != xlsx)
             {
                 struct RString * s = mrb_str_ptr(argv[0]);
-                xlsx->create(RSTR_PTR(s));
+                std::string fname(RSTR_PTR(s));
+                xlsx->create(fname);
                 xlsx->workbook();
                 mrb_value ret = mrb_yield_argv(mrb, proc, 0, nullptr);
                 xlsx->save();
@@ -1822,7 +1905,8 @@ public:
             if(nullptr != xlsx)
             {
                 struct RString * s = mrb_str_ptr(argv[0]);
-                xlsx->open(RSTR_PTR(s));
+                std::string fname(RSTR_PTR(s));
+                xlsx->open(fname);
                 xlsx->workbook();
                 mrb_value ret = mrb_yield_argv(mrb, proc, 0, nullptr);
                 xlsx->close();
@@ -2409,6 +2493,7 @@ public:
             mrb_define_module_function(mrb, core_class, "gets",         mrb_core_gets,          MRB_ARGS_ANY()          );
             mrb_define_module_function(mrb, core_class, "exists",       mrb_core_exists,        MRB_ARGS_ARG( 1, 1 )    );
             mrb_define_module_function(mrb, core_class, "timestamp",    mrb_core_file_timestamp,MRB_ARGS_ARG( 1, 1 )    );
+            mrb_define_module_function(mrb, core_class, "makeQR",       mrb_core_make_qr,       MRB_ARGS_ARG( 1, 1 )    );
 
             /* Class options */
             struct RClass * opt_class = mrb_define_class_under( mrb, mrb->kernel_module, "Args", mrb->object_class );
@@ -2607,6 +2692,7 @@ void mrb_bedit_context_free(mrb_state * mrb, void * ptr)
     }
 }
 
+
 extern "C"
 {
 extern const char    help_msg[];
@@ -2626,13 +2712,14 @@ int main(int argc, char * argv[])
             ("timer2",          boost::program_options::value<unsigned int>(),  "time out tick. Default  500 (500 [ms])"          )
             ("timer3",          boost::program_options::value<unsigned int>(),  "time out tick. Default 1000 (  1 [s])"           )
             ("no-rts",                                                          "no control RTS signal"                           )
-            ("crc,c",          boost::program_options::value<std::string>(),    "calclate modbus RTU CRC"                         )
-            ("crc8",           boost::program_options::value<std::string>(),    "calclate CRC8"                                   )
-            ("sum,s",          boost::program_options::value<std::string>(),    "calclate checksum of XOR"                        )
-            ("float,f",        boost::program_options::value<std::string>(),    "hex to float value"                              )
-            ("floatl,F",       boost::program_options::value<std::string>(),    "litle endian hex to float value"                 )
+            ("crc,c",           boost::program_options::value<std::string>(),   "calclate modbus RTU CRC"                         )
+            ("crc8",            boost::program_options::value<std::string>(),   "calclate CRC8"                                   )
+            ("sum,s",           boost::program_options::value<std::string>(),   "calclate checksum of XOR"                        )
+            ("float,f",         boost::program_options::value<std::string>(),   "hex to float value"                              )
+            ("floatl,F",        boost::program_options::value<std::string>(),   "litle endian hex to float value"                 )
+            ("makeQR",          boost::program_options::value<std::string>(),   "make QR code of svg"                             )
             ("read-bin-to-xlsx",                                                "read binary to xlsx file"                        )
-            ("mruby-script,m", boost::program_options::value<std::string>(),    "execute mruby script"                            )
+            ("mruby-script,m",  boost::program_options::value<std::string>(),   "execute mruby script"                            )
             ("help,h",                                                          "help"                                            )
             ("help-misc",                                                       "display of exsample and commet, ext class ...etc");
         boost::program_options::variables_map argmap;
@@ -2660,7 +2747,6 @@ int main(int argc, char * argv[])
             std::cout << desc << std::endl;
             return 0;
         }
-
         std::vector<std::string> arg;
         for(auto const& str : collect_unrecognized(parsing_result.options, boost::program_options::include_positional))
         {
@@ -2673,3 +2759,19 @@ int main(int argc, char * argv[])
     catch(...)                  { std::cerr << "unknown exeption" << std::endl;         }
     return 0;
 }
+
+
+enum { MRB_REGEXP_IGNORECASE = 1 };
+
+void
+mrb_matchdata_free(mrb_state *mrb, void *ptr) { }
+void mrb_regexp_free(mrb_state *mrb, void *ptr) { }
+static struct mrb_data_type mrb_matchdata_type = { "MatchData", mrb_matchdata_free };
+static struct mrb_data_type mrb_regexp_type = { "Regexp", mrb_regexp_free };
+mrb_value mrb_matchdata_init(mrb_state *mrb, mrb_value self) { return self; }
+mrb_value mrb_matchdata_begin(mrb_state *mrb, mrb_value self) { return mrb_fixnum_value(0); }
+mrb_value mrb_matchdata_end(mrb_state *mrb, mrb_value self)   { return mrb_fixnum_value(0); }
+mrb_value mrb_regexp_init(mrb_state *mrb, mrb_value self)     { return self; }
+mrb_value mrb_regexp_match(mrb_state *mrb, mrb_value self)    { return mrb_nil_value(); }
+void mrb_mruby_regexp_posix_gem_init(mrb_state *mrb)          { }
+void mrb_mruby_regexp_posix_gem_final(mrb_state *mrb)         { }

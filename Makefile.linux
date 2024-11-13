@@ -6,9 +6,9 @@ CFLAGS_COMMON=-I ./Include -I ./MyUtilities/Include -I ./mruby/include -I ./Open
 LIBS_COMMON=-L ./Objects -L ./MyUtilities -L OpenXLSX/build/output/ -lSerialMonitor -lUtilities -lmruby -lOpenXLSX -llz4
 CFLAGS=-g $(CFLAGS_COMMON) -I ./mruby/build/host/include -pipe -O3 -march=native
 LIBS=-L ./mruby/build/host/lib $(LIBS_COMMON) -lboost_program_options -lboost_filesystem -lpthread
-AR_OBJS=Objects/linux-api.o Objects/default_options.o Objects/default_script.o Objects/help.o
-MAIN_DEPS=Objects/main.o MyUtilities/libUtilities.a mruby/build/host/lib/libmruby.a OpenXLSX/build/output/libOpenXLSX.a Objects/libSerialMonitor.a Objects
-CPPFLAGS=-std=c++17 $(CFLAGS)
+AR_OBJS=Objects/linux-api.o Objects/qrcodegen.o Objects/default_options.o Objects/default_script.o Objects/help.o
+MAIN_DEPS=MyUtilities/libUtilities.a mruby/build/host/lib/libmruby.a OpenXLSX/build/output/libOpenXLSX.a Objects/libSerialMonitor.a Objects
+CPPFLAGS=-std=c++17 $(CFLAGS) -I QR-Code-generator/cpp/
 
 all: $(Objects) $(TARGET)
 
@@ -34,6 +34,8 @@ MyUtilities/libUtilities.a:
 	/bin/bash build-MyUtilities.sh
 OpenXLSX/build/output/libOpenXLSX.a:
 	/bin/bash build-OpenXLSX.sh
+QR-Code-generator/cpp/qrcodegen.cpp:
+	/bin/bash build-QR-Code-generator.sh
 
 Objects/libSerialMonitor.a: $(AR_OBJS)
 	$(AR) rcs $@ $^
@@ -54,3 +56,5 @@ Source/default_script.c:      Source/default_script.rb  mruby/build/host/lib/lib
 Objects/help.o: Source/help.s Source/help.txt
 	yes | lz4 Source/help.txt
 	g++ -c -Wa,--noexecstac -o $@ $<
+Objects/qrcodegen.o: QR-Code-generator/cpp/qrcodegen.cpp
+	$(CPP) $(CPPFLAGS) -c -o $@ $<
