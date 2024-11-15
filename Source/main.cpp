@@ -54,7 +54,7 @@
 #include <OpenXLSX.hpp>
 
 /* static const */
-static const char *  SoftwareRevision = "0.13.1";
+static const char *  SoftwareRevision = "0.13.2";
 
 /* class Options */
 static mrb_value mrb_opt_initialize(mrb_state * mrb, mrb_value self);
@@ -2759,19 +2759,3 @@ int main(int argc, char * argv[])
     catch(...)                  { std::cerr << "unknown exeption" << std::endl;         }
     return 0;
 }
-
-
-enum { MRB_REGEXP_IGNORECASE = 1 };
-
-void
-mrb_matchdata_free(mrb_state *mrb, void *ptr) { }
-void mrb_regexp_free(mrb_state *mrb, void *ptr) { }
-static struct mrb_data_type mrb_matchdata_type = { "MatchData", mrb_matchdata_free };
-static struct mrb_data_type mrb_regexp_type = { "Regexp", mrb_regexp_free };
-mrb_value mrb_matchdata_init(mrb_state *mrb, mrb_value self) { return self; }
-mrb_value mrb_matchdata_begin(mrb_state *mrb, mrb_value self) { return mrb_fixnum_value(0); }
-mrb_value mrb_matchdata_end(mrb_state *mrb, mrb_value self)   { return mrb_fixnum_value(0); }
-mrb_value mrb_regexp_init(mrb_state *mrb, mrb_value self)     { return self; }
-mrb_value mrb_regexp_match(mrb_state *mrb, mrb_value self)    { return mrb_nil_value(); }
-void mrb_mruby_regexp_posix_gem_init(mrb_state *mrb)          { }
-void mrb_mruby_regexp_posix_gem_final(mrb_state *mrb)         { }
