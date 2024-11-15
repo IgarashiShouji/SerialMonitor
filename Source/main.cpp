@@ -61,7 +61,13 @@ static mrb_value mrb_opt_initialize(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_opt_get(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_opt_size(mrb_state * mrb, mrb_value self);
 
-/* class Clac */
+/* class Core */
+static auto str_split = [](std::string & src, std::regex & reg)
+{
+    std::list<std::string> result;
+    std::copy( std::sregex_token_iterator{src.begin(), src.end(), reg, -1}, std::sregex_token_iterator{}, std::back_inserter(result) );
+    return result;
+};
 static mrb_value mrb_core_crc16(mrb_state* mrb, mrb_value self)
 {
     static const unsigned short modbusCRC[256] =
@@ -266,6 +272,19 @@ static mrb_value mrb_core_reg_replace(mrb_state* mrb, mrb_value self)
     auto result = std::regex_replace(org_ptr, std::regex(reg_ptr), rep_ptr);
     return mrb_str_new_cstr( mrb, result.c_str() );
 }
+static mrb_value mrb_core_split(mrb_state* mrb, mrb_value self)
+{
+    mrb_value arry = mrb_ary_new(mrb);
+    char * arg_str, * arg_reg;
+    mrb_get_args(mrb, "zz", &arg_str, &arg_reg);
+    std::string str(arg_str);
+    std::regex  reg(arg_reg);
+    for(auto && str : str_split(str, reg))
+    {
+        mrb_ary_push(mrb, arry , mrb_str_new_cstr(mrb, str.c_str()));
+    }
+    return arry;
+}
 static mrb_value mrb_core_gets(mrb_state* mrb, mrb_value self);
 static mrb_value mrb_core_exists(mrb_state* mrb, mrb_value self)
 {
@@ -379,6 +398,7 @@ static mrb_value mrb_core_make_qr(mrb_state* mrb, mrb_value self)
 static mrb_value mrb_cppregexp_initialize(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_cppregexp_match(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_cppregexp_replace(mrb_state * mrb, mrb_value self);
+static mrb_value mrb_cppregexp_split(mrb_state * mrb, mrb_value self);
 static void mrb_regexp_context_free(mrb_state * mrb, void * ptr);
 
 /* class thread */
@@ -436,14 +456,6 @@ static const struct mrb_data_type mrb_bedit_context_type = { "mrb_open_bedit_con
 
 
 /* static functions */
-static auto split = [](std::string & src, auto pat)
-{
-    std::vector<std::string> result{};
-    std::regex reg{pat};
-    std::copy( std::sregex_token_iterator{src.begin(), src.end(), reg, -1}, std::sregex_token_iterator{}, std::back_inserter(result) );
-    return result;
-};
-
 static unsigned char toValue(unsigned char data)
 {
     unsigned char val=0xff;
@@ -483,6 +495,11 @@ public:
             return true;
         }
         return false;
+    }
+    std::list<std::string> split(std::string & str)
+    {
+        auto list = str_split(str, reg);
+        return list;
     }
 };
 
@@ -1173,9 +1190,10 @@ protected:
 public:
     SerialMonitor(mrb_value & self, const char * arg_, std::vector<size_t> & timer_default, std::map<SerialMonitor *, std::string> & list, std::string def_boud, bool rts_ctrl)
       : arg(arg_), timer(timer_default), res_list(list), com(nullptr), tevter(nullptr), cache_size(1024), rcv_enable(true)
-    {   /* split */
+    {   /* str_split */
         std::vector<std::string> args;
-        for( auto&& item : split( arg, "," ) )
+        std::regex reg(",");
+        for( auto && item : str_split( arg, reg) )
         {
             args.push_back(item);
         }
@@ -1623,7 +1641,7 @@ public:
                    &&(MRB_TT_STRING == mrb_type(argv[1])))
                 {
                     char * str = RSTR_PTR(mrb_str_ptr(argv[0]));
-                    char * rep = RSTR_PTR(mrb_str_ptr(argv[0]));
+                    char * rep = RSTR_PTR(mrb_str_ptr(argv[1]));
                     if(reg->replace(str, rep))
                     {
                         return mrb_bool_value(true);
@@ -1636,7 +1654,37 @@ public:
         }
         return mrb_bool_value(false);
     }
-
+    mrb_value cppregexp_split(mrb_state * mrb, mrb_value self)
+    {
+        mrb_value ret = mrb_nil_value();
+        CppRegexp * reg = static_cast<CppRegexp *>(DATA_PTR(self));
+        if(nullptr != reg)
+        {
+            mrb_value       proc = mrb_nil_value();
+            mrb_int         argc;
+            mrb_value *     argv;
+            mrb_get_args(mrb, "&*", &proc, &argv, &argc);
+            switch(argc)
+            {
+            case 1:
+                if(MRB_TT_STRING == mrb_type(argv[0]))
+                {
+                    char * c_str = RSTR_PTR(mrb_str_ptr(argv[0]));
+                    std::string str(c_str);
+                    mrb_value arry = mrb_ary_new(mrb);
+                    for( auto && str : reg->split(str))
+                    {
+                        mrb_ary_push(mrb, arry , mrb_str_new_cstr(mrb, str.c_str()));
+                    }
+                    return arry ;
+                }
+                break;
+            default:
+                break;
+            }
+        }
+        return mrb_bool_value(false);
+    }
 
     mrb_value thread_init(mrb_state * mrb, mrb_value self)
     {
@@ -2490,6 +2538,7 @@ public:
             mrb_define_module_function(mrb, core_class, "to_hex",       mrb_core_to_hex,        MRB_ARGS_ARG( 2, 1 )    );
             mrb_define_module_function(mrb, core_class, "reg_match",    mrb_core_reg_match,     MRB_ARGS_ARG( 2, 1 )    );
             mrb_define_module_function(mrb, core_class, "reg_replace",  mrb_core_reg_replace,   MRB_ARGS_ARG( 3, 1 )    );
+            mrb_define_module_function(mrb, core_class, "split",        mrb_core_split,         MRB_ARGS_ARG( 2, 1 )    );
             mrb_define_module_function(mrb, core_class, "gets",         mrb_core_gets,          MRB_ARGS_ANY()          );
             mrb_define_module_function(mrb, core_class, "exists",       mrb_core_exists,        MRB_ARGS_ARG( 1, 1 )    );
             mrb_define_module_function(mrb, core_class, "timestamp",    mrb_core_file_timestamp,MRB_ARGS_ARG( 1, 1 )    );
@@ -2503,9 +2552,10 @@ public:
 
             /* Class CppRegexp */
             struct RClass * cppregexp_class = mrb_define_class_under( mrb, mrb->kernel_module, "CppRegexp", mrb->object_class );
-            mrb_define_method( mrb, cppregexp_class, "initialize",     mrb_cppregexp_initialize,  MRB_ARGS_ANY()        );
-            mrb_define_method( mrb, cppregexp_class, "match",          mrb_cppregexp_match,       MRB_ARGS_ANY()        );
-            mrb_define_method( mrb, cppregexp_class, "replace",        mrb_cppregexp_replace,     MRB_ARGS_ANY()        );
+            mrb_define_method( mrb, cppregexp_class, "initialize",      mrb_cppregexp_initialize, MRB_ARGS_ANY()        );
+            mrb_define_method( mrb, cppregexp_class, "match",           mrb_cppregexp_match,      MRB_ARGS_ANY()        );
+            mrb_define_method( mrb, cppregexp_class, "replace",         mrb_cppregexp_replace,    MRB_ARGS_ANY()        );
+            mrb_define_method( mrb, cppregexp_class, "split",           mrb_cppregexp_split,      MRB_ARGS_ARG( 1, 1 )  );
 
             /* Class Thread */
             struct RClass * thread_class = mrb_define_class_under( mrb, mrb->kernel_module, "WorkerThread", mrb->object_class );
@@ -2571,7 +2621,8 @@ public:
             if(opts.count("mruby-script"))
             {
                 std::string mruby_fnames = opts["mruby-script"].as<std::string>();
-                for( auto&& fname : split( mruby_fnames, "," ) )
+                std::regex reg(",");
+                for( auto && fname : str_split( mruby_fnames, reg ) )
                 {
                     std::ifstream fin(fname);
                     if(fin.is_open())
@@ -2609,6 +2660,8 @@ mrb_value mrb_opt_get(mrb_state * mrb, mrb_value self)              { auto resul
 mrb_value mrb_cppregexp_initialize(mrb_state * mrb, mrb_value self) { auto result = (Application::getObject())->cppregexp_init(mrb, self);                          return result; }
 mrb_value mrb_cppregexp_match(mrb_state * mrb, mrb_value self)      { auto result = (Application::getObject())->cppregexp_match(mrb, self);                         return result; }
 mrb_value mrb_cppregexp_replace(mrb_state * mrb, mrb_value self)    { auto result = (Application::getObject())->cppregexp_replace(mrb, self);                       return result; }
+mrb_value mrb_cppregexp_split(mrb_state * mrb, mrb_value self)      { auto result = (Application::getObject())->cppregexp_split(mrb, self);                         return result; }
+
 
 mrb_value mrb_thread_initialize(mrb_state * mrb, mrb_value self)    { auto result = (Application::getObject())->thread_init(mrb, self);                             return result; }
 mrb_value mrb_thread_run(mrb_state * mrb, mrb_value self)           { auto result = (Application::getObject())->thread_run(mrb, self);                              return result; }
