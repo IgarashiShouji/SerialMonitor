@@ -110,7 +110,7 @@ ComList::~ComList(void)
 /**
  * reference of COM list
  */
-std::list<string> & ComList::ref(void)
+std::list<std::string> & ComList::ref(void)
 {
     return list;
 }
@@ -144,7 +144,7 @@ PipeList::~PipeList(void)
 /**
  * reference of COM list
  */
-std::vector<string> & PipeList::ref(void)
+std::list<std::string> & PipeList::ref(void)
 {
     return list;
 }

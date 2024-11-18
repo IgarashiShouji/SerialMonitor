@@ -23,11 +23,11 @@
 class PipeList
 {
 private:
-    std::vector<std::string> list;
+    std::list<std::string> list;
 public:
     PipeList(void);
     virtual ~PipeList(void);
-    std::vector<std::string> & ref();
+    std::list<std::string> & ref();
 };
 
 

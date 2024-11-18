@@ -135,7 +135,11 @@ class Core
         exit 0
       end
       if nil != opts['pipelist'] then
-        Smon.pipelist do |name|
+        regs = Array.new
+        (opts.size()).times do |idx|
+          regs.push(opts[idx])
+        end
+        (Smon.pipelist(regs)).each do |name|
           print name, "\n"
         end
         exit 0
