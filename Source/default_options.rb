@@ -125,7 +125,11 @@ class Core
     opts = Args.new
     if nil == opts['mruby-script'] then
       if nil != opts['comlist'] then
-        Smon.comlist do |name|
+        regs = Array.new
+        (opts.size()).times do |idx|
+          regs.push(opts[idx])
+        end
+        (Smon.comlist(regs)).each do |name|
           print name, "\n"
         end
         exit 0
@@ -271,7 +275,6 @@ class Smon
     end
     return reply
   end
-  #def self.wait_send(smon, list, def_cmd=nil)
   def self.wait_send(smon, list, def_cmd=nil)
     if nil == def_cmd then
       def_cmd = WaitReplyEventer.new

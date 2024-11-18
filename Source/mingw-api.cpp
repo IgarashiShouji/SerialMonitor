@@ -110,7 +110,7 @@ ComList::~ComList(void)
 /**
  * reference of COM list
  */
-std::vector<string> & ComList::ref(void)
+std::list<string> & ComList::ref(void)
 {
     return list;
 }

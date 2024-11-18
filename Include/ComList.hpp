@@ -15,7 +15,7 @@
 #define __COM_LIST_HPP__
 
 #include <string>
-#include <vector>
+#include <list>
 
 /**
  * get COM list on Microsoft Windows
@@ -23,11 +23,11 @@
 class ComList
 {
 private:
-    std::vector<std::string> list;
+    std::list<std::string> list;
 public:
     ComList(void);
     virtual ~ComList(void);
-    std::vector<std::string> & ref();
+    std::list<std::string> & ref();
 };
 
 

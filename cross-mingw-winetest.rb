@@ -12,7 +12,8 @@ MRuby::CrossBuild.new("cross-mingw") do |conf|
 
   conf.linker.command   = conf.cc.command
   conf.linker.flags     += [ '-static', '-Os', '-pipe' ]
-  conf.linker.libraries += [ 'setupapi', 'ksguid', 'ole32', 'winmm', 'dsound', 'ws2_32' ]
+  #conf.linker.libraries += [ 'setupapi', 'ksguid', 'ole32', 'winmm', 'dsound', 'ws2_32', 'readline', 'tinfo' ]
+  conf.linker.libraries += [ 'setupapi', 'ksguid', 'ole32', 'winmm', 'dsound', 'ws2_32', 'readline', 'ncurses' ]
 
   conf.test_runner do |t|
     thisdir = File.absolute_path( File.dirname(__FILE__) )

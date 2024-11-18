@@ -54,7 +54,7 @@
 #include <OpenXLSX.hpp>
 
 /* static const */
-static const char *  SoftwareRevision = "0.13.2";
+static const char *  SoftwareRevision = "0.13.3";
 
 /* class Options */
 static mrb_value mrb_opt_initialize(mrb_state * mrb, mrb_value self);
@@ -314,21 +314,86 @@ static mrb_value mrb_core_file_timestamp(mrb_state* mrb, mrb_value self)
 }
 static mrb_value mrb_core_comlist(mrb_state* mrb, mrb_value self)
 {
-    mrb_value proc;
-    mrb_get_args(mrb, "&", &proc);
-    if (!mrb_nil_p(proc))
+    mrb_value arry = mrb_ary_new(mrb);
+    ComList com;
+    std::list<std::string> list = com.ref();
+    mrb_int argc;
+    mrb_value * argv;
+    mrb_get_args(mrb, "*", &argv, &argc);
+    switch(argc)
     {
-        ComList com;
-        std::vector<std::string> & list = com.ref();
-        for(auto & com_name: list)
+    case 1:
+        switch(mrb_type(argv[0]))
         {
-            mrb_value argv[1];
-            argv[0] = mrb_str_new_cstr(mrb, com_name.c_str());
-            mrb_yield_argv(mrb, proc, 1, &(argv[0]));
+        case MRB_TT_STRING:
+            {
+                std::regex reg(RSTR_PTR(mrb_str_ptr(argv[0])));
+                for(auto & str : list)
+                {
+                    if( std::regex_search(str, reg) ) { mrb_ary_push(mrb, arry , mrb_str_new_cstr(mrb, str.c_str())); }
+                }
+            }
+            break;
+        case MRB_TT_ARRAY:
+            {
+                std::list<std::regex> regs;
+                mrb_value item;
+                while( !mrb_nil_p( item = mrb_ary_shift(mrb, argv[0])) )
+                {
+                    if(MRB_TT_STRING == mrb_type(item))
+                    {
+                        char * c_str = RSTR_PTR(mrb_str_ptr(item));
+                        std::string reg_str(c_str);
+                        regs.push_back(std::regex(reg_str, std::regex_constants::icase));
+                    }
+                }
+                list.sort();
+                for(auto & str : list)
+                {
+                    bool match = true;
+                    for(auto reg : regs) { if( !std::regex_search(str, reg) ) { match = false; break;; } }
+                    if( match ) { mrb_ary_push(mrb, arry , mrb_str_new_cstr(mrb, str.c_str())); }
+                }
+            }
+            break;
+        default:
+            break;
         }
-        return mrb_int_value(mrb, list.size());
+        break;
+    case 2:
+        if(  (MRB_TT_INTEGER == mrb_type(argv[0]))
+           &&(MRB_TT_ARRAY   == mrb_type(argv[1])))
+        {
+            auto cnt = mrb_integer(argv[0]);
+            std::list<std::regex> regs;
+            mrb_value item;
+            while( !mrb_nil_p( item = mrb_ary_shift(mrb, argv[1])) )
+            {
+                if(MRB_TT_STRING == mrb_type(item))
+                {
+                    char * c_str = RSTR_PTR(mrb_str_ptr(item));
+                    std::string reg_str(c_str);
+                    regs.push_back(std::regex(reg_str, std::regex_constants::icase));
+                }
+            }
+            list.sort();
+            for(auto & str : list)
+            {
+                if( cnt <= 0) break;
+                bool match = true;
+                for(auto & reg : regs) { if( !std::regex_search(str, reg) ) { match = false; break;; } }
+                if( match ) { mrb_ary_push(mrb, arry , mrb_str_new_cstr(mrb, str.c_str())); cnt --; }
+            }
+        }
+        break;
+    default:
+        for(auto & str : list)
+        {
+            mrb_ary_push(mrb, arry , mrb_str_new_cstr(mrb, str.c_str()));
+        }
+        break;
     }
-    return mrb_int_value(mrb, 0);
+    return arry ;
 }
 static mrb_value mrb_core_pipelist(mrb_state* mrb, mrb_value self)
 {
@@ -1526,30 +1591,30 @@ public:
         mrb_value y = mrb_get_arg1(mrb);
         switch( mrb_type( y ) )
         {
-            case MRB_TT_FLOAT:
-            case MRB_TT_RATIONAL:
-            case MRB_TT_COMPLEX:
-                break;
-            case MRB_TT_INTEGER:
+        case MRB_TT_FLOAT:
+        case MRB_TT_RATIONAL:
+        case MRB_TT_COMPLEX:
+            break;
+        case MRB_TT_INTEGER:
+            {
+                mrb_int index = mrb_integer(y);
+                if( index < args.size() )
                 {
-                    mrb_int index = mrb_integer(y);
-                    if( index < args.size() )
-                    {
-                        return mrb_str_new_cstr( mrb, (args[index]).c_str() );
-                    }
+                    return mrb_str_new_cstr( mrb, (args[index]).c_str() );
                 }
-                break;
-            default:
+            }
+            break;
+        default:
+            {
+                char * key;
+                mrb_get_args( mrb, "z", &key );
+                if( opts.count( key ) )
                 {
-                    char * key;
-                    mrb_get_args( mrb, "z", &key );
-                    if( opts.count( key ) )
-                    {
-                        std::string opt_val = opts[key].as<std::string>();
-                        return mrb_str_new_cstr( mrb, opt_val.c_str() );
-                    }
+                    std::string opt_val = opts[key].as<std::string>();
+                    return mrb_str_new_cstr( mrb, opt_val.c_str() );
                 }
-                break;
+            }
+            break;
         }
         return mrb_nil_value();
     }
@@ -2757,8 +2822,8 @@ int main(int argc, char * argv[])
     {
         boost::program_options::options_description desc("smon.exe [Options]");
         desc.add_options()
-            ("pipelist",                                                        "print pipe name list"                            )
             ("comlist",                                                         "print com port list"                             )
+            ("pipelist",                                                        "print pipe name list"                            )
             ("baud,b",          boost::program_options::value<std::string>(),   "baud rate      Default 1200O1 ex) -b 9600E1"     )
             ("gap,g",           boost::program_options::value<unsigned int>(),  "time out tick. Default   30 ( 30 [ms])"          )
             ("timer,t",         boost::program_options::value<unsigned int>(),  "time out tick. Default  300 (300 [ms])"          )
@@ -2792,7 +2857,6 @@ int main(int argc, char * argv[])
 #endif
             return 0;
         }
-
         if(argmap.count("help"))
         {
             std::cout << "smon Revision " << SoftwareRevision << std::endl;
