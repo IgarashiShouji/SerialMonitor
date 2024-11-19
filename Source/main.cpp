@@ -54,7 +54,7 @@
 #include <OpenXLSX.hpp>
 
 /* static const */
-static const char *  SoftwareRevision = "0.13.4";
+static const char *  SoftwareRevision = "0.13.5";
 
 /* class Options */
 static mrb_value mrb_opt_initialize(mrb_state * mrb, mrb_value self);
