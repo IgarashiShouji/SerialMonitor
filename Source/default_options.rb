@@ -1,3 +1,5 @@
+# Defalult Option Script for smon.exe
+
 class BinEdit
   def self.hexToArray(format, hex_string)
     bin = BinEdit.new(hex_string)
@@ -120,6 +122,7 @@ class BinEdit
     end
   end
 end
+
 class Core
   def self.__CheckOptions()
     opts = Args.new
@@ -187,8 +190,9 @@ class Core
   end
 end
 Core.__CheckOptions()
+
 class SendWaitEventer
-  def initilize
+  def initialize
   end
   def exec(send_msg, rcv_msg)
     printf("%s -> %s\n", send_msg, rcv_msg)
@@ -210,8 +214,9 @@ class SendWaitEventer
     false
   end
 end
+
 class WaitReplyEventer
-  def initilize
+  def initialize
   end
   def exec(smon, msg, reply)
     printf("%s -> %s\n", msg, reply)
@@ -232,6 +237,7 @@ class WaitReplyEventer
     printf("TO3\n", msg)
   end
 end
+
 class Smon
   def self.send_wait(smon, send_msg, regs, cmd=nil)
     reply=''

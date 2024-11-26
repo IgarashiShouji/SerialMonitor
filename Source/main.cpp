@@ -53,542 +53,9 @@
 
 #include <OpenXLSX.hpp>
 
-/* static const */
-static const char *  SoftwareRevision = "0.13.5";
+/* -- static const & functions -- */
+static const char *  SoftwareRevision = "0.13.6";
 
-/* class Options */
-static mrb_value mrb_opt_initialize(mrb_state * mrb, mrb_value self);
-static mrb_value mrb_opt_get(mrb_state * mrb, mrb_value self);
-static mrb_value mrb_opt_size(mrb_state * mrb, mrb_value self);
-
-/* class Core */
-static auto str_split = [](std::string & src, std::regex & reg)
-{
-    std::list<std::string> result;
-    std::copy( std::sregex_token_iterator{src.begin(), src.end(), reg, -1}, std::sregex_token_iterator{}, std::back_inserter(result) );
-    return result;
-};
-static mrb_value mrb_core_crc16(mrb_state* mrb, mrb_value self)
-{
-    static const unsigned short modbusCRC[256] =
-    {
-        0x0000, 0xC1C0, 0x81C1, 0x4001, 0x01C3, 0xC003, 0x8002, 0x41C2, 0x01C6, 0xC006, 0x8007, 0x41C7, 0x0005, 0xC1C5, 0x81C4,
-        0x4004, 0x01CC, 0xC00C, 0x800D, 0x41CD, 0x000F, 0xC1CF, 0x81CE, 0x400E, 0x000A, 0xC1CA, 0x81CB, 0x400B, 0x01C9, 0xC009,
-        0x8008, 0x41C8, 0x01D8, 0xC018, 0x8019, 0x41D9, 0x001B, 0xC1DB, 0x81DA, 0x401A, 0x001E, 0xC1DE, 0x81DF, 0x401F, 0x01DD,
-        0xC01D, 0x801C, 0x41DC, 0x0014, 0xC1D4, 0x81D5, 0x4015, 0x01D7, 0xC017, 0x8016, 0x41D6, 0x01D2, 0xC012, 0x8013, 0x41D3,
-        0x0011, 0xC1D1, 0x81D0, 0x4010, 0x01F0, 0xC030, 0x8031, 0x41F1, 0x0033, 0xC1F3, 0x81F2, 0x4032, 0x0036, 0xC1F6, 0x81F7,
-        0x4037, 0x01F5, 0xC035, 0x8034, 0x41F4, 0x003C, 0xC1FC, 0x81FD, 0x403D, 0x01FF, 0xC03F, 0x803E, 0x41FE, 0x01FA, 0xC03A,
-        0x803B, 0x41FB, 0x0039, 0xC1F9, 0x81F8, 0x4038, 0x0028, 0xC1E8, 0x81E9, 0x4029, 0x01EB, 0xC02B, 0x802A, 0x41EA, 0x01EE,
-        0xC02E, 0x802F, 0x41EF, 0x002D, 0xC1ED, 0x81EC, 0x402C, 0x01E4, 0xC024, 0x8025, 0x41E5, 0x0027, 0xC1E7, 0x81E6, 0x4026,
-        0x0022, 0xC1E2, 0x81E3, 0x4023, 0x01E1, 0xC021, 0x8020, 0x41E0, 0x01A0, 0xC060, 0x8061, 0x41A1, 0x0063, 0xC1A3, 0x81A2,
-        0x4062, 0x0066, 0xC1A6, 0x81A7, 0x4067, 0x01A5, 0xC065, 0x8064, 0x41A4, 0x006C, 0xC1AC, 0x81AD, 0x406D, 0x01AF, 0xC06F,
-        0x806E, 0x41AE, 0x01AA, 0xC06A, 0x806B, 0x41AB, 0x0069, 0xC1A9, 0x81A8, 0x4068, 0x0078, 0xC1B8, 0x81B9, 0x4079, 0x01BB,
-        0xC07B, 0x807A, 0x41BA, 0x01BE, 0xC07E, 0x807F, 0x41BF, 0x007D, 0xC1BD, 0x81BC, 0x407C, 0x01B4, 0xC074, 0x8075, 0x41B5,
-        0x0077, 0xC1B7, 0x81B6, 0x4076, 0x0072, 0xC1B2, 0x81B3, 0x4073, 0x01B1, 0xC071, 0x8070, 0x41B0, 0x0050, 0xC190, 0x8191,
-        0x4051, 0x0193, 0xC053, 0x8052, 0x4192, 0x0196, 0xC056, 0x8057, 0x4197, 0x0055, 0xC195, 0x8194, 0x4054, 0x019C, 0xC05C,
-        0x805D, 0x419D, 0x005F, 0xC19F, 0x819E, 0x405E, 0x005A, 0xC19A, 0x819B, 0x405B, 0x0199, 0xC059, 0x8058, 0x4198, 0x0188,
-        0xC048, 0x8049, 0x4189, 0x004B, 0xC18B, 0x818A, 0x404A, 0x004E, 0xC18E, 0x818F, 0x404F, 0x018D, 0xC04D, 0x804C, 0x418C,
-        0x0044, 0xC184, 0x8185, 0x4045, 0x0187, 0xC047, 0x8046, 0x4186, 0x0182, 0xC042, 0x8043, 0x4183, 0x0041, 0xC181, 0x8180,
-        0x4040
-    };
-    char * arg;
-    mrb_get_args(mrb, "z", &arg);
-    std::string data(arg);
-    auto max = data.size();
-    if(0 == (max % 2))
-    {
-        MyEntity::CalcCRC16 crc(modbusCRC);
-        for(unsigned int idx = 0; idx < max; idx += 2)
-        {
-            std::stringstream ss;
-            ss << std::hex << data.substr(idx, 2);
-            int val;
-            ss >> val;
-            crc << val;
-        }
-        char temp[5] = { 0 };
-        sprintf(temp, "%04X", *crc);
-        return mrb_str_new_cstr(mrb, temp);
-    }
-    return mrb_nil_value();
-}
-static mrb_value mrb_core_crc8(mrb_state* mrb, mrb_value self)
-{
-    static const unsigned char crctab8[16] = { 0x00,0x9B,0xAD,0x36,0xC1,0x5A,0x6C,0xF7,0x19,0x82,0xB4,0x2F,0xD8,0x43,0x75,0xEE };
-    char * arg;
-    mrb_get_args(mrb, "z", &arg);
-    std::string data(arg);
-    auto max = data.size();
-    if(0 == ( max % 2 ))
-    {
-        unsigned char crc = 0;
-        unsigned char high = 0;
-        for(unsigned int idx = 0; idx < max; idx += 2)
-        {
-            std::stringstream ss;
-            ss << std::hex << data.substr(idx, 2);
-            int val;
-            ss >> val;
-
-            unsigned char data = static_cast<unsigned char>(val);
-            high = crc >> 4;
-            crc <<= 4;
-            crc ^= crctab8[ high ^ (data >> 4) ];
-
-            high = crc >> 4;
-            crc <<= 4;
-            crc ^= crctab8[ high ^ (data & 0x0f) ];
-        }
-        char temp[3] = { 0 };
-        sprintf(temp, "%02x", crc);
-        return mrb_str_new_cstr(mrb, temp);
-    }
-    return mrb_nil_value();
-}
-static mrb_value mrb_core_sum(mrb_state* mrb, mrb_value self)
-{
-    char * arg;
-    mrb_get_args(mrb, "z", &arg);
-    std::string data(arg);
-    auto max = data.size();
-    if(0 == (max % 2))
-    {
-        unsigned char sum = 0;
-        for(unsigned int idx = 0; idx < max; idx += 2)
-        {
-            std::stringstream ss;
-            ss << std::hex << data.substr(idx, 2);
-            int val;
-            ss >> val;
-            sum ^= static_cast<unsigned char>(val);
-        }
-        char temp[3] = {0};
-        sprintf(temp, "%02x", sum);
-        return mrb_str_new_cstr(mrb, temp);
-    }
-    return mrb_nil_value();
-}
-static mrb_value mrb_core_float(mrb_state* mrb, mrb_value self)
-{
-    char * arg;
-    mrb_get_args(mrb, "z", &arg);
-    std::string data(arg);
-    if(8 == data.size())
-    {
-        union
-        {
-            float           f;
-            unsigned long   dword;
-        } fval;
-        fval.dword = 0;
-        unsigned char sum = 0;
-        for(unsigned int idx=0, max=data.size();idx<max; idx += 2)
-        {
-            std::stringstream ss;
-            ss << std::hex << data.substr(idx, 2);
-            int val;
-            ss >> val;
-            fval.dword <<= 8;
-            fval.dword |= static_cast<unsigned long>(val);
-        }
-        return mrb_float_value( mrb, fval.f );
-    }
-    return mrb_nil_value();
-}
-static mrb_value mrb_core_float_l(mrb_state* mrb, mrb_value self)
-{
-    char * arg;
-    mrb_get_args(mrb, "z", &arg);
-    std::string org_data(arg);
-    if(org_data.size() == 8)
-    {
-        std::string data("");
-        data  = org_data.substr(6, 2);
-        data += org_data.substr(4, 2);
-        data += org_data.substr(2, 2);
-        data += org_data.substr(0, 2);
-        union
-        {
-            float           f;
-            unsigned long   dword;
-        } fval;
-        fval.dword = 0;
-        unsigned char sum = 0;
-        for(unsigned int idx=0, max=data.size();idx<max; idx += 2)
-        {
-            std::stringstream ss;
-            ss << std::hex << data.substr(idx, 2);
-            int val;
-            ss >> val;
-            fval.dword <<= 8;
-            fval.dword |= static_cast<unsigned long>(val);
-        }
-        return mrb_float_value( mrb, fval.f );
-    }
-    return mrb_nil_value();
-}
-static mrb_value mrb_core_to_hex(mrb_state* mrb, mrb_value self)
-{
-    union
-    {
-        float       f;
-        mrb_int     val;
-        uint8_t     data[4];
-        uint16_t    data16[2];
-        uint32_t    data32;
-    } num;
-    char str_data[8+1];
-    char * type_ptr;
-    mrb_get_args(mrb, "zi", &type_ptr, &num);
-    std::string type(type_ptr);
-    if(("int16" == type) || ("uint16" == type))
-    {
-        sprintf(str_data, "%04X", num.data16[0]);
-        return mrb_str_new_cstr( mrb, str_data );
-    }
-    if("float" == type)
-    {
-        mrb_float mrb_f;
-        mrb_get_args(mrb, "zf", &type_ptr, &mrb_f);
-        num.f = mrb_f;
-    }
-    sprintf(str_data, "%08X", num.data32);
-    return mrb_str_new_cstr( mrb, str_data );
-}
-static mrb_value mrb_core_reg_match(mrb_state* mrb, mrb_value self)
-{
-    char * org_ptr, * reg_ptr;
-    mrb_get_args(mrb, "zz", &org_ptr, &reg_ptr);
-    if( std::regex_search(org_ptr, std::regex(reg_ptr)))
-    {
-        return mrb_bool_value(true);
-    }
-    return mrb_bool_value(false);
-}
-static mrb_value mrb_core_reg_replace(mrb_state* mrb, mrb_value self)
-{
-    char * org_ptr, * reg_ptr, * rep_ptr;
-    mrb_get_args(mrb, "zzz", &org_ptr, &reg_ptr, &rep_ptr);
-    auto result = std::regex_replace(org_ptr, std::regex(reg_ptr), rep_ptr);
-    return mrb_str_new_cstr( mrb, result.c_str() );
-}
-static mrb_value mrb_core_split(mrb_state* mrb, mrb_value self)
-{
-    mrb_value arry = mrb_ary_new(mrb);
-    char * arg_str, * arg_reg;
-    mrb_get_args(mrb, "zz", &arg_str, &arg_reg);
-    std::string str(arg_str);
-    std::regex  reg(arg_reg);
-    for(auto && str : str_split(str, reg))
-    {
-        mrb_ary_push(mrb, arry , mrb_str_new_cstr(mrb, str.c_str()));
-    }
-    return arry;
-}
-static mrb_value mrb_core_gets(mrb_state* mrb, mrb_value self);
-static mrb_value mrb_core_exists(mrb_state* mrb, mrb_value self)
-{
-    char * arg;
-    mrb_get_args(mrb, "z", &arg);
-    return mrb_bool_value(std::filesystem::exists(arg));
-}
-static mrb_value mrb_core_file_timestamp(mrb_state* mrb, mrb_value self)
-{
-    char * arg;
-    mrb_get_args(mrb, "z", &arg);
-#if 0
-    std::filesystem::path path(arg);
-    auto ftime = std::filesystem::last_write_time(path);
-    auto time = ( std::chrono::duration_cast<std::chrono::seconds>(ftime.time_since_epoch()) ).count();
-    const std::tm * ltime = std::localtime(&time);
-    std::ostringstream timestamp;
-    timestamp << std::put_time(ltime, "%c");
-    return mrb_str_new_cstr( mrb, (timestamp.str()).c_str() );
-#else
-    boost::filesystem::path path(arg);
-    auto ftime = boost::filesystem::last_write_time(path);
-    std::ostringstream timestamp;
-    timestamp << ctime(&ftime);
-    return mrb_str_new_cstr( mrb, (timestamp.str()).c_str() );
-#endif
-}
-static mrb_value mrb_core_comlist(mrb_state* mrb, mrb_value self)
-{
-    mrb_value arry = mrb_ary_new(mrb);
-    ComList com;
-    std::list<std::string> list = com.ref();
-    mrb_int argc;
-    mrb_value * argv;
-    mrb_get_args(mrb, "*", &argv, &argc);
-    switch(argc)
-    {
-    case 1:
-        switch(mrb_type(argv[0]))
-        {
-        case MRB_TT_STRING:
-            {
-                std::regex reg(RSTR_PTR(mrb_str_ptr(argv[0])));
-                for(auto & str : list)
-                {
-                    if( std::regex_search(str, reg) ) { mrb_ary_push(mrb, arry , mrb_str_new_cstr(mrb, str.c_str())); }
-                }
-            }
-            break;
-        case MRB_TT_ARRAY:
-            {
-                std::list<std::regex> regs;
-                mrb_value item;
-                while( !mrb_nil_p( item = mrb_ary_shift(mrb, argv[0])) )
-                {
-                    if(MRB_TT_STRING == mrb_type(item))
-                    {
-                        char * c_str = RSTR_PTR(mrb_str_ptr(item));
-                        std::string reg_str(c_str);
-                        regs.push_back(std::regex(reg_str, std::regex_constants::icase));
-                    }
-                }
-                list.sort();
-                for(auto & str : list)
-                {
-                    bool match = true;
-                    for(auto reg : regs) { if( !std::regex_search(str, reg) ) { match = false; break;; } }
-                    if( match ) { mrb_ary_push(mrb, arry , mrb_str_new_cstr(mrb, str.c_str())); }
-                }
-            }
-            break;
-        default:
-            break;
-        }
-        break;
-    case 2:
-        if(  (MRB_TT_INTEGER == mrb_type(argv[0]))
-           &&(MRB_TT_ARRAY   == mrb_type(argv[1])))
-        {
-            auto cnt = mrb_integer(argv[0]);
-            std::list<std::regex> regs;
-            mrb_value item;
-            while( !mrb_nil_p( item = mrb_ary_shift(mrb, argv[1])) )
-            {
-                if(MRB_TT_STRING == mrb_type(item))
-                {
-                    char * c_str = RSTR_PTR(mrb_str_ptr(item));
-                    std::string reg_str(c_str);
-                    regs.push_back(std::regex(reg_str, std::regex_constants::icase));
-                }
-            }
-            list.sort();
-            for(auto & str : list)
-            {
-                if( cnt <= 0) break;
-                bool match = true;
-                for(auto & reg : regs) { if( !std::regex_search(str, reg) ) { match = false; break;; } }
-                if( match ) { mrb_ary_push(mrb, arry , mrb_str_new_cstr(mrb, str.c_str())); cnt --; }
-            }
-        }
-        break;
-    default:
-        for(auto & str : list)
-        {
-            mrb_ary_push(mrb, arry , mrb_str_new_cstr(mrb, str.c_str()));
-        }
-        break;
-    }
-    return arry ;
-}
-static mrb_value mrb_core_pipelist(mrb_state* mrb, mrb_value self)
-{
-    mrb_value arry = mrb_ary_new(mrb);
-    PipeList pipe;
-    std::list<std::string> list = pipe.ref();
-    mrb_int argc;
-    mrb_value * argv;
-    mrb_get_args(mrb, "*", &argv, &argc);
-    switch(argc)
-    {
-    case 1:
-        switch(mrb_type(argv[0]))
-        {
-        case MRB_TT_STRING:
-            {
-                std::regex reg(RSTR_PTR(mrb_str_ptr(argv[0])));
-                for(auto & str : list)
-                {
-                    if( std::regex_search(str, reg) ) { mrb_ary_push(mrb, arry , mrb_str_new_cstr(mrb, str.c_str())); }
-                }
-            }
-            break;
-        case MRB_TT_ARRAY:
-            {
-                std::list<std::regex> regs;
-                mrb_value item;
-                while( !mrb_nil_p( item = mrb_ary_shift(mrb, argv[0])) )
-                {
-                    if(MRB_TT_STRING == mrb_type(item))
-                    {
-                        char * c_str = RSTR_PTR(mrb_str_ptr(item));
-                        std::string reg_str(c_str);
-                        regs.push_back(std::regex(reg_str, std::regex_constants::icase));
-                    }
-                }
-                list.sort();
-                for(auto & str : list)
-                {
-                    bool match = true;
-                    for(auto reg : regs) { if( !std::regex_search(str, reg) ) { match = false; break;; } }
-                    if( match ) { mrb_ary_push(mrb, arry , mrb_str_new_cstr(mrb, str.c_str())); }
-                }
-            }
-            break;
-        default:
-            break;
-        }
-        break;
-    case 2:
-        if(  (MRB_TT_INTEGER == mrb_type(argv[0]))
-           &&(MRB_TT_ARRAY   == mrb_type(argv[1])))
-        {
-            auto cnt = mrb_integer(argv[0]);
-            std::list<std::regex> regs;
-            mrb_value item;
-            while( !mrb_nil_p( item = mrb_ary_shift(mrb, argv[1])) )
-            {
-                if(MRB_TT_STRING == mrb_type(item))
-                {
-                    char * c_str = RSTR_PTR(mrb_str_ptr(item));
-                    std::string reg_str(c_str);
-                    regs.push_back(std::regex(reg_str, std::regex_constants::icase));
-                }
-            }
-            list.sort();
-            for(auto & str : list)
-            {
-                if( cnt <= 0) break;
-                bool match = true;
-                for(auto & reg : regs) { if( !std::regex_search(str, reg) ) { match = false; break;; } }
-                if( match ) { mrb_ary_push(mrb, arry , mrb_str_new_cstr(mrb, str.c_str())); cnt --; }
-            }
-        }
-        break;
-    default:
-        for(auto & str : list)
-        {
-            mrb_ary_push(mrb, arry , mrb_str_new_cstr(mrb, str.c_str()));
-        }
-        break;
-    }
-    return arry ;
-}
-static std::string makeQRsvg(const std::string & arg)
-{
-    const char *text = arg.c_str();
-    const qrcodegen::QrCode::Ecc errCorLvl = qrcodegen::QrCode::Ecc::LOW;
-    const qrcodegen::QrCode qr = qrcodegen::QrCode::encodeText(text, errCorLvl);
-    int border = 4;
-    if((border * 2) > INT_MAX - qr.getSize())
-    {
-        throw std::overflow_error("Border too large");
-    }
-    std::ostringstream sb;
-    sb << "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n";
-    sb << "<!DOCTYPE svg PUBLIC \"-//W3C//DTD SVG 1.1//EN\" \"http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd\">\n";
-    sb << "<svg xmlns=\"http://www.w3.org/2000/svg\" version=\"1.1\" viewBox=\"0 0 ";
-    sb << (qr.getSize() + border * 2) << " " << (qr.getSize() + border * 2) << "\" stroke=\"none\">\n";
-    sb << "  <rect width=\"100%\" height=\"100%\" fill=\"#FFFFFF\"/>\n";
-    sb << "  <path d=\"";
-    for(int y = 0; y < qr.getSize(); y++)
-    {
-        for(int x = 0; x < qr.getSize(); x++)
-        {
-            if(qr.getModule(x, y))
-            {
-                if(x != 0 || y != 0) { sb << " "; }
-                sb << "M" << (x + border) << "," << (y + border) << "h1v1h-1z";
-            }
-        }
-    }
-    sb << "\" fill=\"#000000\"/>\n";
-    sb << "</svg>\n";
-    return sb.str();
-}
-static mrb_value mrb_core_make_qr(mrb_state* mrb, mrb_value self)
-{
-    char * mruby_arg;
-    mrb_get_args(mrb, "z", &mruby_arg);
-    std::string arg(mruby_arg);
-    if(0 < arg.size())
-    {
-        auto qr_code = makeQRsvg(arg);
-        return mrb_str_new_cstr(mrb, qr_code.c_str());
-    }
-    return mrb_nil_value();
-}
-
-
-/* class CppRegexp */
-static mrb_value mrb_cppregexp_initialize(mrb_state * mrb, mrb_value self);
-static mrb_value mrb_cppregexp_length(mrb_state * mrb, mrb_value self);
-static mrb_value mrb_cppregexp_match(mrb_state * mrb, mrb_value self);
-static mrb_value mrb_cppregexp_grep(mrb_state * mrb, mrb_value self);
-static mrb_value mrb_cppregexp_replace(mrb_state * mrb, mrb_value self);
-static mrb_value mrb_cppregexp_select(mrb_state * mrb, mrb_value self);
-static mrb_value mrb_cppregexp_split(mrb_state * mrb, mrb_value self);
-static void mrb_regexp_context_free(mrb_state * mrb, void * ptr);
-
-/* class thread */
-static mrb_value mrb_thread_initialize(mrb_state * mrb, mrb_value self);
-static mrb_value mrb_thread_run(mrb_state * mrb, mrb_value self);
-static mrb_value mrb_thread_join(mrb_state * mrb, mrb_value self);
-static mrb_value mrb_thread_is_run(mrb_state * mrb, mrb_value self);
-static mrb_value mrb_thread_state(mrb_state * mrb, mrb_value self);
-static mrb_value mrb_thread_sync(mrb_state * mrb, mrb_value self);
-static mrb_value mrb_thread_wait(mrb_state * mrb, mrb_value self);
-static mrb_value mrb_thread_notify(mrb_state * mrb, mrb_value self);
-static mrb_value mrb_thread_ms_sleep(mrb_state * mrb, mrb_value self)
-{
-    mrb_int tick;
-    mrb_get_args(mrb, "i", &tick);
-    std::this_thread::sleep_for(std::chrono::milliseconds(tick));
-    return mrb_nil_value();
-}
-static void mrb_thread_context_free(mrb_state * mrb, void * ptr);
-
-/* class SerialMonitor */
-static mrb_value mrb_smon_initialize(mrb_state * mrb, mrb_value self);
-static mrb_value mrb_smon_wait(mrb_state * mrb, mrb_value self);
-static mrb_value mrb_smon_send(mrb_state * mrb, mrb_value self);
-static mrb_value mrb_smon_close(mrb_state * mrb, mrb_value self);
-static void mrb_smon_context_free(mrb_state * mrb, void * ptr);
-
-/* class OpenXLSX */
-static mrb_value mrb_xlsx_initialize(mrb_state * mrb, mrb_value self);
-static mrb_value mrb_xlsx_create(mrb_state * mrb, mrb_value self);
-static mrb_value mrb_xlsx_open(mrb_state * mrb, mrb_value self);
-static mrb_value mrb_xlsx_worksheet(mrb_state * mrb, mrb_value self);
-static mrb_value mrb_xlsx_sheet_names(mrb_state * mrb, mrb_value self);
-static mrb_value mrb_xlsx_set_seet_name(mrb_state * mrb, mrb_value self);
-static mrb_value mrb_xlsx_set_value(mrb_state * mrb, mrb_value self);
-static mrb_value mrb_xlsx_cell(mrb_state * mrb, mrb_value self);
-static mrb_value mrb_xlsx_save(mrb_state * mrb, mrb_value self);
-static void mrb_xlsx_context_free(mrb_state * mrb, void * ptr);
-
-/* class BinEdit */
-static mrb_value mrb_bedit_initialize(mrb_state * mrb, mrb_value self);
-static mrb_value mrb_bedit_length(mrb_state * mrb, mrb_value self);
-static mrb_value mrb_bedit_save(mrb_state * mrb, mrb_value self);
-static mrb_value mrb_bedit_memset(mrb_state * mrb, mrb_value self);
-static mrb_value mrb_bedit_memcpy(mrb_state * mrb, mrb_value self);
-static mrb_value mrb_bedit_write(mrb_state * mrb, mrb_value self);
-static mrb_value mrb_bedit_dump(mrb_state * mrb, mrb_value self);
-static mrb_value mrb_bedit_get(mrb_state * mrb, mrb_value self);
-static mrb_value mrb_bedit_set(mrb_state * mrb, mrb_value self);
-static mrb_value mrb_bedit_pos(mrb_state * mrb, mrb_value self);
-static mrb_value mrb_bedit_compress(mrb_state * mrb, mrb_value self);
-static mrb_value mrb_bedit_uncompress(mrb_state * mrb, mrb_value self);
-static void mrb_bedit_context_free(mrb_state * mrb, void * ptr);
-static const struct mrb_data_type mrb_bedit_context_type = { "mrb_open_bedit_context", mrb_bedit_context_free, };
-
-
-/* static functions */
 static unsigned char toValue(unsigned char data)
 {
     unsigned char val=0xff;
@@ -598,239 +65,6 @@ static unsigned char toValue(unsigned char data)
     else                                  { }
     return val;
 }
-
-/* class */
-class CppRegexp
-{
-private:
-    std::vector<std::regex> regs;
-public:
-    virtual ~CppRegexp(void) {}
-    CppRegexp(const char * str)
-    {
-        std::regex reg(str);
-        regs.push_back(reg);
-    }
-    CppRegexp(const std::list<std::string> & arg)
-    {
-        for(auto & str : arg)
-        {
-            std::regex reg(str);
-            regs.push_back(reg);
-        }
-    }
-    unsigned int length(void) { return regs.size(); }
-    bool match(const std::string & str)
-    {
-        for( auto & reg : regs )
-        {
-            if( std::regex_search(str, reg) ) { return true; }
-        }
-        return false;
-    }
-    std::list<std::string> match(std::list<std::string> & text)
-    {
-        std::list<std::string> result;
-        for(auto & str : text)
-        {
-            if( match( str ) )
-            {
-                result.push_back( str );
-            }
-        }
-        return result;
-    }
-    std::list<std::string> grep( std::list<std::string> & text )
-    {
-        std::list<std::string> result;
-        for(auto & str : text)
-        {
-            bool match = true;
-            for( auto & reg : regs )
-            {
-                if( ! std::regex_search(str, reg) )
-                {
-                    match = false;
-                    break;
-                }
-            }
-            if( match )
-            {
-                result.push_back( str );
-            }
-        }
-        return result;
-    }
-    void replace( std::list<std::string> & text, const char * rep)
-    {
-        if(rep != nullptr)
-        {
-            for(auto & str : text)
-            {
-                for( auto & reg : regs )
-                {
-                    str = std::regex_replace(str, reg, rep);
-                }
-            }
-        }
-    }
-    unsigned int select(const char * str)
-    {
-        unsigned int idx = 0;
-        for( auto & reg : regs )
-        {
-            if( std::regex_search(str, reg) ) { break; }
-            idx ++;
-        }
-        return idx;
-    }
-    std::list<std::string> split(std::string & org)
-    {
-        std::list<std::string> result;
-        result.push_back( org );
-        for( auto & reg : regs )
-        {
-            std::list<std::string> temp;
-            for( auto str : result )
-            {
-                for(auto & item : str_split(str, reg)) { temp.push_back(item); }
-            }
-            result.clear();
-            result = temp;
-        }
-        return result;
-    }
-};
-
-class WorkerThread
-{
-public:
-    enum Status
-    {
-        Stop,
-        Wakeup,
-        Run,
-        Wait,
-        WaitJoin
-    };
-protected:
-    enum Status             state;
-    std::thread             th_ctrl;
-    std::mutex              mtx;
-    std::condition_variable cond;
-    mrb_state *             mrb;
-    mrb_value               proc;
-public:
-    WorkerThread(void) : state(Stop), mrb(nullptr) { }
-    virtual ~WorkerThread(void)
-    {
-        std::lock_guard<std::mutex> lock(mtx);
-        if(nullptr != this->mrb)
-        {
-            mrb_close(this->mrb);
-            this->mrb = nullptr;
-        }
-    }
-    bool run(mrb_state * mrb, mrb_value self)
-    {
-        bool result = false;
-        std::unique_lock<std::mutex> lock(mtx);
-        if(nullptr == this->mrb)
-        {
-            this->mrb = mrb_open();
-            if(nullptr != this->mrb)
-            {
-                mrb_get_args(mrb, "&", &proc);
-                if (!mrb_nil_p(proc))
-                {
-                    result = true;
-                    state = Wakeup;
-                    std::thread temp(&WorkerThread::run_context, this, 0);
-                    th_ctrl.swap(temp);
-                    auto lamda = [this]
-                    {
-                        if(state == Wakeup) { return false; }
-                        return true;
-                    };
-                    state = Wakeup;
-                    cond.wait(lock, lamda);
-                }
-            }
-        }
-        lock.unlock();
-        return result;
-    }
-    void run_context(size_t id)
-    {
-        {
-            std::lock_guard<std::mutex> lock(mtx);
-            state = Run;
-            cond.notify_all();
-        }
-        mrb_yield_argv(mrb, proc, 0, NULL);
-        {
-            std::lock_guard<std::mutex> lock(mtx);
-            state = WaitJoin;
-            cond.notify_all();
-        }
-    }
-    void join(void)
-    {
-        auto lamda = [this]
-        {
-            switch(state)
-            {
-            case WaitJoin:
-            case Stop:
-                return true;
-            default:
-                break;
-            }
-            return false;
-        };
-        std::unique_lock<std::mutex> lock(mtx);
-        cond.wait(lock, lamda);
-        if(state == WaitJoin ) { th_ctrl.join(); }
-        state = Stop;
-        if(nullptr != this->mrb)
-        {
-            mrb_close(this->mrb);
-            this->mrb = nullptr;
-        }
-    }
-    enum Status get_state(void) const { return state;      }
-    void wait(mrb_state * mrb, mrb_value & proc)
-    {
-        auto lamda = [this, &mrb, &proc]
-        {
-            if(Stop == state)     { return true; }
-            if(WaitJoin == state) { return true; }
-            auto result = mrb_yield_argv(mrb, proc, 0, NULL);
-            if(mrb_bool(result))
-            {
-                state = Run;
-                return true;
-            }
-            state = Wait;
-            return false;
-        };
-        std::unique_lock<std::mutex> lock(mtx);
-        cond.wait(lock, lamda);
-    }
-    mrb_value notify(mrb_state * mrb, mrb_value & proc)
-    {
-        std::lock_guard<std::mutex> lock(mtx);
-        auto result = mrb_yield_argv(mrb, proc, 0, NULL);
-        cond.notify_all();
-        return result;
-    }
-    mrb_value sync(mrb_state * mrb, mrb_value & proc)
-    {
-        std::lock_guard<std::mutex> lock(mtx);
-        auto result = mrb_yield_argv(mrb, proc, 0, NULL);
-        return result;
-    }
-};
 
 class BinaryControl
 {
@@ -1354,6 +588,793 @@ public:
     }
 };
 
+
+/* class Options */
+static mrb_value mrb_opt_initialize(mrb_state * mrb, mrb_value self);
+static mrb_value mrb_opt_get(mrb_state * mrb, mrb_value self);
+static mrb_value mrb_opt_size(mrb_state * mrb, mrb_value self);
+
+/* class Core */
+static auto str_split = [](std::string & src, std::regex & reg)
+{
+    std::list<std::string> result;
+    std::copy( std::sregex_token_iterator{src.begin(), src.end(), reg, -1}, std::sregex_token_iterator{}, std::back_inserter(result) );
+    return result;
+};
+static mrb_value mrb_core_crc16(mrb_state* mrb, mrb_value self)
+{
+    static const unsigned short modbusCRC[256] =
+    {
+        0x0000, 0xC1C0, 0x81C1, 0x4001, 0x01C3, 0xC003, 0x8002, 0x41C2, 0x01C6, 0xC006, 0x8007, 0x41C7, 0x0005, 0xC1C5, 0x81C4,
+        0x4004, 0x01CC, 0xC00C, 0x800D, 0x41CD, 0x000F, 0xC1CF, 0x81CE, 0x400E, 0x000A, 0xC1CA, 0x81CB, 0x400B, 0x01C9, 0xC009,
+        0x8008, 0x41C8, 0x01D8, 0xC018, 0x8019, 0x41D9, 0x001B, 0xC1DB, 0x81DA, 0x401A, 0x001E, 0xC1DE, 0x81DF, 0x401F, 0x01DD,
+        0xC01D, 0x801C, 0x41DC, 0x0014, 0xC1D4, 0x81D5, 0x4015, 0x01D7, 0xC017, 0x8016, 0x41D6, 0x01D2, 0xC012, 0x8013, 0x41D3,
+        0x0011, 0xC1D1, 0x81D0, 0x4010, 0x01F0, 0xC030, 0x8031, 0x41F1, 0x0033, 0xC1F3, 0x81F2, 0x4032, 0x0036, 0xC1F6, 0x81F7,
+        0x4037, 0x01F5, 0xC035, 0x8034, 0x41F4, 0x003C, 0xC1FC, 0x81FD, 0x403D, 0x01FF, 0xC03F, 0x803E, 0x41FE, 0x01FA, 0xC03A,
+        0x803B, 0x41FB, 0x0039, 0xC1F9, 0x81F8, 0x4038, 0x0028, 0xC1E8, 0x81E9, 0x4029, 0x01EB, 0xC02B, 0x802A, 0x41EA, 0x01EE,
+        0xC02E, 0x802F, 0x41EF, 0x002D, 0xC1ED, 0x81EC, 0x402C, 0x01E4, 0xC024, 0x8025, 0x41E5, 0x0027, 0xC1E7, 0x81E6, 0x4026,
+        0x0022, 0xC1E2, 0x81E3, 0x4023, 0x01E1, 0xC021, 0x8020, 0x41E0, 0x01A0, 0xC060, 0x8061, 0x41A1, 0x0063, 0xC1A3, 0x81A2,
+        0x4062, 0x0066, 0xC1A6, 0x81A7, 0x4067, 0x01A5, 0xC065, 0x8064, 0x41A4, 0x006C, 0xC1AC, 0x81AD, 0x406D, 0x01AF, 0xC06F,
+        0x806E, 0x41AE, 0x01AA, 0xC06A, 0x806B, 0x41AB, 0x0069, 0xC1A9, 0x81A8, 0x4068, 0x0078, 0xC1B8, 0x81B9, 0x4079, 0x01BB,
+        0xC07B, 0x807A, 0x41BA, 0x01BE, 0xC07E, 0x807F, 0x41BF, 0x007D, 0xC1BD, 0x81BC, 0x407C, 0x01B4, 0xC074, 0x8075, 0x41B5,
+        0x0077, 0xC1B7, 0x81B6, 0x4076, 0x0072, 0xC1B2, 0x81B3, 0x4073, 0x01B1, 0xC071, 0x8070, 0x41B0, 0x0050, 0xC190, 0x8191,
+        0x4051, 0x0193, 0xC053, 0x8052, 0x4192, 0x0196, 0xC056, 0x8057, 0x4197, 0x0055, 0xC195, 0x8194, 0x4054, 0x019C, 0xC05C,
+        0x805D, 0x419D, 0x005F, 0xC19F, 0x819E, 0x405E, 0x005A, 0xC19A, 0x819B, 0x405B, 0x0199, 0xC059, 0x8058, 0x4198, 0x0188,
+        0xC048, 0x8049, 0x4189, 0x004B, 0xC18B, 0x818A, 0x404A, 0x004E, 0xC18E, 0x818F, 0x404F, 0x018D, 0xC04D, 0x804C, 0x418C,
+        0x0044, 0xC184, 0x8185, 0x4045, 0x0187, 0xC047, 0x8046, 0x4186, 0x0182, 0xC042, 0x8043, 0x4183, 0x0041, 0xC181, 0x8180,
+        0x4040
+    };
+    char * arg;
+    mrb_get_args(mrb, "z", &arg);
+    std::string data(arg);
+    auto max = data.size();
+    if(0 == (max % 2))
+    {
+        MyEntity::CalcCRC16 crc(modbusCRC);
+        for(unsigned int idx = 0; idx < max; idx += 2)
+        {
+            std::stringstream ss;
+            ss << std::hex << data.substr(idx, 2);
+            int val;
+            ss >> val;
+            crc << val;
+        }
+        char temp[5] = { 0 };
+        sprintf(temp, "%04X", *crc);
+        return mrb_str_new_cstr(mrb, temp);
+    }
+    return mrb_nil_value();
+}
+static mrb_value mrb_core_crc8(mrb_state* mrb, mrb_value self)
+{
+    static const unsigned char crctab8[16] = { 0x00,0x9B,0xAD,0x36,0xC1,0x5A,0x6C,0xF7,0x19,0x82,0xB4,0x2F,0xD8,0x43,0x75,0xEE };
+    char * arg;
+    mrb_get_args(mrb, "z", &arg);
+    std::string data(arg);
+    auto max = data.size();
+    if(0 == ( max % 2 ))
+    {
+        unsigned char crc = 0;
+        unsigned char high = 0;
+        for(unsigned int idx = 0; idx < max; idx += 2)
+        {
+            std::stringstream ss;
+            ss << std::hex << data.substr(idx, 2);
+            int val;
+            ss >> val;
+
+            unsigned char data = static_cast<unsigned char>(val);
+            high = crc >> 4;
+            crc <<= 4;
+            crc ^= crctab8[ high ^ (data >> 4) ];
+
+            high = crc >> 4;
+            crc <<= 4;
+            crc ^= crctab8[ high ^ (data & 0x0f) ];
+        }
+        char temp[3] = { 0 };
+        sprintf(temp, "%02x", crc);
+        return mrb_str_new_cstr(mrb, temp);
+    }
+    return mrb_nil_value();
+}
+static mrb_value mrb_core_sum(mrb_state* mrb, mrb_value self)
+{
+    char * arg;
+    mrb_get_args(mrb, "z", &arg);
+    std::string data(arg);
+    auto max = data.size();
+    if(0 == (max % 2))
+    {
+        unsigned char sum = 0;
+        for(unsigned int idx = 0; idx < max; idx += 2)
+        {
+            std::stringstream ss;
+            ss << std::hex << data.substr(idx, 2);
+            int val;
+            ss >> val;
+            sum ^= static_cast<unsigned char>(val);
+        }
+        char temp[3] = {0};
+        sprintf(temp, "%02x", sum);
+        return mrb_str_new_cstr(mrb, temp);
+    }
+    return mrb_nil_value();
+}
+static mrb_value mrb_core_float(mrb_state* mrb, mrb_value self)
+{
+    char * arg;
+    mrb_get_args(mrb, "z", &arg);
+    std::string data(arg);
+    if(8 == data.size())
+    {
+        union
+        {
+            float           f;
+            unsigned long   dword;
+        } fval;
+        fval.dword = 0;
+        unsigned char sum = 0;
+        for(unsigned int idx=0, max=data.size();idx<max; idx += 2)
+        {
+            std::stringstream ss;
+            ss << std::hex << data.substr(idx, 2);
+            int val;
+            ss >> val;
+            fval.dword <<= 8;
+            fval.dword |= static_cast<unsigned long>(val);
+        }
+        return mrb_float_value( mrb, fval.f );
+    }
+    return mrb_nil_value();
+}
+static mrb_value mrb_core_float_l(mrb_state* mrb, mrb_value self)
+{
+    char * arg;
+    mrb_get_args(mrb, "z", &arg);
+    std::string org_data(arg);
+    if(org_data.size() == 8)
+    {
+        std::string data("");
+        data  = org_data.substr(6, 2);
+        data += org_data.substr(4, 2);
+        data += org_data.substr(2, 2);
+        data += org_data.substr(0, 2);
+        union
+        {
+            float           f;
+            unsigned long   dword;
+        } fval;
+        fval.dword = 0;
+        unsigned char sum = 0;
+        for(unsigned int idx=0, max=data.size();idx<max; idx += 2)
+        {
+            std::stringstream ss;
+            ss << std::hex << data.substr(idx, 2);
+            int val;
+            ss >> val;
+            fval.dword <<= 8;
+            fval.dword |= static_cast<unsigned long>(val);
+        }
+        return mrb_float_value( mrb, fval.f );
+    }
+    return mrb_nil_value();
+}
+static mrb_value mrb_core_to_hex(mrb_state* mrb, mrb_value self)
+{
+    union
+    {
+        float       f;
+        mrb_int     val;
+        uint8_t     data[4];
+        uint16_t    data16[2];
+        uint32_t    data32;
+    } num;
+    char str_data[8+1];
+    char * type_ptr;
+    mrb_get_args(mrb, "zi", &type_ptr, &num);
+    std::string type(type_ptr);
+    if(("int16" == type) || ("uint16" == type))
+    {
+        sprintf(str_data, "%04X", num.data16[0]);
+        return mrb_str_new_cstr( mrb, str_data );
+    }
+    if("float" == type)
+    {
+        mrb_float mrb_f;
+        mrb_get_args(mrb, "zf", &type_ptr, &mrb_f);
+        num.f = mrb_f;
+    }
+    sprintf(str_data, "%08X", num.data32);
+    return mrb_str_new_cstr( mrb, str_data );
+}
+static mrb_value mrb_core_reg_match(mrb_state* mrb, mrb_value self)
+{
+    char * org_ptr, * reg_ptr;
+    mrb_get_args(mrb, "zz", &org_ptr, &reg_ptr);
+    if( std::regex_search(org_ptr, std::regex(reg_ptr)))
+    {
+        return mrb_bool_value(true);
+    }
+    return mrb_bool_value(false);
+}
+static mrb_value mrb_core_reg_replace(mrb_state* mrb, mrb_value self)
+{
+    char * org_ptr, * reg_ptr, * rep_ptr;
+    mrb_get_args(mrb, "zzz", &org_ptr, &reg_ptr, &rep_ptr);
+    auto result = std::regex_replace(org_ptr, std::regex(reg_ptr), rep_ptr);
+    return mrb_str_new_cstr( mrb, result.c_str() );
+}
+static mrb_value mrb_core_split(mrb_state* mrb, mrb_value self)
+{
+    mrb_value arry = mrb_ary_new(mrb);
+    char * arg_str, * arg_reg;
+    mrb_get_args(mrb, "zz", &arg_str, &arg_reg);
+    std::string str(arg_str);
+    std::regex  reg(arg_reg);
+    for(auto && str : str_split(str, reg))
+    {
+        mrb_ary_push(mrb, arry , mrb_str_new_cstr(mrb, str.c_str()));
+    }
+    return arry;
+}
+static mrb_value mrb_core_gets(mrb_state* mrb, mrb_value self);
+static mrb_value mrb_core_exists(mrb_state* mrb, mrb_value self)
+{
+    char * arg;
+    mrb_get_args(mrb, "z", &arg);
+    return mrb_bool_value(std::filesystem::exists(arg));
+}
+static mrb_value mrb_core_file_timestamp(mrb_state* mrb, mrb_value self)
+{
+    char * arg;
+    mrb_get_args(mrb, "z", &arg);
+#if 0
+    std::filesystem::path path(arg);
+    auto ftime = std::filesystem::last_write_time(path);
+    auto time = ( std::chrono::duration_cast<std::chrono::seconds>(ftime.time_since_epoch()) ).count();
+    const std::tm * ltime = std::localtime(&time);
+    std::ostringstream timestamp;
+    timestamp << std::put_time(ltime, "%c");
+    return mrb_str_new_cstr( mrb, (timestamp.str()).c_str() );
+#else
+    boost::filesystem::path path(arg);
+    auto ftime = boost::filesystem::last_write_time(path);
+    std::ostringstream timestamp;
+    timestamp << ctime(&ftime);
+    return mrb_str_new_cstr( mrb, (timestamp.str()).c_str() );
+#endif
+}
+static mrb_value mrb_core_comlist(mrb_state* mrb, mrb_value self)
+{
+    mrb_value arry = mrb_ary_new(mrb);
+    ComList com;
+    std::list<std::string> list = com.ref();
+    mrb_int argc;
+    mrb_value * argv;
+    mrb_get_args(mrb, "*", &argv, &argc);
+    switch(argc)
+    {
+    case 1:
+        switch(mrb_type(argv[0]))
+        {
+        case MRB_TT_STRING:
+            {
+                std::regex reg(RSTR_PTR(mrb_str_ptr(argv[0])));
+                for(auto & str : list)
+                {
+                    if( std::regex_search(str, reg) ) { mrb_ary_push(mrb, arry , mrb_str_new_cstr(mrb, str.c_str())); }
+                }
+            }
+            break;
+        case MRB_TT_ARRAY:
+            {
+                std::list<std::regex> regs;
+                mrb_value item;
+                while( !mrb_nil_p( item = mrb_ary_shift(mrb, argv[0])) )
+                {
+                    if(MRB_TT_STRING == mrb_type(item))
+                    {
+                        char * c_str = RSTR_PTR(mrb_str_ptr(item));
+                        std::string reg_str(c_str);
+                        regs.push_back(std::regex(reg_str, std::regex_constants::icase));
+                    }
+                }
+                list.sort();
+                for(auto & str : list)
+                {
+                    bool match = true;
+                    for(auto reg : regs) { if( !std::regex_search(str, reg) ) { match = false; break;; } }
+                    if( match ) { mrb_ary_push(mrb, arry , mrb_str_new_cstr(mrb, str.c_str())); }
+                }
+            }
+            break;
+        default:
+            break;
+        }
+        break;
+    case 2:
+        if(  (MRB_TT_INTEGER == mrb_type(argv[0]))
+           &&(MRB_TT_ARRAY   == mrb_type(argv[1])))
+        {
+            auto cnt = mrb_integer(argv[0]);
+            std::list<std::regex> regs;
+            mrb_value item;
+            while( !mrb_nil_p( item = mrb_ary_shift(mrb, argv[1])) )
+            {
+                if(MRB_TT_STRING == mrb_type(item))
+                {
+                    char * c_str = RSTR_PTR(mrb_str_ptr(item));
+                    std::string reg_str(c_str);
+                    regs.push_back(std::regex(reg_str, std::regex_constants::icase));
+                }
+            }
+            list.sort();
+            for(auto & str : list)
+            {
+                if( cnt <= 0) break;
+                bool match = true;
+                for(auto & reg : regs) { if( !std::regex_search(str, reg) ) { match = false; break;; } }
+                if( match ) { mrb_ary_push(mrb, arry , mrb_str_new_cstr(mrb, str.c_str())); cnt --; }
+            }
+        }
+        break;
+    default:
+        for(auto & str : list)
+        {
+            mrb_ary_push(mrb, arry , mrb_str_new_cstr(mrb, str.c_str()));
+        }
+        break;
+    }
+    return arry ;
+}
+static mrb_value mrb_core_pipelist(mrb_state* mrb, mrb_value self)
+{
+    mrb_value arry = mrb_ary_new(mrb);
+    PipeList pipe;
+    std::list<std::string> list = pipe.ref();
+    mrb_int argc;
+    mrb_value * argv;
+    mrb_get_args(mrb, "*", &argv, &argc);
+    switch(argc)
+    {
+    case 1:
+        switch(mrb_type(argv[0]))
+        {
+        case MRB_TT_STRING:
+            {
+                std::regex reg(RSTR_PTR(mrb_str_ptr(argv[0])));
+                for(auto & str : list)
+                {
+                    if( std::regex_search(str, reg) ) { mrb_ary_push(mrb, arry , mrb_str_new_cstr(mrb, str.c_str())); }
+                }
+            }
+            break;
+        case MRB_TT_ARRAY:
+            {
+                std::list<std::regex> regs;
+                mrb_value item;
+                while( !mrb_nil_p( item = mrb_ary_shift(mrb, argv[0])) )
+                {
+                    if(MRB_TT_STRING == mrb_type(item))
+                    {
+                        char * c_str = RSTR_PTR(mrb_str_ptr(item));
+                        std::string reg_str(c_str);
+                        regs.push_back(std::regex(reg_str, std::regex_constants::icase));
+                    }
+                }
+                list.sort();
+                for(auto & str : list)
+                {
+                    bool match = true;
+                    for(auto reg : regs) { if( !std::regex_search(str, reg) ) { match = false; break;; } }
+                    if( match ) { mrb_ary_push(mrb, arry , mrb_str_new_cstr(mrb, str.c_str())); }
+                }
+            }
+            break;
+        default:
+            break;
+        }
+        break;
+    case 2:
+        if(  (MRB_TT_INTEGER == mrb_type(argv[0]))
+           &&(MRB_TT_ARRAY   == mrb_type(argv[1])))
+        {
+            auto cnt = mrb_integer(argv[0]);
+            std::list<std::regex> regs;
+            mrb_value item;
+            while( !mrb_nil_p( item = mrb_ary_shift(mrb, argv[1])) )
+            {
+                if(MRB_TT_STRING == mrb_type(item))
+                {
+                    char * c_str = RSTR_PTR(mrb_str_ptr(item));
+                    std::string reg_str(c_str);
+                    regs.push_back(std::regex(reg_str, std::regex_constants::icase));
+                }
+            }
+            list.sort();
+            for(auto & str : list)
+            {
+                if( cnt <= 0) break;
+                bool match = true;
+                for(auto & reg : regs) { if( !std::regex_search(str, reg) ) { match = false; break;; } }
+                if( match ) { mrb_ary_push(mrb, arry , mrb_str_new_cstr(mrb, str.c_str())); cnt --; }
+            }
+        }
+        break;
+    default:
+        for(auto & str : list)
+        {
+            mrb_ary_push(mrb, arry , mrb_str_new_cstr(mrb, str.c_str()));
+        }
+        break;
+    }
+    return arry ;
+}
+static std::string makeQRsvg(const std::string & arg)
+{
+    const char *text = arg.c_str();
+    const qrcodegen::QrCode::Ecc errCorLvl = qrcodegen::QrCode::Ecc::LOW;
+    const qrcodegen::QrCode qr = qrcodegen::QrCode::encodeText(text, errCorLvl);
+    int border = 4;
+    if((border * 2) > INT_MAX - qr.getSize())
+    {
+        throw std::overflow_error("Border too large");
+    }
+    std::ostringstream sb;
+    sb << "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n";
+    sb << "<!DOCTYPE svg PUBLIC \"-//W3C//DTD SVG 1.1//EN\" \"http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd\">\n";
+    sb << "<svg xmlns=\"http://www.w3.org/2000/svg\" version=\"1.1\" viewBox=\"0 0 ";
+    sb << (qr.getSize() + border * 2) << " " << (qr.getSize() + border * 2) << "\" stroke=\"none\">\n";
+    sb << "  <rect width=\"100%\" height=\"100%\" fill=\"#FFFFFF\"/>\n";
+    sb << "  <path d=\"";
+    for(int y = 0; y < qr.getSize(); y++)
+    {
+        for(int x = 0; x < qr.getSize(); x++)
+        {
+            if(qr.getModule(x, y))
+            {
+                if(x != 0 || y != 0) { sb << " "; }
+                sb << "M" << (x + border) << "," << (y + border) << "h1v1h-1z";
+            }
+        }
+    }
+    sb << "\" fill=\"#000000\"/>\n";
+    sb << "</svg>\n";
+    return sb.str();
+}
+static mrb_value mrb_core_make_qr(mrb_state* mrb, mrb_value self)
+{
+    char * mruby_arg;
+    mrb_get_args(mrb, "z", &mruby_arg);
+    std::string arg(mruby_arg);
+    if(0 < arg.size())
+    {
+        auto qr_code = makeQRsvg(arg);
+        return mrb_str_new_cstr(mrb, qr_code.c_str());
+    }
+    return mrb_nil_value();
+}
+
+
+/* class CppRegexp */
+static mrb_value mrb_cppregexp_initialize(mrb_state * mrb, mrb_value self);
+static mrb_value mrb_cppregexp_length(mrb_state * mrb, mrb_value self);
+static mrb_value mrb_cppregexp_match(mrb_state * mrb, mrb_value self);
+static mrb_value mrb_cppregexp_grep(mrb_state * mrb, mrb_value self);
+static mrb_value mrb_cppregexp_replace(mrb_state * mrb, mrb_value self);
+static mrb_value mrb_cppregexp_select(mrb_state * mrb, mrb_value self);
+static mrb_value mrb_cppregexp_split(mrb_state * mrb, mrb_value self);
+static void mrb_regexp_context_free(mrb_state * mrb, void * ptr);
+
+/* class thread */
+static mrb_value mrb_thread_initialize(mrb_state * mrb, mrb_value self);
+static mrb_value mrb_thread_run(mrb_state * mrb, mrb_value self);
+static mrb_value mrb_thread_join(mrb_state * mrb, mrb_value self);
+static mrb_value mrb_thread_is_run(mrb_state * mrb, mrb_value self);
+static mrb_value mrb_thread_state(mrb_state * mrb, mrb_value self);
+static mrb_value mrb_thread_sync(mrb_state * mrb, mrb_value self);
+static mrb_value mrb_thread_wait(mrb_state * mrb, mrb_value self);
+static mrb_value mrb_thread_notify(mrb_state * mrb, mrb_value self);
+static mrb_value mrb_thread_stop(mrb_state * mrb, mrb_value self);
+static mrb_value mrb_thread_ms_sleep(mrb_state * mrb, mrb_value self)
+{
+    mrb_int tick;
+    mrb_get_args(mrb, "i", &tick);
+    std::this_thread::sleep_for(std::chrono::milliseconds(tick));
+    return mrb_nil_value();
+}
+static void mrb_thread_context_free(mrb_state * mrb, void * ptr);
+
+/* class SerialMonitor */
+static mrb_value mrb_smon_initialize(mrb_state * mrb, mrb_value self);
+static mrb_value mrb_smon_wait(mrb_state * mrb, mrb_value self);
+static mrb_value mrb_smon_send(mrb_state * mrb, mrb_value self);
+static mrb_value mrb_smon_close(mrb_state * mrb, mrb_value self);
+static void mrb_smon_context_free(mrb_state * mrb, void * ptr);
+
+/* class OpenXLSX */
+static mrb_value mrb_xlsx_initialize(mrb_state * mrb, mrb_value self);
+static mrb_value mrb_xlsx_create(mrb_state * mrb, mrb_value self);
+static mrb_value mrb_xlsx_open(mrb_state * mrb, mrb_value self);
+static mrb_value mrb_xlsx_worksheet(mrb_state * mrb, mrb_value self);
+static mrb_value mrb_xlsx_sheet_names(mrb_state * mrb, mrb_value self);
+static mrb_value mrb_xlsx_set_seet_name(mrb_state * mrb, mrb_value self);
+static mrb_value mrb_xlsx_set_value(mrb_state * mrb, mrb_value self);
+static mrb_value mrb_xlsx_cell(mrb_state * mrb, mrb_value self);
+static mrb_value mrb_xlsx_save(mrb_state * mrb, mrb_value self);
+static void mrb_xlsx_context_free(mrb_state * mrb, void * ptr);
+
+/* class BinEdit */
+static mrb_value mrb_bedit_initialize(mrb_state * mrb, mrb_value self);
+static mrb_value mrb_bedit_length(mrb_state * mrb, mrb_value self);
+static mrb_value mrb_bedit_save(mrb_state * mrb, mrb_value self);
+static mrb_value mrb_bedit_memset(mrb_state * mrb, mrb_value self);
+static mrb_value mrb_bedit_memcpy(mrb_state * mrb, mrb_value self);
+static mrb_value mrb_bedit_write(mrb_state * mrb, mrb_value self);
+static mrb_value mrb_bedit_dump(mrb_state * mrb, mrb_value self);
+static mrb_value mrb_bedit_get(mrb_state * mrb, mrb_value self);
+static mrb_value mrb_bedit_set(mrb_state * mrb, mrb_value self);
+static mrb_value mrb_bedit_pos(mrb_state * mrb, mrb_value self);
+static mrb_value mrb_bedit_compress(mrb_state * mrb, mrb_value self);
+static mrb_value mrb_bedit_uncompress(mrb_state * mrb, mrb_value self);
+static void mrb_bedit_context_free(mrb_state * mrb, void * ptr);
+static const struct mrb_data_type mrb_bedit_context_type = { "mrb_open_bedit_context", mrb_bedit_context_free, };
+
+
+/* class */
+class CppRegexp
+{
+private:
+    std::vector<std::regex> regs;
+public:
+    virtual ~CppRegexp(void) {}
+    CppRegexp(const char * str)
+    {
+        std::regex reg(str);
+        regs.push_back(reg);
+    }
+    CppRegexp(const std::list<std::string> & arg)
+    {
+        for(auto & str : arg)
+        {
+            std::regex reg(str);
+            regs.push_back(reg);
+        }
+    }
+    unsigned int length(void) { return regs.size(); }
+    bool match(const std::string & str)
+    {
+        for( auto & reg : regs )
+        {
+            if( std::regex_search(str, reg) ) { return true; }
+        }
+        return false;
+    }
+    std::list<std::string> match(std::list<std::string> & text)
+    {
+        std::list<std::string> result;
+        for(auto & str : text)
+        {
+            if( match( str ) )
+            {
+                result.push_back( str );
+            }
+        }
+        return result;
+    }
+    std::list<std::string> grep( std::list<std::string> & text )
+    {
+        std::list<std::string> result;
+        for(auto & str : text)
+        {
+            bool match = true;
+            for( auto & reg : regs )
+            {
+                if( ! std::regex_search(str, reg) )
+                {
+                    match = false;
+                    break;
+                }
+            }
+            if( match )
+            {
+                result.push_back( str );
+            }
+        }
+        return result;
+    }
+    void replace( std::list<std::string> & text, const char * rep)
+    {
+        if(rep != nullptr)
+        {
+            for(auto & str : text)
+            {
+                for( auto & reg : regs )
+                {
+                    str = std::regex_replace(str, reg, rep);
+                }
+            }
+        }
+    }
+    unsigned int select(const char * str)
+    {
+        unsigned int idx = 0;
+        for( auto & reg : regs )
+        {
+            if( std::regex_search(str, reg) ) { break; }
+            idx ++;
+        }
+        return idx;
+    }
+    std::list<std::string> split(std::string & org)
+    {
+        std::list<std::string> result;
+        result.push_back( org );
+        for( auto & reg : regs )
+        {
+            std::list<std::string> temp;
+            for( auto str : result )
+            {
+                for(auto & item : str_split(str, reg)) { temp.push_back(item); }
+            }
+            result.clear();
+            result = temp;
+        }
+        return result;
+    }
+};
+
+class WorkerThread
+{
+public:
+    enum Status
+    {
+        Stop,
+        Wakeup,
+        Run,
+        Wait,
+        WaitJoin
+    };
+protected:
+    enum Status             state;
+    std::thread             th_ctrl;
+    std::mutex              mtx;
+    std::condition_variable cond;
+    mrb_state *             mrb;
+    mrb_value               proc;
+public:
+    WorkerThread(void) : state(Stop), mrb(nullptr) { }
+    virtual ~WorkerThread(void)
+    {
+        std::lock_guard<std::mutex> lock(mtx);
+        if(nullptr != this->mrb)
+        {
+            mrb_close(this->mrb);
+            this->mrb = nullptr;
+        }
+    }
+    bool run(mrb_state * mrb, mrb_value self)
+    {
+        bool result = false;
+        std::unique_lock<std::mutex> lock(mtx);
+        if(nullptr == this->mrb)
+        {
+                mrb_get_args(mrb, "&", &proc);
+                if (!mrb_nil_p(proc))
+                {
+                    result = true;
+                    state = Wakeup;
+                    std::thread temp(&WorkerThread::run_context, this, 0);
+                    th_ctrl.swap(temp);
+                    auto lamda = [this]
+                    {
+                        if(state == Wakeup) { return false; }
+                        return true;
+                    };
+                    state = Wakeup;
+                    cond.wait(lock, lamda);
+                }
+        }
+        lock.unlock();
+        return result;
+    }
+    void run_context(size_t id)
+    {
+        {
+            std::lock_guard<std::mutex> lock(mtx);
+            this->mrb = mrb_open();
+            if(nullptr != this->mrb)
+            {
+                state = Run;
+                cond.notify_all();
+            }
+        }
+        while(Run == state)
+        {
+            mrb_yield_argv(mrb, proc, 0, NULL);
+        }
+        std::lock_guard<std::mutex> lock(mtx);
+        if(nullptr != this->mrb)
+        {
+            mrb_close(this->mrb);
+            this->mrb = nullptr;
+        }
+        state = Stop;
+    }
+    void join(void)
+    {
+        bool check = false;
+        {
+            std::lock_guard<std::mutex> lock(mtx);
+            if(state != Stop ) { check = true; }
+        }
+        if(check) { th_ctrl.join(); }
+    }
+    enum Status get_state(void) const { return state; }
+    void wait(mrb_state * mrb)
+    {
+        auto lamda = [this, &mrb]
+        {
+            switch(state)
+            {
+            case Run:
+                return true;
+                break;
+            case Stop:
+                return true;
+                break;
+            default:
+                break;
+            }
+            return false;
+        };
+        std::unique_lock<std::mutex> lock(mtx);
+        state = Wait;
+        cond.wait(lock, lamda);
+        lock.unlock();
+    }
+    void notify(mrb_state * mrb)
+    {
+        std::lock_guard<std::mutex> lock(mtx);
+        state = Run;
+        cond.notify_all();
+    }
+    mrb_value notify(mrb_state * mrb, mrb_value & proc)
+    {
+        std::lock_guard<std::mutex> lock(mtx);
+        auto result = mrb_yield_argv(mrb, proc, 0, NULL);
+        state = Run;
+        cond.notify_all();
+        return result;
+    }
+    mrb_value sync(mrb_state * mrb, mrb_value & proc)
+    {
+        std::lock_guard<std::mutex> lock(mtx);
+        auto result = mrb_yield_argv(mrb, proc, 0, NULL);
+        return result;
+    }
+    void stop(mrb_state * mrb)
+    {
+        std::lock_guard<std::mutex> lock(mtx);
+        switch(state)
+        {
+        case Wakeup:
+        case Run:
+        case Wait:
+            state = WaitJoin;
+            break;
+        case WaitJoin:
+            break;
+        case Stop:
+        default:
+            state = Stop;
+            break;
+        }
+        cond.notify_all();
+    }
+};
+
 class SerialMonitor : public MyEntity::TimerHandler
 {
 public:
@@ -1372,6 +1393,7 @@ public:
         enum State      state;
         unsigned int    cnt;
         unsigned char * buff;
+        unsigned char * prev;
     };
 protected:
     std::string                              arg;
@@ -1508,7 +1530,7 @@ public:
     }
     SerialMonitor::State recive_wait(std::string & data)
     {
-        ReciveInfo rcv_info = { NONE, 0, nullptr };
+        ReciveInfo rcv_info = { NONE, 0, nullptr, nullptr };
         auto lamda = [this, &rcv_info]
         {
             if(cache.state == CLOSE)
@@ -2021,9 +2043,9 @@ public:
         {
             "mrb_cpp_thread_context", mrb_thread_context_free,
         };
-        mrb_value       proc = mrb_nil_value();
-        mrb_int         argc;
-        mrb_value *     argv;
+        mrb_value   proc = mrb_nil_value();
+        mrb_int     argc;
+        mrb_value * argv;
         mrb_get_args(mrb, "&*", &proc, &argv, &argc);
         WorkerThread * th_ctrl = new WorkerThread();
         mrb_data_init(self, th_ctrl, &mrb_thread_context_type);
@@ -2066,15 +2088,10 @@ public:
     }
     mrb_value thread_wait(mrb_state * mrb, mrb_value self)
     {
-        mrb_value proc = mrb_nil_value();
-        mrb_get_args(mrb, "&", &proc);
-        if (!mrb_nil_p(proc))
+        WorkerThread * th_ctrl = static_cast<WorkerThread *>(DATA_PTR(self));
+        if(nullptr != th_ctrl)
         {
-            WorkerThread * th_ctrl = static_cast<WorkerThread *>(DATA_PTR(self));
-            if(nullptr != th_ctrl)
-            {
-                th_ctrl->wait(mrb, proc);
-            }
+            th_ctrl->wait(mrb);
         }
         return mrb_nil_value();
     }
@@ -2084,11 +2101,21 @@ public:
         mrb_get_args(mrb, "&", &proc);
         if (!mrb_nil_p(proc))
         {
-            WorkerThread * th_ctrl = static_cast<WorkerThread *>(DATA_PTR(self));
+            WorkerThread * th_ctrl = static_cast<WorkerThread * >(DATA_PTR(self));
             if(nullptr != th_ctrl)
             {
-                th_ctrl->notify(mrb, proc);
+                auto result = th_ctrl->notify(mrb, proc);
+                return result;
             }
+        }
+        return mrb_nil_value();
+    }
+    mrb_value thread_stop(mrb_state * mrb, mrb_value self)
+    {
+        WorkerThread * th_ctrl = static_cast<WorkerThread *>(DATA_PTR(self));
+        if(nullptr != th_ctrl)
+        {
+            th_ctrl->stop(mrb);
         }
         return mrb_nil_value();
     }
@@ -2169,21 +2196,18 @@ public:
     }
     mrb_value smon_send(mrb_state * mrb, mrb_value self)
     {
-        SerialMonitor * smon = static_cast<SerialMonitor *>(DATA_PTR(self));
-        if(nullptr != smon)
+        SerialMonitor * smon = static_cast<SerialMonitor *>(DATA_PTR(self)); if(nullptr != smon)
         {
             char *      msg   = nullptr;
             mrb_int     timer = 0;
             mrb_int     argc;
             mrb_value * argv;
-            mrb_get_args(mrb, "*", &argv, &argc);
-            switch(argc)
+            mrb_get_args(mrb, "*", &argv, &argc); switch(argc)
             {
             case 1:
                 if(MRB_TT_STRING == mrb_type(argv[0]))
                 {
-                    struct RString * str = mrb_str_ptr(argv[0]);
-                    msg = RSTR_PTR(str);
+                    struct RString * str = mrb_str_ptr(argv[0]); msg = RSTR_PTR(str);
                 }
                 else
                 {
@@ -2903,6 +2927,7 @@ public:
             mrb_define_method( mrb, thread_class, "wait",               mrb_thread_wait,        MRB_ARGS_NONE()         );
             mrb_define_method( mrb, thread_class, "synchronize",        mrb_thread_sync,        MRB_ARGS_NONE()         );
             mrb_define_method( mrb, thread_class, "notify",             mrb_thread_notify,      MRB_ARGS_NONE()         );
+            mrb_define_method( mrb, thread_class, "stop",               mrb_thread_stop,        MRB_ARGS_NONE()         );
 
             /* Class BinEdit */
             struct RClass * bedit_class = mrb_define_class_under( mrb, mrb->kernel_module, "BinEdit", mrb->object_class );
@@ -3003,6 +3028,7 @@ mrb_value mrb_thread_state(mrb_state * mrb, mrb_value self)         { auto resul
 mrb_value mrb_thread_join(mrb_state * mrb, mrb_value self)          { auto result = (Application::getObject())->thread_join(mrb, self);  mrb_garbage_collect(mrb);  return result; }
 mrb_value mrb_thread_wait(mrb_state * mrb, mrb_value self)          { auto result = (Application::getObject())->thread_wait(mrb, self);  mrb_garbage_collect(mrb);  return result; }
 mrb_value mrb_thread_notify(mrb_state * mrb, mrb_value self)        { auto result = (Application::getObject())->thread_notiry(mrb, self);                           return result; }
+mrb_value mrb_thread_stop(mrb_state * mrb, mrb_value self)          { auto result = (Application::getObject())->thread_stop(mrb, self);                             return result; }
 mrb_value mrb_thread_sync(mrb_state * mrb, mrb_value self)          { auto result = (Application::getObject())->thread_sync(mrb, self);                             return result; }
 
 mrb_value mrb_smon_initialize(mrb_state * mrb, mrb_value self)      { auto result = (Application::getObject())->smon_init(mrb, self);                               return result; }

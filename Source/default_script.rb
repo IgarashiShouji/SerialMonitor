@@ -1,3 +1,5 @@
+# default script
+
 opts = Args.new()
 if 0 < opts.size() then
   th_prn = WorkerThread.new

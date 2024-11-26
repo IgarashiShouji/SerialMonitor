@@ -11,28 +11,22 @@ end
 def test_thead_1
   print "thread test 1\n"
   list = Array.new
-  th = WorkerThread.new
-  th.run do
-    print "  run thrad\n"
-    th.notify do
-      print "  nofit \n"
-      list.push(1) 
-      print "  nofity end\n"
+  th1 = WorkerThread.new
+  th1.run do
+    print "  run thread\n"
+    th1.wait()
+    th1.synchronize do
+      print "  list.pop: ", list.pop(), "\n"
     end
-    print "  run thrad end\n"
+    th1.stop()
+    print "  run thread end\n"
   end
-
-  th.wait do
-    print "  wait\n"
-    if( 0 < list.length ) then
-      print "  wait true\n"
-      return true;
-    end
-    print "  wait false\n"
-    return false;
+  print "  notify \n"
+  th1.notify do
+    list.push(1)
   end
   print "  thread join\n"
-  th.join
+  th1.join
   print "thead test 1 end\n"
 end
 
