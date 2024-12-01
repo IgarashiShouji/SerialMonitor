@@ -1,8 +1,6 @@
 def testCreateSpradSheet(fname)
   xls = OpenXLSX.new
-  th  = WorkerThread.new
   if !Core.exists(fname) then
-    th.run do
       xls.create(fname) do
         xls.sheet("Sheet1") do
           xls.setSheetName("test sheet 1")
@@ -16,9 +14,7 @@ def testCreateSpradSheet(fname)
           xls.set_value('A5', 10.1)
         end
       end
-    end
   end
-  th.join
 end
 def testReadSpradSheet(fname)
   xls = OpenXLSX.new

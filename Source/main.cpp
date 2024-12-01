@@ -724,6 +724,7 @@ static mrb_value mrb_core_float(mrb_state* mrb, mrb_value self)
             fval.dword <<= 8;
             fval.dword |= static_cast<unsigned long>(val);
         }
+printf("igarashi: 0x%08x\n", fval.dword);
         return mrb_float_value( mrb, fval.f );
     }
     return mrb_nil_value();
@@ -1628,16 +1629,16 @@ public:
         String
     };
 protected:
-    OpenXLSX::XLDocument  xlsx;
+    OpenXLSX::XLDocument  doc;
     OpenXLSX::XLWorkbook  book;
     OpenXLSX::XLWorksheet sheet;
 
 public:
     OpenXLSXCtrl(void)          { }
     virtual ~OpenXLSXCtrl(void) { }
-    void create(const std::string & fname)           { xlsx.create(fname, true);     }
-    void open(const std::string & fname)             { xlsx.open(fname);             }
-    void workbook(void)                              { book = xlsx.workbook();       }
+    void create(const std::string & fname)           { doc.create(fname, true);     }
+    void open(const std::string & fname)             { doc.open(fname);             }
+    void workbook(void)                              { book = doc.workbook();       }
     std::vector<std::string> getWorkSheetNames(void) { return book.worksheetNames(); }
     void worksheet(char * sheet_name)
     {
@@ -1687,8 +1688,8 @@ public:
         }
         return Error;
     }
-    void save(void)  { xlsx.save();  }
-    void close(void) { xlsx.close(); }
+    void save(void)  { doc.save();  }
+    void close(void) { doc.close(); }
 };
 
 class Application
@@ -2043,9 +2044,7 @@ public:
         {
             "mrb_cpp_thread_context", mrb_thread_context_free,
         };
-        mrb_value   proc = mrb_nil_value();
-        mrb_int     argc;
-        mrb_value * argv;
+        mrb_value proc; mrb_int argc; mrb_value * argv;
         mrb_get_args(mrb, "&*", &proc, &argv, &argc);
         WorkerThread * th_ctrl = new WorkerThread();
         mrb_data_init(self, th_ctrl, &mrb_thread_context_type);
@@ -2053,8 +2052,7 @@ public:
     }
     mrb_value thread_run(mrb_state * mrb, mrb_value self)
     {
-        mrb_value ret  = mrb_nil_value();
-        mrb_value proc = mrb_nil_value();
+        mrb_value proc;
         mrb_get_args(mrb, "&", &proc);
         if (!mrb_nil_p(proc))
         {
@@ -2064,21 +2062,19 @@ public:
                 th_ctrl->run(mrb, self);
             }
         }
-        return ret;
+        return mrb_nil_value();
     }
     mrb_value thread_join(mrb_state * mrb, mrb_value self)
     {
-        mrb_value ret = mrb_nil_value();
         WorkerThread * th_ctrl = static_cast<WorkerThread *>(DATA_PTR(self));
         if(nullptr != th_ctrl)
         {
             th_ctrl->join();
         }
-        return ret;
+        return mrb_nil_value();
     }
     mrb_value thread_state(mrb_state * mrb, mrb_value self)
     {
-        mrb_value ret = mrb_nil_value();
         WorkerThread * th_ctrl = static_cast<WorkerThread *>(DATA_PTR(self));
         if(nullptr != th_ctrl)
         {
@@ -2188,8 +2184,7 @@ public:
                      break;
                 }
                 std::lock_guard<std::mutex> lock(com_wait_mtx);
-                auto ret = mrb_yield_argv(mrb, proc, 2, &(argv[0]));
-                return ret;
+                return mrb_yield_argv(mrb, proc, 2, &(argv[0]));
             }
         }
         return mrb_nil_value();
@@ -2273,32 +2268,34 @@ public:
     }
     mrb_value xlsx_create(mrb_state * mrb, mrb_value self)
     {
-        mrb_int argc;
-        mrb_value * argv;
-        mrb_value proc = mrb_nil_value();
+        mrb_value proc; mrb_int argc; mrb_value * argv;
         mrb_get_args(mrb, "&*", &proc, &argv, &argc);
-        if((1 == argc) && (!mrb_nil_p(proc)))
+        switch(argc)
         {
-            OpenXLSXCtrl * xlsx = static_cast<OpenXLSXCtrl *>(DATA_PTR(self));
-            if(nullptr != xlsx)
+        case 1:
+            if( !mrb_nil_p(proc) )
             {
-                struct RString * s = mrb_str_ptr(argv[0]);
-                std::string fname(RSTR_PTR(s));
-                xlsx->create(fname);
-                xlsx->workbook();
-                mrb_value ret = mrb_yield_argv(mrb, proc, 0, nullptr);
-                xlsx->save();
-                xlsx->close();
-                return ret;
+                OpenXLSXCtrl * xlsx = static_cast<OpenXLSXCtrl *>(DATA_PTR(self));
+                if(nullptr != xlsx)
+                {
+                    std::string fname( RSTR_PTR( mrb_str_ptr( argv[0] ) ) );
+                    xlsx->create(fname);
+                    xlsx->workbook();
+                    mrb_value ret = mrb_yield_argv(mrb, proc, 0, nullptr);
+                    xlsx->save();
+                    xlsx->close();
+                    return ret;
+                }
             }
+            break;
+        default:
+            break;
         }
         return mrb_nil_value();
     }
     mrb_value xlsx_open(mrb_state * mrb, mrb_value self)
     {
-        mrb_int argc;
-        mrb_value * argv;
-        mrb_value proc = mrb_nil_value();
+        mrb_value proc; mrb_int argc; mrb_value * argv;
         mrb_get_args(mrb, "&*", &proc, &argv, &argc);
         if((1 == argc) && (!mrb_nil_p(proc)))
         {
@@ -2318,9 +2315,7 @@ public:
     }
     mrb_value xlsx_worksheet(mrb_state * mrb, mrb_value self)
     {
-        mrb_int argc;
-        mrb_value * argv;
-        mrb_value proc = mrb_nil_value();
+        mrb_value proc; mrb_int argc; mrb_value * argv;
         mrb_get_args(mrb, "&*", &proc, &argv, &argc);
         if((1 == argc) && (!mrb_nil_p(proc)))
         {
@@ -2329,8 +2324,7 @@ public:
             {
                 struct RString * sheet_name = mrb_str_ptr(argv[0]);
                 xlsx->worksheet(RSTR_PTR(sheet_name ));
-                mrb_value ret = mrb_yield_argv(mrb, proc, 0, nullptr);
-                return ret;
+                return mrb_yield_argv(mrb, proc, 0, nullptr);
             }
         }
         return mrb_nil_value();
@@ -3143,7 +3137,7 @@ int main(int argc, char * argv[])
 
         if(argmap.count("help-misc"))
         {
-            std::cout << "smon Revision " << SoftwareRevision << std::endl;
+            std::cout << "smon Revision " << SoftwareRevision << " , mruby Revision 3.3.0" << std::endl;
             std::cout << std::endl;
             std::cout << desc << std::endl;
             std::cout << help_msg << std::endl;
@@ -3154,7 +3148,7 @@ int main(int argc, char * argv[])
         }
         if(argmap.count("help"))
         {
-            std::cout << "smon Revision " << SoftwareRevision << std::endl;
+            std::cout << "smon Revision " << SoftwareRevision << " , mruby Revision 3.3.0" << std::endl;
             std::cout << std::endl;
             std::cout << desc << std::endl;
             return 0;

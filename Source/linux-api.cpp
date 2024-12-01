@@ -11,15 +11,21 @@
 #include "SerialControl.hpp"
 #include "ComList.hpp"
 #include "PipeList.hpp"
-#include <iconv.h>
-#include <string>
-#include <list>
-#include <thread>
-#include <chrono>
-#include <stdio.h>
-#include <regex>
-#include <boost/asio.hpp>
 
+#include <algorithm>
+#include <array>
+#include <boost/asio.hpp>
+#include <chrono>
+#include <cstdio>
+#include <filesystem>
+#include <iconv.h>
+#include <iostream>
+#include <list>
+#include <memory>
+#include <regex>
+#include <stdio.h>
+#include <string>
+#include <thread>
 #include <unistd.h>
 
 

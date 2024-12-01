@@ -1,3 +1,4 @@
+# test script for smon on mruby
 
 def test_options()
   opt = Args.new()
@@ -8,53 +9,44 @@ def test_options()
   end
 end
 
-def test_thead_1
-  print "thread test 1\n"
-  list = Array.new
-  th1 = WorkerThread.new
-  th1.run do
-    print "  run thread\n"
-    th1.wait()
-    th1.synchronize do
-      print "  list.pop: ", list.pop(), "\n"
-    end
-    th1.stop()
-    print "  run thread end\n"
-  end
-  print "  notify \n"
-  th1.notify do
-    list.push(1)
-  end
-  print "  thread join\n"
-  th1.join
-  print "thead test 1 end\n"
-end
-
-def test_calc()
+def test_core()
   print "Core test\n"
-  str = '010203040506070809'
-  printf("  modbus crc: %s -> %s\n",  str, Core.crc16(str)  );
-  printf("  crc8 crc  : %s -> %s\n",    str, Core.crc8(str)   );
-  printf("  checksum  : %s -> %s\n",  str, Core.sum(str)    );
+  data = '010203040506070809'
+  printf("  modbus crc: %s -> %-6s : check %s\n",  data, Core.crc16(data), ('0EB2' == Core.crc16(data) ? 'OK' : 'NG'));
+  printf("  crc8 crc  : %s -> %-6s : check %s\n",  data, Core.crc8(data),  ('98'   == Core.crc8(data)  ? 'OK' : 'NG'));
+  printf("  checksum  : %s -> %-6s : check %s\n",  data, Core.sum(data),   ('01'   == Core.sum(data)   ? 'OK' : 'NG'));
   str = '01020304'
   printf("  convert float big   : %s -> %e\n",str, Core.float(str)  );
   printf("  convert float little: %s -> %e\n",str, Core.float_l(str));
   print "Calc test end\n"
 end
 
-class CppRegexp
-  def compile(args)
-print "igarashi\n"
-    reg_arg = Array.new
-    args.each do |arg|
-      if arg.class.name == 'String' then
-        reg_arg.push(arg)
-      elsif arg.class.name == 'Regexp' then
-        reg_arg.push(arg.source)
-      end
-    end
-    return CppRegexp.new(reg_arg)
-  end
+def test_bin_edit
+  print "BinEdit test\n"
+  bin = BinEdit.new('0102030405')
+  printf("  %s: length check %s, dump check %s\n", bin.dump, (5 == bin.length ? 'OK' : 'NG'), ('0102030405' == bin.dump ? "OK" : "NG"))
+  printf("  %s\n", bin.dump(3))
+  printf("  %s\n", bin.dump(1, 2))
+  printf("  %s\n", bin.dump(0,10))
+  print "  ", BinEdit.hexToArray('bb sS wW iI dD fF h2 A3', '0102 FEFF FFFE 0100 0100 FCFFFFFF FFFFFFFC 01000000 00000001 12345678 12345678 5566 303132'), "\n"
+
+  bin = BinEdit.new(3)
+  printf("  wsize: %s\n", bin.write('11 22'))
+  printf("  wsize: %s\n", bin.write(2, '03'))
+  printf("  %d: %s\n", bin.length, bin.dump)
+
+  bin = BinEdit.new('010203040506070809112233445566778899AABBCCDDEEFF010203040506070809')
+  printf("  compress: \n")
+  printf("  %d: %s\n", bin.length, bin.dump)
+  bin.compress();   printf("  %d: %s\n", bin.length, bin.dump)
+  bin.uncompress(); printf("  %d: %s\n", bin.length, bin.dump)
+
+  bin = BinEdit.new('010203040506070809FFFFFFFFFFFFFFFFFFFFFFFFFFFFFF010203040506070809')
+  printf("  compress: \n")
+  printf("  %d: %s\n", bin.length, bin.dump)
+  bin.compress();   printf("  %d: %s\n", bin.length, bin.dump)
+  bin.uncompress(); printf("  %d: %s\n", bin.length, bin.dump)
+  print "BinEdit test end\n"
 end
 
 def test_cpp_regexp
@@ -79,10 +71,54 @@ def test_cpp_regexp
   print "CppRegexp test end\n"
 end
 
+def test_thead
+  print "thread test\n"
+  list = Array.new
+  th = WorkerThread.new
+  th1 = WorkerThread.new
+  th2 = WorkerThread.new
+  th1.run do
+    print "  run thread 1\n"
+    th1.wait()
+    th1.synchronize do
+      th.synchronize do
+        print "  list.pop: ", list.pop(), "\n"
+      end
+    end
+    th1.stop()
+    print "  run thread 1 end\n"
+  end
+  th2.run do
+    print "  run thread\n"
+    th2.wait()
+    th2.synchronize do
+      th.synchronize do
+        print "  list.pop: ", list.pop(), "\n"
+      end
+    end
+    th2.stop()
+    print "  run thread end\n"
+  end
+  print "  notify \n"
+  th2.notify do
+    print "  push(2) + notiry\n"
+    list.push(2)
+  end
+  th1.notify do
+    print "  push(1) + notiry\n"
+    list.push(1)
+  end
+  print "  thread join\n"
+  th1.join
+  th2.join
+  print "thead test end\n"
+end
+
 print "mruby test script 1\n"
 test_options()
-test_thead_1()
-test_calc()
+test_core()
+test_bin_edit()
 test_cpp_regexp()
+test_thead()
 print "mruby test script 1 end\n"
 print "\n"
