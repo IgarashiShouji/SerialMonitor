@@ -159,12 +159,24 @@ class Core
         printf("%s: %s\n", Core.sum(opts['sum']), opts['sum']);
         exit 0
       end
-      if nil != opts['float'] then
-        printf("%s: %s\n", Core.float(opts['float']), opts['float']);
+      if nil != opts['FLOAT'] then
+        hex = opts['FLOAT']
+        if 8 == hex.length then
+          bin = BinEdit.new(hex)
+          printf("%f: %s\n", bin.get(0, 'F'), hex);
+        else
+          print "not 8 charactor", "\n"
+        end
         exit 0
       end
-      if nil != opts['floatl'] then
-        printf("%s: %s\n", Core.float_l(opts['floatl']), opts['floatl']);
+      if nil != opts['float'] then
+        hex = opts['float']
+        if 8 == hex.length then
+          bin = BinEdit.new(hex)
+          printf("%f: %s\n", bin.get(0, 'f'), hex);
+        else
+          print "not 8 charactor", "\n"
+        end
         exit 0
       end
       if nil != opts['makeQR'] then

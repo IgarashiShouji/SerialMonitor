@@ -282,6 +282,19 @@ public:
         }
         return len;
     }
+    int32_t memcmp(mrb_int address_dst, mrb_int address_src, mrb_int len, BinaryControl & src)
+    {
+        auto dst_len = size()     - address_dst;
+        auto src_len = src.size() - address_src;
+        if(dst_len < len) { len = dst_len; }
+        if(src_len < len) { len = src_len; }
+        if(0 < len)
+        {
+            std::lock_guard<std::mutex> lock(mtx);
+            return std::memcmp(&(data[address_dst]), &(src.data[address_src]), len);
+        }
+        return -2;
+    }
     uint32_t write(mrb_int address, mrb_int size, std::string & src)
     {
         size_t cnt = 0;
@@ -701,66 +714,6 @@ static mrb_value mrb_core_sum(mrb_state* mrb, mrb_value self)
     }
     return mrb_nil_value();
 }
-static mrb_value mrb_core_float(mrb_state* mrb, mrb_value self)
-{
-    char * arg;
-    mrb_get_args(mrb, "z", &arg);
-    std::string data(arg);
-    if(8 == data.size())
-    {
-        union
-        {
-            float           f;
-            unsigned long   dword;
-        } fval;
-        fval.dword = 0;
-        unsigned char sum = 0;
-        for(unsigned int idx=0, max=data.size();idx<max; idx += 2)
-        {
-            std::stringstream ss;
-            ss << std::hex << data.substr(idx, 2);
-            int val;
-            ss >> val;
-            fval.dword <<= 8;
-            fval.dword |= static_cast<unsigned long>(val);
-        }
-printf("igarashi: 0x%08x\n", fval.dword);
-        return mrb_float_value( mrb, fval.f );
-    }
-    return mrb_nil_value();
-}
-static mrb_value mrb_core_float_l(mrb_state* mrb, mrb_value self)
-{
-    char * arg;
-    mrb_get_args(mrb, "z", &arg);
-    std::string org_data(arg);
-    if(org_data.size() == 8)
-    {
-        std::string data("");
-        data  = org_data.substr(6, 2);
-        data += org_data.substr(4, 2);
-        data += org_data.substr(2, 2);
-        data += org_data.substr(0, 2);
-        union
-        {
-            float           f;
-            unsigned long   dword;
-        } fval;
-        fval.dword = 0;
-        unsigned char sum = 0;
-        for(unsigned int idx=0, max=data.size();idx<max; idx += 2)
-        {
-            std::stringstream ss;
-            ss << std::hex << data.substr(idx, 2);
-            int val;
-            ss >> val;
-            fval.dword <<= 8;
-            fval.dword |= static_cast<unsigned long>(val);
-        }
-        return mrb_float_value( mrb, fval.f );
-    }
-    return mrb_nil_value();
-}
 static mrb_value mrb_core_to_hex(mrb_state* mrb, mrb_value self)
 {
     union
@@ -1112,6 +1065,7 @@ static mrb_value mrb_bedit_length(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_bedit_save(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_bedit_memset(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_bedit_memcpy(mrb_state * mrb, mrb_value self);
+static mrb_value mrb_bedit_memcmp(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_bedit_write(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_bedit_dump(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_bedit_get(mrb_state * mrb, mrb_value self);
@@ -1636,7 +1590,8 @@ protected:
 public:
     OpenXLSXCtrl(void)          { }
     virtual ~OpenXLSXCtrl(void) { }
-    void create(const std::string & fname)           { doc.create(fname, true);     }
+//  void create(const std::string & fname)           { doc.create(fname, true);     }
+    void create(const std::string & fname)           { doc.create(fname);           }
     void open(const std::string & fname)             { doc.open(fname);             }
     void workbook(void)                              { book = doc.workbook();       }
     std::vector<std::string> getWorkSheetNames(void) { return book.worksheetNames(); }
@@ -2648,6 +2603,29 @@ public:
         }
         return mrb_int_value(mrb, 0);
     }
+    mrb_value bedit_cmp(mrb_state * mrb, mrb_value self)
+    {
+        BinaryControl * bedit = static_cast<BinaryControl *>(DATA_PTR(self));
+        if(nullptr != bedit)
+        {
+            mrb_int argc;
+            mrb_value * argv;
+            mrb_get_args(mrb, "*", &argv, &argc);
+            switch(argc)
+            {
+            case 1:
+                if(MRB_TT_OBJECT == mrb_type(argv[0]))
+                {
+                    BinaryControl * src = get_bedit_ptr(argv[0]);
+                    if(nullptr != src) { return mrb_int_value(mrb, bedit->memcmp(0, 0, src->size(), *src)); }
+                }
+                break;
+            default:
+                break;
+            }
+        }
+        return mrb_int_value(mrb, -2);
+    }
     mrb_value bedit_write(mrb_state * mrb, mrb_value self)
     {
         BinaryControl * bedit = static_cast<BinaryControl *>(DATA_PTR(self));
@@ -2880,8 +2858,6 @@ public:
             mrb_define_module_function(mrb, core_class, "crc16",        mrb_core_crc16,         MRB_ARGS_ARG( 1, 1 )    );
             mrb_define_module_function(mrb, core_class, "crc8",         mrb_core_crc8,          MRB_ARGS_ARG( 1, 1 )    );
             mrb_define_module_function(mrb, core_class, "sum",          mrb_core_sum,           MRB_ARGS_ARG( 1, 1 )    );
-            mrb_define_module_function(mrb, core_class, "float",        mrb_core_float,         MRB_ARGS_ARG( 1, 1 )    );
-            mrb_define_module_function(mrb, core_class, "float_l",      mrb_core_float_l,       MRB_ARGS_ARG( 1, 1 )    );
             mrb_define_module_function(mrb, core_class, "to_hex",       mrb_core_to_hex,        MRB_ARGS_ARG( 2, 1 )    );
             mrb_define_module_function(mrb, core_class, "reg_match",    mrb_core_reg_match,     MRB_ARGS_ARG( 2, 1 )    );
             mrb_define_module_function(mrb, core_class, "reg_replace",  mrb_core_reg_replace,   MRB_ARGS_ARG( 3, 1 )    );
@@ -2930,8 +2906,9 @@ public:
             mrb_define_method( mrb, bedit_class, "save",            mrb_bedit_save,             MRB_ARGS_ARG( 1, 1 )    );
             mrb_define_method( mrb, bedit_class, "compress",        mrb_bedit_compress,         MRB_ARGS_NONE()         );
             mrb_define_method( mrb, bedit_class, "uncompress",      mrb_bedit_uncompress,       MRB_ARGS_NONE()         );
-            mrb_define_method( mrb, bedit_class, "memcpy",          mrb_bedit_memcpy,           MRB_ARGS_ARG( 3, 1 )    );
             mrb_define_method( mrb, bedit_class, "memset",          mrb_bedit_memset,           MRB_ARGS_ARG( 3, 1 )    );
+            mrb_define_method( mrb, bedit_class, "memcpy",          mrb_bedit_memcpy,           MRB_ARGS_ARG( 3, 1 )    );
+            mrb_define_method( mrb, bedit_class, "memcmp",          mrb_bedit_memcmp,           MRB_ARGS_ARG( 3, 1 )    );
             mrb_define_method( mrb, bedit_class, "write",           mrb_bedit_write,            MRB_ARGS_ARG( 2, 1 )    );
             mrb_define_method( mrb, bedit_class, "dump",            mrb_bedit_dump,             MRB_ARGS_ARG( 2, 1 )    );
             mrb_define_method( mrb, bedit_class, "get",             mrb_bedit_get,              MRB_ARGS_ARG( 2, 1 )    );
@@ -3048,6 +3025,7 @@ mrb_value mrb_bedit_uncompress(mrb_state * mrb, mrb_value self)     { auto resul
 mrb_value mrb_bedit_write(mrb_state * mrb, mrb_value self)          { auto result = (Application::getObject())->bedit_write(mrb, self);                             return result; }
 mrb_value mrb_bedit_memset(mrb_state * mrb, mrb_value self)         { auto result = (Application::getObject())->bedit_memset(mrb, self);                            return result; }
 mrb_value mrb_bedit_memcpy(mrb_state * mrb, mrb_value self)         { auto result = (Application::getObject())->bedit_memcpy(mrb, self);                            return result; }
+mrb_value mrb_bedit_memcmp(mrb_state * mrb, mrb_value self)         { auto result = (Application::getObject())->bedit_cmp(mrb, self);                               return result; }
 mrb_value mrb_bedit_dump(mrb_state * mrb, mrb_value self)           { auto result = (Application::getObject())->bedit_dump(mrb, self);   mrb_garbage_collect(mrb);  return result; }
 mrb_value mrb_bedit_get(mrb_state * mrb, mrb_value self)            { auto result = (Application::getObject())->bedit_get(mrb, self);    mrb_garbage_collect(mrb);  return result; }
 mrb_value mrb_bedit_set(mrb_state * mrb, mrb_value self)            { auto result = (Application::getObject())->bedit_set(mrb, self);    mrb_garbage_collect(mrb);  return result; }
@@ -3122,11 +3100,12 @@ int main(int argc, char * argv[])
             ("crc,c",           boost::program_options::value<std::string>(),   "calclate modbus RTU CRC"                         )
             ("crc8",            boost::program_options::value<std::string>(),   "calclate CRC8"                                   )
             ("sum,s",           boost::program_options::value<std::string>(),   "calclate checksum of XOR"                        )
-            ("float,f",         boost::program_options::value<std::string>(),   "hex to float value"                              )
-            ("floatl,F",        boost::program_options::value<std::string>(),   "litle endian hex to float value"                 )
+            ("FLOAT,F",         boost::program_options::value<std::string>(),   "hex to float value"                              )
+            ("float,f",         boost::program_options::value<std::string>(),   "litle endian hex to float value"                 )
             ("makeQR",          boost::program_options::value<std::string>(),   "make QR code of svg"                             )
             ("read-bin-to-xlsx",                                                "read binary to xlsx file"                        )
             ("mruby-script,m",  boost::program_options::value<std::string>(),   "execute mruby script"                            )
+            ("version,",                                                        "print version"                                   )
             ("help,h",                                                          "help"                                            )
             ("help-misc",                                                       "display of exsample and commet, ext class ...etc");
         boost::program_options::variables_map argmap;
@@ -3135,6 +3114,21 @@ int main(int argc, char * argv[])
         store( parsing_result, argmap );
         notify( argmap );
 
+        if(argmap.count("version"))
+        {
+            std::cout << "smon Revision " << SoftwareRevision << std::endl;
+            std::cout << "    mruby Revision 3.3.0" << std::endl;
+            std::cout << "    OpenXLSX Revision 0.4.1" << std::endl;
+            std::cout << "    QR-Code-generator Revision 1.8.0" << std::endl;
+            return 0;
+        }
+        if(argmap.count("help"))
+        {
+            std::cout << "smon Revision " << SoftwareRevision << " , mruby Revision 3.3.0" << std::endl;
+            std::cout << std::endl;
+            std::cout << desc << std::endl;
+            return 0;
+        }
         if(argmap.count("help-misc"))
         {
             std::cout << "smon Revision " << SoftwareRevision << " , mruby Revision 3.3.0" << std::endl;
@@ -3144,13 +3138,6 @@ int main(int argc, char * argv[])
 #if 0
             printf("debug: %d\n", help_size);
 #endif
-            return 0;
-        }
-        if(argmap.count("help"))
-        {
-            std::cout << "smon Revision " << SoftwareRevision << " , mruby Revision 3.3.0" << std::endl;
-            std::cout << std::endl;
-            std::cout << desc << std::endl;
             return 0;
         }
         std::vector<std::string> arg;

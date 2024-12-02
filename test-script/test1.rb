@@ -12,17 +12,16 @@ end
 def test_core()
   print "Core test\n"
   data = '010203040506070809'
-  printf("  modbus crc: %s -> %-6s : check %s\n",  data, Core.crc16(data), ('0EB2' == Core.crc16(data) ? 'OK' : 'NG'));
-  printf("  crc8 crc  : %s -> %-6s : check %s\n",  data, Core.crc8(data),  ('98'   == Core.crc8(data)  ? 'OK' : 'NG'));
-  printf("  checksum  : %s -> %-6s : check %s\n",  data, Core.sum(data),   ('01'   == Core.sum(data)   ? 'OK' : 'NG'));
-  str = '01020304'
-  printf("  convert float big   : %s -> %e\n",str, Core.float(str)  );
-  printf("  convert float little: %s -> %e\n",str, Core.float_l(str));
+  printf("  modbus crc: %s -> %-6s : check %s\n",  data, Core.crc16(data), ('0EB2' == Core.crc16(data) ? 'OK' : 'NG'))
+  printf("  crc8 crc  : %s -> %-6s : check %s\n",  data, Core.crc8(data),  ('98'   == Core.crc8(data)  ? 'OK' : 'NG'))
+  printf("  checksum  : %s -> %-6s : check %s\n",  data, Core.sum(data),   ('01'   == Core.sum(data)   ? 'OK' : 'NG'))
+  printf("  file timestamp: %s", Core.timestamp('test1.rb'))
   print "Calc test end\n"
 end
 
 def test_bin_edit
   print "BinEdit test\n"
+
   bin = BinEdit.new('0102030405')
   printf("  %s: length check %s, dump check %s\n", bin.dump, (5 == bin.length ? 'OK' : 'NG'), ('0102030405' == bin.dump ? "OK" : "NG"))
   printf("  %s\n", bin.dump(3))
@@ -46,6 +45,99 @@ def test_bin_edit
   printf("  %d: %s\n", bin.length, bin.dump)
   bin.compress();   printf("  %d: %s\n", bin.length, bin.dump)
   bin.uncompress(); printf("  %d: %s\n", bin.length, bin.dump)
+
+  begin
+    bin = BinEdit.new('file:test1.rb')
+    printf("  length: %d\n", bin.length)
+    print "  ", bin.dump(0, 16), "\n"
+    bin.compress()
+    bin.save( 'test1.rb.compress' )
+    bin2 = BinEdit.new( 'file:test1.rb.compress' )
+    print "  compress check ", ( (0 == bin.memcmp(bin2)) ? "OK" : "NG"), "\n"
+  end
+
+  bin = BinEdit.new('00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000 ')
+  print "  ", bin.dump(), "\n"
+  data = [ 0x11223344, 0.1, 0xaabb, 0x99, -10, -3, -2, 0.1, '01234', 'aabbccdd' ];
+  print "  ", data, "\n"
+  bin.set(0, 'dfwbcsiFAH',  data)
+  print "  ", bin.dump(), "\n"
+  print "  ", bin.get(0, 'dfwbcsiFA5H4'), "\n"
+
+  bin = BinEdit.new(bin.length, 0x00)
+  print "  ", bin.dump(), "\n"
+  data = [ 0x11223344, 0.1, 0xaabb, 0x99, -10, -3, -2, 0.1, '01234', 'AABBCCDD' ];
+  print "  ", data, "\n"
+  bin.set(0, 'dfwbcsiFah',  data)
+  print "  ", bin.dump(), "\n"
+  print "  ", bin.get(0, 'dfwbcsiFa5h4'), "\n"
+
+  bin = BinEdit.new('00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000 ')
+  bin.set('DFWbcSIFA',  [ 0x11223344, 1.0, 0xaabb, 0x99, -10, -3, -2, 0.1, '987' ])
+  print "  ", bin.dump(), "\n"
+  print "  ", bin.get(0, 'DFWbcSIFA3'), "\n"
+
+  bin = BinEdit.new(25);
+  bin.memset(0xff)
+  print "  ", bin.dump(), "\n"
+  bin.memset(0xAA, 10)
+  print "  ", bin.dump(), "\n"
+  bin.memset(5, 0x55, 3)
+  print "  ", bin.dump(), "\n"
+  bin.memset(0x00)
+  print "  ", bin.dump(), "\n"
+  list = Array.new
+  (3).times do |idx|
+    list.push( [ idx, idx * 3, sprintf("%02x", idx + 0x10) ] )
+  end
+  list.each do |item|
+    bin.set("bwA2", item)
+  end
+  print "  ", bin.dump(), "\n"
+  bin.get(0, '')
+  (3).times do |idx|
+    print "  ", bin.get("bwA2"), "\n"
+  end
+
+  begin
+    bin1 = BinEdit.new(32)
+    bin1.memset(0);
+    bin2 = BinEdit.new('AABBCCDD')
+    print "  ", bin1.dump(), "\n"
+    print "  ", bin2.dump(), "\n"
+    bin1.memcpy(bin2)
+    print "  ", bin1.dump(), "\n"
+    bin1.memcpy(16, bin2)
+    print "  ", bin1.dump(), "\n"
+    bin1.memcpy(8, 2, bin2)
+    print "  ", bin1.dump(), "\n"
+    bin1.memcpy(24, 2, 2, bin2)
+    print "  ", bin1.dump(), "\n"
+  end
+
+  begin
+    bin1 = BinEdit.new('01020304')
+    bin2 = BinEdit.new(bin1)
+    bin3 = BinEdit.new(bin1, 3)
+    bin4 = BinEdit.new(bin1, 1, 2)
+    print "  bin1: ", bin1.dump(), "\n"
+    print "  bin2: ", bin2.dump(), "\n"
+    print "  bin3: ", bin3.dump(), "\n"
+    print "  bin4: ", bin4.dump(), "\n"
+  end
+
+  print "  ", (BinEdit.new("00000001")).get('D'), "\n"
+  print "  ", (BinEdit.new("000000010200")).get('Dw'), "\n"
+
+  bin = BinEdit.new('00000000')
+  num = 7.0
+  bin.set('F', [num])
+  printf("  FLOAT: %f: %s\n", num, bin.dump)
+  num = 7.0
+  bin.set('f', [num])
+  printf("  float: %f: %s\n", num, bin.dump)
+
+  GC.start()
   print "BinEdit test end\n"
 end
 
