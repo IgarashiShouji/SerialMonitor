@@ -54,7 +54,7 @@
 #include <OpenXLSX.hpp>
 
 /* -- static const & functions -- */
-static const char *  SoftwareRevision = "0.13.6";
+static const char *  SoftwareRevision = "0.13.7";
 
 static unsigned char toValue(unsigned char data)
 {
@@ -3135,7 +3135,7 @@ int main(int argc, char * argv[])
             ("makeQR",          boost::program_options::value<std::string>(),   "make QR code of svg"                             )
             ("read-bin-to-xlsx",                                                "read binary to xlsx file"                        )
             ("mruby-script,m",  boost::program_options::value<std::string>(),   "execute mruby script"                            )
-            ("version,",                                                        "print version"                                   )
+            ("version,v",                                                       "print version"                                   )
             ("help,h",                                                          "help"                                            )
             ("help-misc",                                                       "display of exsample and commet, ext class ...etc");
         boost::program_options::variables_map argmap;
