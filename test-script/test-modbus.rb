@@ -180,7 +180,7 @@ class ModbusSlave
             up_addr = trd_hash[up_key][0]
             up_val  = trd_hash[up_key][idx]
             (@regs.keys()).each do |key|
-              if Core.reg_match(key, 'Input Registers') then
+              if CppRegexp.reg_match(key, 'Input Registers') then
                 widx = 0
                 (@regs[key]).each do |addr, name, type, num|
                   if addr == up_addr then
@@ -212,18 +212,18 @@ class ModbusSlave
       while enable do
         @smon.wait do |state, rcv_msg|
           if(0 < rcv_msg.length) then
-            fc = Core.reg_replace(rcv_msg, '^..(..).*$', '$1')
+            fc = CppRegexp.reg_replace(rcv_msg, '^..(..).*$', '$1')
             if nil != fc then
               @th_check.synchronize do
                  case fc
                  when '03' then
                    printf("%s: %s : ", @port, rcv_msg)
-                   addr = Core.reg_replace(rcv_msg, '^.{4}(.{4}).*$', '$1');     addr = addr.to_i(16)
-                   cnt  = Core.reg_replace(rcv_msg, '^.{4}.{4}(.{4}).*$', '$1'); cnt  = cnt.to_i(16)
+                   addr = CppRegexp.reg_replace(rcv_msg, '^.{4}(.{4}).*$', '$1');     addr = addr.to_i(16)
+                   cnt  = CppRegexp.reg_replace(rcv_msg, '^.{4}.{4}(.{4}).*$', '$1'); cnt  = cnt.to_i(16)
                    (@regs.keys).each do |key|
                      search = sprintf("Hold Registers: .*%04d", addr);
-                     if Core.reg_match(key, search) then
-                       replay = Core.reg_replace(rcv_msg, '^(.{4}).*$', '$1')
+                     if CppRegexp.reg_match(key, search) then
+                       replay = CppRegexp.reg_replace(rcv_msg, '^(.{4}).*$', '$1')
                        replay += sprintf("%02X", (cnt*2))
                        reg_cnt = 0
                        (@regs[key]).each do |addr, name, type, num|
@@ -246,12 +246,12 @@ class ModbusSlave
                    end
                  when '04' then
                    printf("%s: %s : ", @port, rcv_msg)
-                   addr = Core.reg_replace(rcv_msg, '^.{4}(.{4}).*$', '$1');     addr = addr.to_i(16)
-                   cnt  = Core.reg_replace(rcv_msg, '^.{4}.{4}(.{4}).*$', '$1'); cnt  = cnt.to_i(16)
+                   addr = CppRegexp.reg_replace(rcv_msg, '^.{4}(.{4}).*$', '$1');     addr = addr.to_i(16)
+                   cnt  = CppRegexp.reg_replace(rcv_msg, '^.{4}.{4}(.{4}).*$', '$1'); cnt  = cnt.to_i(16)
                    (@regs.keys).each do |key|
                      search = sprintf("Input Registers: .*%04d", addr);
-                     if Core.reg_match(key, search) then
-                       replay = Core.reg_replace(rcv_msg, '^(.{4}).*$', '$1')
+                     if CppRegexp.reg_match(key, search) then
+                       replay = CppRegexp.reg_replace(rcv_msg, '^(.{4}).*$', '$1')
                        replay += sprintf("%02X", (cnt*2))
                        reg_cnt = 0
                        (@regs[key]).each do |addr, name, type, num|

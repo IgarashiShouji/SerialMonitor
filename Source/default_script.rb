@@ -48,10 +48,10 @@ if 0 < opts.size() then
     if 'quit' == str  then; break; end
     if 0 < str.length then
       idx = 0
-      if Core.reg_match(str, ':') then
-        idx = (Core.reg_replace(str, ':.*$', '')).to_i
+      if CppRegexp.reg_match(str, ':') then
+        idx = (CppRegexp.reg_replace(str, ':.*$', '')).to_i
       end
-      msg = Core.reg_replace(str, '^.*:', '')
+      msg = CppRegexp.reg_replace(str, '^.*:', '')
       ( smon, th_ctrl, idx_, arg ) = objs[idx]
       smon.send(msg, 0)
       printf("%d:%s: Send: %s\n", idx, arg, msg)

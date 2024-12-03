@@ -160,6 +160,14 @@ def test_cpp_regexp
   print "  grep: ", reg.grep('0', 's1as2bs3cs4ds5es6fs7xs8xs9zs10 s11', 's1as2bs3cs4ds5es6fs7    s11'), "\n"
   reg = CppRegexp.new(' ', 'x')
   print "  replace: ", reg.replace('--', 's1as2bs3cs4ds5es6fs7xs8xs9zs10 s11', 's1as2bs3cs4ds5es6fs7    s11'), "\n"
+
+  reg = CppRegexp.new(':', ',')
+  msg = '123,456,789:abc,dfg,hij'
+  print "  split: ", reg.split(msg), "\n"
+
+  printf("  reg_match: %s\n",   (CppRegexp.reg_match('123:456:789', ':') ? "OK" : "NG"))
+  printf("  reg_replace: %s\n", CppRegexp.reg_replace('123:456:789', ':', ' '))
+  print  "  reg_split: ", CppRegexp.reg_split('123:456:789', ':'), "\n"
   print "CppRegexp test end\n"
 end
 

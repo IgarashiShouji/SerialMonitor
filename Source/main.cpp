@@ -742,36 +742,6 @@ static mrb_value mrb_core_to_hex(mrb_state* mrb, mrb_value self)
     sprintf(str_data, "%08X", num.data32);
     return mrb_str_new_cstr( mrb, str_data );
 }
-static mrb_value mrb_core_reg_match(mrb_state* mrb, mrb_value self)
-{
-    char * org_ptr, * reg_ptr;
-    mrb_get_args(mrb, "zz", &org_ptr, &reg_ptr);
-    if( std::regex_search(org_ptr, std::regex(reg_ptr)))
-    {
-        return mrb_bool_value(true);
-    }
-    return mrb_bool_value(false);
-}
-static mrb_value mrb_core_reg_replace(mrb_state* mrb, mrb_value self)
-{
-    char * org_ptr, * reg_ptr, * rep_ptr;
-    mrb_get_args(mrb, "zzz", &org_ptr, &reg_ptr, &rep_ptr);
-    auto result = std::regex_replace(org_ptr, std::regex(reg_ptr), rep_ptr);
-    return mrb_str_new_cstr( mrb, result.c_str() );
-}
-static mrb_value mrb_core_split(mrb_state* mrb, mrb_value self)
-{
-    mrb_value arry = mrb_ary_new(mrb);
-    char * arg_str, * arg_reg;
-    mrb_get_args(mrb, "zz", &arg_str, &arg_reg);
-    std::string str(arg_str);
-    std::regex  reg(arg_reg);
-    for(auto && str : str_split(str, reg))
-    {
-        mrb_ary_push(mrb, arry , mrb_str_new_cstr(mrb, str.c_str()));
-    }
-    return arry;
-}
 static mrb_value mrb_core_gets(mrb_state* mrb, mrb_value self);
 static mrb_value mrb_core_exists(mrb_state* mrb, mrb_value self)
 {
@@ -1019,6 +989,66 @@ static mrb_value mrb_cppregexp_grep(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_cppregexp_replace(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_cppregexp_select(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_cppregexp_split(mrb_state * mrb, mrb_value self);
+static mrb_value mrb_core_reg_match(mrb_state* mrb, mrb_value self)
+{
+    mrb_value proc; mrb_int argc; mrb_value * argv;
+    mrb_get_args(mrb, "&*", &proc, &argv, &argc);
+    if(   (2 == argc)
+       && (mrb_type(argv[0]) == MRB_TT_STRING)
+       && (mrb_type(argv[1]) == MRB_TT_STRING) )
+    {
+        char * str = RSTR_PTR(mrb_str_ptr(argv[0]));
+        char * reg = RSTR_PTR(mrb_str_ptr(argv[1]));
+        if( std::regex_search(str, std::regex(reg)) ) { return mrb_bool_value(true); }
+    }
+    return mrb_bool_value(false);
+}
+static mrb_value mrb_core_reg_replace(mrb_state* mrb, mrb_value self)
+{
+    mrb_value proc; mrb_int argc; mrb_value * argv;
+    mrb_get_args(mrb, "&*", &proc, &argv, &argc);
+    std::string result("");
+    switch(argc)
+    {
+    case 1:
+    case 2:
+        if(mrb_type(argv[0]) == MRB_TT_STRING)
+        {
+            result = RSTR_PTR(mrb_str_ptr(argv[0]));
+        }
+        break;
+    case 3:
+        if(    (mrb_type(argv[0]) == MRB_TT_STRING)
+            && (mrb_type(argv[1]) == MRB_TT_STRING)
+            && (mrb_type(argv[2]) == MRB_TT_STRING) )
+        {
+            char * str = RSTR_PTR(mrb_str_ptr(argv[0]));
+            char * reg = RSTR_PTR(mrb_str_ptr(argv[1]));
+            char * rep = RSTR_PTR(mrb_str_ptr(argv[2]));
+            result = std::regex_replace(str, std::regex(reg), rep);
+        }
+        break;
+    }
+    return mrb_str_new_cstr( mrb, result.c_str() );
+}
+static mrb_value mrb_core_split(mrb_state* mrb, mrb_value self)
+{
+    mrb_value proc; mrb_int argc; mrb_value * argv;
+    mrb_get_args(mrb, "&*", &proc, &argv, &argc);
+    mrb_value arry = mrb_ary_new(mrb);
+    if(    (2 == argc)
+        && (mrb_type(argv[0]) == MRB_TT_STRING)
+        && (mrb_type(argv[1]) == MRB_TT_STRING) )
+    {
+        std::string str(RSTR_PTR(mrb_str_ptr(argv[0])));
+        std::regex  reg(RSTR_PTR(mrb_str_ptr(argv[1])));
+        for(auto && str : str_split(str, reg))
+        {
+            mrb_ary_push(mrb, arry , mrb_str_new_cstr(mrb, str.c_str()));
+        }
+    }
+    return arry;
+}
 static void mrb_regexp_context_free(mrb_state * mrb, void * ptr);
 
 /* class thread */
@@ -2859,9 +2889,6 @@ public:
             mrb_define_module_function(mrb, core_class, "crc8",         mrb_core_crc8,          MRB_ARGS_ARG( 1, 1 )    );
             mrb_define_module_function(mrb, core_class, "sum",          mrb_core_sum,           MRB_ARGS_ARG( 1, 1 )    );
             mrb_define_module_function(mrb, core_class, "to_hex",       mrb_core_to_hex,        MRB_ARGS_ARG( 2, 1 )    );
-            mrb_define_module_function(mrb, core_class, "reg_match",    mrb_core_reg_match,     MRB_ARGS_ARG( 2, 1 )    );
-            mrb_define_module_function(mrb, core_class, "reg_replace",  mrb_core_reg_replace,   MRB_ARGS_ARG( 3, 1 )    );
-            mrb_define_module_function(mrb, core_class, "split",        mrb_core_split,         MRB_ARGS_ARG( 2, 1 )    );
             mrb_define_module_function(mrb, core_class, "gets",         mrb_core_gets,          MRB_ARGS_ANY()          );
             mrb_define_module_function(mrb, core_class, "exists",       mrb_core_exists,        MRB_ARGS_ARG( 1, 1 )    );
             mrb_define_module_function(mrb, core_class, "timestamp",    mrb_core_file_timestamp,MRB_ARGS_ARG( 1, 1 )    );
@@ -2875,13 +2902,16 @@ public:
 
             /* Class CppRegexp */
             struct RClass * cppregexp_class = mrb_define_class_under( mrb, mrb->kernel_module, "CppRegexp", mrb->object_class );
-            mrb_define_method( mrb, cppregexp_class, "initialize",      mrb_cppregexp_initialize, MRB_ARGS_ANY()        );
-            mrb_define_method( mrb, cppregexp_class, "length",          mrb_cppregexp_length,     MRB_ARGS_NONE()       );
-            mrb_define_method( mrb, cppregexp_class, "match",           mrb_cppregexp_match,      MRB_ARGS_ANY()        );
-            mrb_define_method( mrb, cppregexp_class, "grep",            mrb_cppregexp_grep,       MRB_ARGS_ANY()        );
-            mrb_define_method( mrb, cppregexp_class, "replace",         mrb_cppregexp_replace,    MRB_ARGS_ANY()        );
-            mrb_define_method( mrb, cppregexp_class, "select",          mrb_cppregexp_select,     MRB_ARGS_ANY()        );
-            mrb_define_method( mrb, cppregexp_class, "split",           mrb_cppregexp_split,      MRB_ARGS_ARG( 1, 1 )  );
+            mrb_define_module_function(mrb, cppregexp_class, "reg_match",    mrb_core_reg_match,       MRB_ARGS_ARG( 2, 1 )  );
+            mrb_define_module_function(mrb, cppregexp_class, "reg_replace",  mrb_core_reg_replace,     MRB_ARGS_ARG( 3, 1 )  );
+            mrb_define_module_function(mrb, cppregexp_class, "reg_split",    mrb_core_split,           MRB_ARGS_ARG( 2, 1 )  );
+            mrb_define_method( mrb, cppregexp_class,    "initialize",   mrb_cppregexp_initialize, MRB_ARGS_ANY()        );
+            mrb_define_method( mrb, cppregexp_class,    "length",       mrb_cppregexp_length,     MRB_ARGS_NONE()       );
+            mrb_define_method( mrb, cppregexp_class,    "match",        mrb_cppregexp_match,      MRB_ARGS_ANY()        );
+            mrb_define_method( mrb, cppregexp_class,    "grep",         mrb_cppregexp_grep,       MRB_ARGS_ANY()        );
+            mrb_define_method( mrb, cppregexp_class,    "replace",      mrb_cppregexp_replace,    MRB_ARGS_ANY()        );
+            mrb_define_method( mrb, cppregexp_class,    "select",       mrb_cppregexp_select,     MRB_ARGS_ANY()        );
+            mrb_define_method( mrb, cppregexp_class,    "split",        mrb_cppregexp_split,      MRB_ARGS_ARG( 1, 1 )  );
 
             /* Class Thread */
             struct RClass * thread_class = mrb_define_class_under( mrb, mrb->kernel_module, "WorkerThread", mrb->object_class );
