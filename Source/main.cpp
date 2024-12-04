@@ -54,7 +54,8 @@
 #include <OpenXLSX.hpp>
 
 /* -- static const & functions -- */
-static const char *  SoftwareRevision = "0.13.7";
+static const char *  SoftwareRevision = "0.13.8";
+std::chrono::system_clock::time_point start;
 
 static unsigned char toValue(unsigned char data)
 {
@@ -978,6 +979,33 @@ static mrb_value mrb_core_make_qr(mrb_state* mrb, mrb_value self)
         return mrb_str_new_cstr(mrb, qr_code.c_str());
     }
     return mrb_nil_value();
+}
+
+static mrb_value mrb_core_tick(mrb_state* mrb, mrb_value self)
+{
+    auto now = std::chrono::system_clock::now();
+    auto temp = start;
+    start = now;
+    mrb_int argc; mrb_value * argv;
+    mrb_get_args(mrb, "*", &argv, &argc);
+    if(1 == argc)
+    {
+        switch(mrb_type(argv[0]))
+        {
+        case MRB_TT_INTEGER:
+            if(0 == mrb_integer(argv[0])) { return mrb_int_value(mrb, std::chrono::duration_cast<std::chrono::microseconds>(now - temp).count()); }
+            break;
+        case MRB_TT_STRING:
+            {
+                std::string arg(RSTR_PTR(mrb_str_ptr(argv[0])));
+                if(arg == "us") { return mrb_int_value(mrb, std::chrono::duration_cast<std::chrono::microseconds>(now - temp).count()); }
+            }
+            break;
+        default:
+            break;
+        }
+    }
+    return mrb_int_value( mrb, std::chrono::duration_cast<std::chrono::milliseconds>(now - temp).count());
 }
 
 
@@ -2893,6 +2921,7 @@ public:
             mrb_define_module_function(mrb, core_class, "exists",       mrb_core_exists,        MRB_ARGS_ARG( 1, 1 )    );
             mrb_define_module_function(mrb, core_class, "timestamp",    mrb_core_file_timestamp,MRB_ARGS_ARG( 1, 1 )    );
             mrb_define_module_function(mrb, core_class, "makeQR",       mrb_core_make_qr,       MRB_ARGS_ARG( 1, 1 )    );
+            mrb_define_module_function(mrb, core_class, "tick",         mrb_core_tick,          MRB_ARGS_ARG( 1, 1 )    );
 
             /* Class options */
             struct RClass * opt_class = mrb_define_class_under( mrb, mrb->kernel_module, "Args", mrb->object_class );
@@ -3176,6 +3205,7 @@ int main(int argc, char * argv[])
             arg.push_back(str);
         }
         Application app( argmap, arg );
+        start = std::chrono::system_clock::now();
         app.main();
     }
     catch(std::exception & exp) { std::cerr << "exeption: " << exp.what() << std::endl; }

@@ -11,11 +11,16 @@ end
 
 def test_core()
   print "Core test\n"
+  #printf("  tick: %d\n", Core.tick(Core.US))
+  printf("  tick: %d\n", Core.tick(1))
   data = '010203040506070809'
   printf("  modbus crc: %s -> %-6s : check %s\n",  data, Core.crc16(data), ('0EB2' == Core.crc16(data) ? 'OK' : 'NG'))
   printf("  crc8 crc  : %s -> %-6s : check %s\n",  data, Core.crc8(data),  ('98'   == Core.crc8(data)  ? 'OK' : 'NG'))
   printf("  checksum  : %s -> %-6s : check %s\n",  data, Core.sum(data),   ('01'   == Core.sum(data)   ? 'OK' : 'NG'))
   printf("  file timestamp: %s", Core.timestamp('test1.rb'))
+  printf("  tick: %d\n", Core.tick(1))
+  #printf("  tick: %d\n", Core.tick(Core.US))
+
   print "Calc test end\n"
 end
 
