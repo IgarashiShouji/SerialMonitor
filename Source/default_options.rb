@@ -5,6 +5,27 @@ class BinEdit
     bin = BinEdit.new(hex_string)
     return bin.get(format)
   end
+  def self.hexFromArray(format, item)
+    size = 0
+    (format.length).times do |idx|
+      m = format[idx, 1]
+      size += (m == 'c' ? 1 : 0)
+      size += (m == 'b' ? 1 : 0)
+      size += (m == 's' ? 2 : 0)
+      size += (m == 'w' ? 2 : 0)
+      size += (m == 'i' ? 4 : 0)
+      size += (m == 'd' ? 4 : 0)
+      size += (m == 'f' ? 4 : 0)
+      size += (m == 'S' ? 2 : 0)
+      size += (m == 'W' ? 2 : 0)
+      size += (m == 'I' ? 4 : 0)
+      size += (m == 'D' ? 4 : 0)
+      size += (m == 'F' ? 4 : 0)
+    end
+    bin = BinEdit.new(size)
+    bin.set(format, item)
+    return bin.dump
+  end
   def self.readBinToXlsx(bin_file, xls_file)
     xls = OpenXLSX.new
     bin = BinEdit.new(sprintf("file:%s", bin_file))

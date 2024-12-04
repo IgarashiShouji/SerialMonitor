@@ -138,9 +138,7 @@ def test_bin_edit
   num = 7.0
   bin.set('F', [num])
   printf("  FLOAT: %f: %s\n", num, bin.dump)
-  num = 7.0
-  bin.set('f', [num])
-  printf("  float: %f: %s\n", num, bin.dump)
+  printf("  float: %f: %s\n", num, BinEdit.hexFromArray('f', [7.0]))
 
   GC.start()
   print "BinEdit test end\n"

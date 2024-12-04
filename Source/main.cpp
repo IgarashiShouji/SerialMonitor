@@ -54,7 +54,7 @@
 #include <OpenXLSX.hpp>
 
 /* -- static const & functions -- */
-static const char *  SoftwareRevision = "0.13.8";
+static const char *  SoftwareRevision = "0.13.9";
 std::chrono::system_clock::time_point start;
 
 static unsigned char toValue(unsigned char data)
