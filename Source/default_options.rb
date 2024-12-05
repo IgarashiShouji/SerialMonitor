@@ -267,7 +267,8 @@ class Core
     else
       print "smon [options] comxx data1 data2 ...", "\n"
       print "ex)\n"
-      print "  ./smon -m default_script.rb /dev/pts/6 '01 02_030405...060-70809' 00112233445566778899\n"
+      print "  ./smon.exe -1 com11,9600,odd,one,GAP=80,TO1=100,TO2=200,TO3=500 009912 9988 001123 00889987 9988 6787 9944 2211 7889\n"
+      print "  ./smon -1 /dev/pts/6 '01 02_030405...060-70809' 00112233445566778899\n"
       print "\n"
     end
   end

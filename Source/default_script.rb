@@ -21,9 +21,10 @@ if 0 < opts.size() then
             th_prn.synchronize do
               tick += Core.tick() % 100000000000
               if 0 < rcv_msg.length then
-                printf("%d:%s: %10d[ms]: %s\n", idx, arg, tick, rcv_msg)
+                printf("%d:%s: %10d[ms]: Received: %s\n", idx, arg, tick, rcv_msg)
+              else
+                printf("%d:%s: %10d[ms]: GAP\n", idx, arg, tick)
               end
-              printf("%d:%s: %10d[ms]: GAP\n", idx, arg, tick)
             end
           when Smon::TO1 then
             th_prn.synchronize do
