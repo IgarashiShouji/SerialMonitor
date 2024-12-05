@@ -145,6 +145,132 @@ class BinEdit
 end
 
 class Core
+  def self.opt_send()
+    tick = Core.tick()
+    opts = Args.new()
+    prn = WorkerThread.new
+    if(0 < opts.size()) then
+      port = opts[0]
+      smon = Smon.new(port)
+      if(1 < opts.size()) then
+        (opts.size() - 1).times do |idx|
+          data = opts[1+idx]
+          data = CppRegexp.reg_replace(data, '[ _\-/@#(){}<>,\.]', '')
+          smon.send(data, 0)
+          tick += Core.tick() % 100000000000
+          printf("%10d[ms]: Send: %s -- ", tick, data)
+          rdata = ''
+          interval = 0
+          loop = true
+          while loop do
+            smon.wait do |state, rcv|
+              now = Core.tick()
+              tick += now % 100000000000
+              case state
+              when Smon::CACHE_FULL then
+              when Smon::GAP then
+                prn.synchronize do
+                  if 0 < rcv.length then
+                    rdata += rcv
+                    interval += now
+                    printf(" -- RCV", tick)
+                  else
+                    printf("GAP", tick)
+                  end
+                end
+              when Smon::TO1 then
+                prn.synchronize do
+                  printf(", TO%d", state)
+                end
+              when Smon::TO2 then
+                prn.synchronize do
+                  printf(", TO%d", state)
+                end
+              when Smon::TO3 then
+                prn.synchronize do
+                  printf(", TO%d", state)
+                end
+                loop = false
+              else
+                loop = false
+              end
+            end
+          end
+          prn.synchronize do
+            if 0 < rdata.length then
+              printf(": (%d[ms]) --> %s\n", interval, rdata)
+            else
+              print " ... No Recived\n"
+            end
+          end
+        end
+      else
+        reg = CppRegexp.new(['^[0-9a-fA-F _\-/@#(){}<>,\.]*$', '^tx:', '^quit'])
+        th_rcv = WorkerThread.new
+        th_rcv.run() do
+          loop = true
+          while loop do
+            smon.wait do |state, rcv|
+              tick += Core.tick() % 100000000000
+              case state
+              when Smon::CACHE_FULL then
+              when Smon::GAP then
+                prn.synchronize do
+                  if 0 < rcv.length then
+                    printf("%s: %10d[ms]: %s\n", port, tick, rcv)
+                  else
+                    printf("%s: %10d[ms]: GAP\n", port, tick)
+                  end
+                end
+              when Smon::TO1 then
+                prn.synchronize do
+                  printf("%s: %10d[ms]: TO%d\n", port, tick, state)
+                end
+              when Smon::TO2 then
+                prn.synchronize do
+                  printf("%s: %10d[ms]: TO%d\n", port, tick, state)
+                end
+              when Smon::TO3 then
+                prn.synchronize do
+                  printf("%s: %10d[ms]: TO%d\n", port, tick, state)
+                end
+              else
+                loop = false
+                th_rcv.stop()
+              end
+            end
+          end
+        end
+        loop = true
+        while loop do
+          str = Core.gets()
+          cmd_idx = reg.select(str)
+          case cmd_idx
+          when 0
+            data = CppRegexp.reg_replace(str, '[ _\-/@#(){}<>,\.]', '')
+            if 0 < data.length then
+              smon.send(data, 0)
+              tick += Core.tick() % 100000000000
+              prn.synchronize do
+                printf("%s: %10d[ms]: Send: %s\n", port, tick, data)
+              end
+            end
+          when 1
+          when 2
+            loop = false;
+            break;
+          else
+          end
+        end
+      end
+      smon.close()
+    else
+      print "smon [options] comxx data1 data2 ...", "\n"
+      print "ex)\n"
+      print "  ./smon -m default_script.rb /dev/pts/6 '01 02_030405...060-70809' 00112233445566778899\n"
+      print "\n"
+    end
+  end
   def self.__CheckOptions()
     opts = Args.new
     if nil == opts['mruby-script'] then
@@ -166,6 +292,10 @@ class Core
         (Smon.pipelist(regs)).each do |name|
           print name, "\n"
         end
+        exit 0
+      end
+      if nil != opts['oneline'] then
+        Core.opt_send()
         exit 0
       end
       if nil != opts['crc'] then

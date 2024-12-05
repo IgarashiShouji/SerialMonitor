@@ -1,5 +1,6 @@
 # default script
 
+tick = Core.tick()
 opts = Args.new()
 if 0 < opts.size() then
   th_prn = WorkerThread.new
@@ -18,28 +19,33 @@ if 0 < opts.size() then
           when Smon::CACHE_FULL then
           when Smon::GAP then
             th_prn.synchronize do
+              tick += Core.tick() % 100000000000
               if 0 < rcv_msg.length then
-                printf("%d:%s: %s\n", idx, arg, rcv_msg)
+                printf("%d:%s: %10d[ms]: %s\n", idx, arg, tick, rcv_msg)
               end
-              printf("%d:%s: GAP\n", idx, arg)
+              printf("%d:%s: %10d[ms]: GAP\n", idx, arg, tick)
             end
           when Smon::TO1 then
             th_prn.synchronize do
-              printf("%d:%s: TO%d\n", idx, arg, state)
+              tick += Core.tick() % 100000000000
+              printf("%d:%s: %10d[ms]: TO%d\n", idx, arg, tick, state)
             end
           when Smon::TO2 then
             th_prn.synchronize do
-              printf("%d:%s: TO%d\n", idx, arg, state)
+              tick += Core.tick() % 100000000000
+              printf("%d:%s: %10d[ms]: TO%d\n", idx, arg, tick, state)
             end
           when Smon::TO3 then
             th_prn.synchronize do
-              printf("%d:%s: TO%d\n", idx, arg, state)
+              tick += Core.tick() % 100000000000
+              printf("%d:%s: %10d[ms]: TO%d\n", idx, arg, tick, state)
             end
           else
             loop = false
           end
         end
       end
+      th_ctrl.stop()
     end
   end
   while true do
@@ -54,7 +60,10 @@ if 0 < opts.size() then
       msg = CppRegexp.reg_replace(str, '^.*:', '')
       ( smon, th_ctrl, idx_, arg ) = objs[idx]
       smon.send(msg, 0)
-      printf("%d:%s: Send: %s\n", idx, arg, msg)
+      th_prn.synchronize do
+        tick += Core.tick() % 100000000000
+        printf("%d:%s: %10d[ms]: Send: %s\n", idx, arg, tick, msg)
+      end
     else
       break
     end
@@ -62,10 +71,6 @@ if 0 < opts.size() then
   objs.each do |items|
     ( smon, th_ctrl, idx, arg ) = items
     smon.close()
-  end
-  objs.each do |items|
-    ( smon, th_ctrl, idx, arg ) = items
-    th_ctrl.join()
   end
 else
   print "smon [options] comXX comXX ...", "\n"
