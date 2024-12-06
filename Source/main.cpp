@@ -1012,6 +1012,8 @@ static mrb_value mrb_core_date(mrb_state* mrb, mrb_value self)
 {
     std::stringstream date;
     auto now = std::chrono::system_clock::now();
+#if 0
+// MXE Build Error
     mrb_int argc; mrb_value * argv;
     mrb_get_args(mrb, "*", &argv, &argc);
     if((1 == argc) && (MRB_TT_STRING == mrb_type(argv[0])))
@@ -1032,6 +1034,7 @@ static mrb_value mrb_core_date(mrb_state* mrb, mrb_value self)
         date << "." << std::setfill('0') << std::right << std::setw(3) << (ms % 1000);
         return mrb_str_new_cstr(mrb, (date.str()).c_str());
     }
+#endif
     std::time_t time = std::chrono::system_clock::to_time_t(now);
     std::tm * lt = std::localtime(&time);
     uint64_t ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
