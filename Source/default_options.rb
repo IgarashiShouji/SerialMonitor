@@ -146,6 +146,7 @@ end
 
 class Core
   def self.opt_send()
+    print 'Date: ', Core.date(), "\n"
     tick = Core.tick()
     opts = Args.new()
     prn = WorkerThread.new

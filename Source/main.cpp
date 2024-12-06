@@ -54,7 +54,7 @@
 #include <OpenXLSX.hpp>
 
 /* -- static const & functions -- */
-static const char *  SoftwareRevision = "0.13.10";
+static const char *  SoftwareRevision = "0.13.11";
 std::chrono::system_clock::time_point start;
 
 static unsigned char toValue(unsigned char data)
@@ -1008,6 +1008,42 @@ static mrb_value mrb_core_tick(mrb_state* mrb, mrb_value self)
     return mrb_int_value( mrb, std::chrono::duration_cast<std::chrono::milliseconds>(now - temp).count());
 }
 
+static mrb_value mrb_core_date(mrb_state* mrb, mrb_value self)
+{
+    std::stringstream date;
+    auto now = std::chrono::system_clock::now();
+    mrb_int argc; mrb_value * argv;
+    mrb_get_args(mrb, "*", &argv, &argc);
+    if((1 == argc) && (MRB_TT_STRING == mrb_type(argv[0])))
+    {
+        //std::string time_zone("Asia/Tokyo");
+        std::string time_zone(RSTR_PTR(mrb_str_ptr(argv[0])));
+        auto tz = std::chrono::locate_zone(time_zone);
+        auto ltime = tz->to_local(now);
+        std::time_t time = std::chrono::system_clock::to_time_t(tz->to_sys(ltime));
+        std::tm * lt = std::localtime(&time);
+        uint64_t ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
+        date << lt->tm_year+1900;
+        date << "/" << std::setfill('0') << std::right << std::setw(2) << lt->tm_mon + 1;
+        date << "/" << std::setfill('0') << std::right << std::setw(2) << lt->tm_mday;
+        date << " " << std::setfill('0') << std::right << std::setw(2) << lt->tm_hour;
+        date << ":" << std::setfill('0') << std::right << std::setw(2) << lt->tm_min;
+        date << ":" << std::setfill('0') << std::right << std::setw(2) << lt->tm_sec;
+        date << "." << std::setfill('0') << std::right << std::setw(3) << (ms % 1000);
+        return mrb_str_new_cstr(mrb, (date.str()).c_str());
+    }
+    std::time_t time = std::chrono::system_clock::to_time_t(now);
+    std::tm * lt = std::localtime(&time);
+    uint64_t ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
+    date << lt->tm_year+1900;
+    date << "/" << std::setfill('0') << std::right << std::setw(2) << lt->tm_mon + 1;
+    date << "/" << std::setfill('0') << std::right << std::setw(2) << lt->tm_mday;
+    date << " " << std::setfill('0') << std::right << std::setw(2) << lt->tm_hour;
+    date << ":" << std::setfill('0') << std::right << std::setw(2) << lt->tm_min;
+    date << ":" << std::setfill('0') << std::right << std::setw(2) << lt->tm_sec;
+    date << "." << std::setfill('0') << std::right << std::setw(3) << (ms % 1000);
+    return mrb_str_new_cstr(mrb, (date.str()).c_str());
+}
 
 /* class CppRegexp */
 static mrb_value mrb_cppregexp_initialize(mrb_state * mrb, mrb_value self);
@@ -2922,6 +2958,7 @@ public:
             mrb_define_module_function(mrb, core_class, "timestamp",    mrb_core_file_timestamp,MRB_ARGS_ARG( 1, 1 )    );
             mrb_define_module_function(mrb, core_class, "makeQR",       mrb_core_make_qr,       MRB_ARGS_ARG( 1, 1 )    );
             mrb_define_module_function(mrb, core_class, "tick",         mrb_core_tick,          MRB_ARGS_ARG( 1, 1 )    );
+            mrb_define_module_function(mrb, core_class, "date",         mrb_core_date,          MRB_ARGS_ARG( 1, 1 )    );
 
             /* Class options */
             struct RClass * opt_class = mrb_define_class_under( mrb, mrb->kernel_module, "Args", mrb->object_class );

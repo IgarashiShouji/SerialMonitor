@@ -49,6 +49,20 @@ if 0 < opts.size() then
       th_ctrl.stop()
     end
   end
+  th_time = WorkerThread.new
+  loop_time = true
+  th_time.run() do
+    while loop_time do
+      th_prn.synchronize do
+        print "Date: ", Core.date(), "\n"
+      end
+      50.times do |idx|
+        WorkerThread.ms_sleep(100)
+        if !loop then; break; end
+      end
+    end
+    th_time.stop()
+  end
   while true do
     str = Core.gets()
     if nil == str     then; break; end
@@ -69,6 +83,7 @@ if 0 < opts.size() then
       break
     end
   end
+  loop_time = false
   objs.each do |items|
     ( smon, th_ctrl, idx, arg ) = items
     smon.close()
