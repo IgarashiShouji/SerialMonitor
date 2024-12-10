@@ -11,13 +11,13 @@ end
 
 def test_core()
   print "Core test\n"
+  printf("  tick: %d\n", Core.tick(1))
   data = '010203040506070809'
   printf("  modbus crc: %s -> %-6s : check %s\n",  data, Core.crc16(data), ('0EB2' == Core.crc16(data) ? 'OK' : 'NG'))
   printf("  crc8 crc  : %s -> %-6s : check %s\n",  data, Core.crc8(data),  ('98'   == Core.crc8(data)  ? 'OK' : 'NG'))
   printf("  checksum  : %s -> %-6s : check %s\n",  data, Core.sum(data),   ('01'   == Core.sum(data)   ? 'OK' : 'NG'))
-  printf("  tick: %d[ms]\n", Core.tick(1))
   printf("  file timestamp: %s", Core.timestamp('test1.rb'))
-  printf("  tick: %d[ms]\n", Core.tick(1))
+  printf("  tick: %d\n", Core.tick(1))
   #printf("  date UTC           : %s\n", Core.date('UTC'))
   #printf("  date Asia/Singapore: %s\n", Core.date('Asia/Singapore'))
   printf("  date Asia/Tokyo    : %s\n", Core.date('Asia/Tokyo'))
@@ -28,7 +28,7 @@ end
 def test_bin_edit
   print "BinEdit test\n"
 
-  bin = BinEdit.new('0102030405')
+  bin = BinEdit.new('01 02-0304@#_05')
   printf("  %s: length check %s, dump check %s\n", bin.dump, (5 == bin.length ? 'OK' : 'NG'), ('0102030405' == bin.dump ? "OK" : "NG"))
   printf("  %s\n", bin.dump(3))
   printf("  %s\n", bin.dump(1, 2))
@@ -69,6 +69,14 @@ def test_bin_edit
   bin.set(0, 'dfwbcsiFAH',  data)
   print "  ", bin.dump(), "\n"
   print "  ", bin.get(0, 'dfwbcsiFA5H4'), "\n"
+  begin
+    bin2 = BinEdit.new(bin)
+    print "  ", bin2.dump(), "\n"
+    bin3 = BinEdit.new(bin, 10)
+    print "  ", bin3.dump(), "\n"
+    bin4 = BinEdit.new(bin, 1, 3)
+    print "  ", bin4.dump(), "\n"
+  end
 
   bin = BinEdit.new(bin.length, 0x00)
   print "  ", bin.dump(), "\n"
@@ -140,6 +148,16 @@ def test_bin_edit
   bin.set('F', [num])
   printf("  FLOAT: %f: %s\n", num, bin.dump)
   printf("  float: %f: %s\n", num, BinEdit.hexFromArray('f', [7.0]))
+
+  str = '0123456789012345'
+  bin = BinEdit.new(str.length)
+  bin.set('a', [str])
+  print '  hex: ', bin.dump(), "\n"
+  print '  tx:  ', bin.get(sprintf("a%d", bin.length())), "\n"
+
+  str = 'tx:0123456'
+  bin = BinEdit.new('tx:0123456')
+  printf("  %s -> %s\n", str, bin.dump())
 
   GC.start()
   print "BinEdit test end\n"

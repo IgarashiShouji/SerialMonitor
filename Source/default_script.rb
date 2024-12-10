@@ -56,7 +56,7 @@ if 0 < opts.size() then
       th_prn.synchronize do
         print "Date: ", Core.date(), "\n"
       end
-      50.times do |idx|
+      300.times do |idx|
         WorkerThread.ms_sleep(100)
         if !loop then; break; end
       end
@@ -67,27 +67,30 @@ if 0 < opts.size() then
     str = Core.gets()
     if nil == str     then; break; end
     if 'quit' == str  then; break; end
-    if 0 < str.length then
+    data = str
+    if 0 < data.length then
       idx = 0
-      if CppRegexp.reg_match(str, ':') then
-        idx = (CppRegexp.reg_replace(str, ':.*$', '')).to_i
+      if CppRegexp.reg_match(data, '^[0-9]+:') then
+        idx = (CppRegexp.reg_replace(data, ':.*$', '')).to_i
+        data = CppRegexp.reg_replace(data, '^[0-9]+:', '')
       end
-      msg = CppRegexp.reg_replace(str, '^.*:', '')
-      ( smon, th_ctrl, idx_, arg ) = objs[idx]
-      smon.send(msg, 0)
-      th_prn.synchronize do
-        tick += Core.tick() % 100000000000
-        printf("%d:%s: %10d[ms]: Send: %s\n", idx, arg, tick, msg)
+      if idx < objs.length then
+        ( smon, th_ctrl, idx_, arg ) = objs[idx]
+        smon.send(data, 0)
+        th_prn.synchronize do
+          tick += Core.tick() % 100000000000
+          printf("%d:%s: %10d[ms]: Send: %s\n", idx, arg, tick, data)
+        end
       end
     else
       break
     end
   end
   loop_time = false
-  objs.each do |items|
-    ( smon, th_ctrl, idx, arg ) = items
-    smon.close()
-  end
+#  objs.each do |items|
+#    ( smon, th_ctrl, idx, arg ) = items
+#    smon.close()
+#  end
 else
   print "smon [options] comXX comXX ...", "\n"
   print "see of help)\n"

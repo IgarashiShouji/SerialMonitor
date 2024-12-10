@@ -523,3 +523,151 @@ class CppRegexp
     return false
   end
 end
+
+class SvgSequence
+  def initialize()
+    @title = ''
+    @subtitle = ''
+    @cnt  = 0
+    @len  = 0
+    @page = 0
+    @x    = 280
+    @y    = 110;
+    @log = Array.new
+    @height = 125
+    @actor = Array.new
+  end
+  def setTitle(main, sub='')
+    @title    = main
+    @subtitle = sub
+  end
+  def setPage(p)
+    @page = p
+  end
+  def length()
+    return @cnt
+  end
+  def add_actor(name)
+    @actor.push(name)
+  end
+  def act_life(height)
+    act = ''
+    @actor.each_with_index do |name, idx|
+      act += '   <rect fill="none"  x ="' + sprintf("%d",  5 + idx*190) + '"           y = "5"   rx="15" ry="15" width="140" height="45" stroke="black" stroke-width="3"/>' + "\n"
+      act += '   <text fill="black" x ="' + sprintf("%d", 75 + idx*190) + '"           y ="35"          stroke="black" stroke-width="0" font-family="serif" font-size="24"  text-anchor="middle" xml:space="preserve">' + name + "</text>\n"
+      act += '   <line fill="none"  x1="' + sprintf("%d", 75 + idx*190) + '"  x2="' + sprintf("%d", 75 + idx*190) + '"  y1="55"  y2="' +  sprintf("%d", height) +  '" stroke="black" stroke-width="1" stroke-dasharray="5"/>' + "\n"
+      @x = (idx * 190) + 75 + 15
+    end
+    return act
+  end
+  def log_data(tick='', data='', st=0, ed=1, msg='', fmt='', arg1='', arg2='', arg3='')
+    @log.push(["send", [tick, data, st, ed, msg, fmt, arg1, arg2, arg3]])
+    @cnt += 1
+    if @len < data.length then
+      @len = data.length
+    end
+  end
+  def inteval(val)
+    @log.push(['interval', val])
+  end
+  def hedder()
+    height = 125 + @cnt * 50
+    svg_width  = (@actor.length * 280) + @len * 6
+    head = sprintf("<!-- len(%d), cnt(%d) -->\n", @len, @cnt)
+    head += '<svg width="' + sprintf("%d", svg_width) + '" height="' + sprintf("%d", height+5) + '" xmlns="http://www.w3.org/2000/svg" xmlns:svg="http://www.w3.org/2000/svg">' +  "\n"
+    head += '  <defs>' + "\n"
+    head += '   <marker id="arrow-black" markerHeight="5" markerUnits="strokeWidth" markerWidth="5" orient="auto" refX="50" refY="50" se_type="rightarrow" viewBox="0 0 100 100"> <path d="m100,50l-100,40l30,-40l-30,-40z" fill="black" stroke="black" stroke-width="10"/> </marker>' + "\n"
+    head += '   <marker id="arrow-limegreen" markerHeight="5" markerUnits="strokeWidth" markerWidth="5" orient="auto" refX="50" refY="50" se_type="rightarrow" viewBox="0 0 100 100"> <path d="m100,50l-100,40l30,-40l-30,-40z" fill="limegreen" stroke="limegreen " stroke-width="10"/> </marker>' + "\n"
+    head += '   <marker id="arrow-red"   markerHeight="5" markerUnits="strokeWidth" markerWidth="5" orient="auto" refX="50" refY="50" se_type="rightarrow" viewBox="0 0 100 100"> <path d="m100,50l-100,40l30,-40l-30,-40z" fill="red" stroke="red" stroke-width="10"/> </marker>' + "\n"
+    head += '  </defs>' + "\n"
+    head += '  <g class="layer">' + "\n"
+    head += '   <title>Communication Log</title>' + "\n"
+    head += '   <text fill="black" x ="' + sprintf("%d", (200+@actor.length*140)) + '" y ="30" stroke="black" stroke-width="0" font-family="serif" font-size="24"  text-anchor="start" xml:space="preserve">' + @title + "</text>\n"
+    head += '   <text fill="black" x ="' + sprintf("%d", (200+@actor.length*140)) + '" y ="50" stroke="black" stroke-width="0" font-family="serif" font-size="18"  text-anchor="start" xml:space="preserve">' + @subtitle + "</text>\n"
+    head += '   <!-- actor and life line -->' + "\n"
+    head += act_life(height)
+    head += '   <!--  <rect fill="white"   x="5"             y ="65" width="270" height="12" stroke="white" stroke-width="0"/> -->' + "\n"
+    if 0 < @page then
+      head += '   <text fill="blue"    x="170"           y ="73"                         stroke="blue"  stroke-width="0" font-family="Monospace" font-size="12" text-anchor="middle" xml:space="preserve"> -------- Page ' +  sprintf("%04d", @page) + ' -------- </text>' + "\n"
+    end
+    head += "\n"
+    return head
+  end
+  def prn_data(tick, data, send, recv, msg, fmt, arg1, arg2, arg3)
+    svg = sprintf("   <!-- log_data: %8d[ms]: %s -->\n", tick, data)
+    if send < recv then
+      svg += '   <line fill="none"      x1="' + sprintf("%d", (75+send*190)) + '"   y1="' + sprintf("%d", @y)   + '"  x2="' + sprintf("%d", ((65+recv*190))) + '" y2="' + sprintf("%d", @y) + '" stroke="black" stroke-width="3" marker-end="url(#arrow-black)"/>' + "\n"
+      svg += '   <text fill="black"     x ="' + sprintf("%d", (75+send*190)+((recv-send)*190)/2) + '"  y ="' + sprintf("%d", @y-5) +  '"   stroke="black" stroke-width="0" font-family="Monospace" font-size="12" text-anchor="middle" xml:space="preserve">' + sprintf("%s", msg) + '</text>' + "\n"
+    else
+      if 0 < data.length then
+        svg += '   <line fill="none"      x1="' + sprintf("%d", (75+send*190 - 10)) + '"  y1="' + sprintf("%d", @y) +   '"  x2="' + sprintf("%d", (75+recv*190 + 10)) + '" y2="' + sprintf("%d", @y) + '" stroke="limegreen" stroke-width="2" stroke-dasharray="10" marker-end="url(#arrow-limegreen)"/>' + "\n"
+      else
+        svg += '   <line fill="none"      x1="' + sprintf("%d", (75+send*190 - 10)) + '"  y1="' + sprintf("%d", @y) +   '"  x2="' + sprintf("%d", (75+recv*190 + 10)) + '" y2="' + sprintf("%d", @y) + '" stroke="red" stroke-width="2" stroke-dasharray="10" marker-end="url(#arrow-red)"/>' + "\n"
+      end
+      svg += '   <text fill="black"     x ="' + sprintf("%d", ((75+recv*190)+((send-recv)*190)/2)) + '"  y ="' + sprintf("%d", @y-5) +  '"   stroke="black" stroke-width="0" font-family="Monospace" font-size="12" text-anchor="middle" xml:space="preserve">' + sprintf("%s", msg) + '</text>' + "\n"
+    end
+    if 0 < tick then
+      svg += '   <text fill="black"     x ="5"    y ="' + sprintf("%d", @y+6) + '"  stroke="black" stroke-width="0" font-family="Monospace" font-size="12" text-anchor="left"   xml:space="preserve"> ' + sprintf("%6d", tick) + '[ms]</text> ' + "\n"
+    end
+    x = @x
+    fg_b = true; fg_w = true; fg_d = true;
+    reg_b = CppRegexp.new('[cbCB]')
+    reg_w = CppRegexp.new('[wsWS]')
+    reg_d = CppRegexp.new('[idfIDF]')
+    (fmt.chars()).each do |c|
+      if    reg_b.match(c) then
+        if fg_b then
+          svg += '   <rect fill="magenta"   x ="' + sprintf("%d", x) + '"  y ="' + sprintf("%d", @y-5) + '"   width="12" height="13" stroke="none" stroke-width="0"/>' + "\n"; x = x + 12; fg_b = false;
+        else
+          svg += '   <rect fill="yellow"    x ="' + sprintf("%d", x) + '"  y ="' + sprintf("%d", @y-5) + '"   width="12" height="13" stroke="none" stroke-width="0"/>' + "\n"; x = x + 12; fg_b = true;
+        end
+      elsif reg_w.match(c) then
+        if fg_w then
+          svg += '   <rect fill="orange"    x ="' + sprintf("%d", x) + '"  y ="' + sprintf("%d", @y-5) + '"   width="24" height="13" stroke="none" stroke-width="0"/>' + "\n"; x = x + 24; fg_w = false;
+        else
+          svg += '   <rect fill="lightgray" x ="' + sprintf("%d", x) + '"  y ="' + sprintf("%d", @y-5) + '"   width="24" height="13" stroke="none" stroke-width="0"/>' + "\n"; x = x + 24; fg_w = true;
+        end
+      elsif reg_d.match(c) then
+        if fg_d then
+          svg += '   <rect fill="lime"      x ="' + sprintf("%d", x) + '"  y ="' + sprintf("%d", @y-5) + '"   width="48" height="13" stroke="none" stroke-width="0"/>' + "\n"; x = x + 48; fg_d = false;
+        else
+          svg += '   <rect fill="cyan"      x ="' + sprintf("%d", x) + '"  y ="' + sprintf("%d", @y-5) + '"   width="48" height="13" stroke="none" stroke-width="0"/>' + "\n"; x = x + 48; fg_d = true;
+        end
+      else
+      end
+    end
+    svg += '   <text fill="black"     x ="' + sprintf("%d", @x) + '"  y ="' + sprintf("%d", @y+6) +    '"  stroke="black" stroke-width="0" font-family="Monospace" font-size="12" text-anchor="left"   xml:space="preserve">' + sprintf("%s", data) + '</text>' + "\n"
+    svg += '   <text fill="black"     x ="' + sprintf("%d", @x) + '"  y ="' + sprintf("%d", @y+6+12) + '"  stroke="black" stroke-width="0" font-family="Monospace" font-size="12" text-anchor="left"   xml:space="preserve">' + sprintf("%s", arg1) + '</text>' + "\n"
+    svg += '   <text fill="black"     x ="' + sprintf("%d", @x) + '"  y ="' + sprintf("%d", @y+6+24) + '"  stroke="black" stroke-width="0" font-family="Monospace" font-size="12" text-anchor="left"   xml:space="preserve">' + sprintf("%s", arg2) + '</text>' + "\n"
+    svg += '   <text fill="black"     x ="' + sprintf("%d", @x) + '"  y ="' + sprintf("%d", @y+6+36) + '"  stroke="black" stroke-width="0" font-family="Monospace" font-size="12" text-anchor="left"   xml:space="preserve">' + sprintf("%s", arg3) + '</text>' + "\n"
+    @y = @y + 50
+    return svg
+  end
+  def fotter()
+    tail = '   <!-- Page Lavel -->' + "\n"
+    if 0 < @page then
+      tail += '   <text fill="blue"    x="170"           y="' +  sprintf("%d", @y+12) + '"                         stroke="blue"  stroke-width="0" font-family="Monospace" font-size="12" text-anchor="middle" xml:space="preserve"> -------- Next ' + sprintf("%04d", @page+1) + ' -------- </text>' + "\n"
+    end
+    tail += '  </g>' + "\n"
+    tail += '</svg>' + "\n"
+    return tail
+  end
+  def body()
+    body = ''
+    @log.each do |item|
+      (cmd, arg) = item
+      case cmd
+      when 'send'
+        (tick, data, send, recv, msg, fmt, arg1, arg2, arg3) = arg
+        body += prn_data(tick, data, send, recv, msg, fmt, arg1, arg2, arg3)
+      when 'interval'
+        val = arg
+        body += '   <!-- interval: +' + sprintf("%d[ms]", val) + ' -->' + "\n"
+        body += '   <rect fill="white"    x="5"             y ="' + sprintf("%d",(@y+20-50)) + '" width="100" height="12" stroke="white"    stroke-width="0"/>' + "\n"
+        body += '   <text fill="DeepPink" x="75"            y ="' + sprintf("%d",(@y+32-50)) + '"                         stroke="DeepPink" stroke-width="0" font-family="Monospace" font-size="12" text-anchor="middle" xml:space="preserve">+' + sprintf("%d[ms]", val) + '</text>' + "\n"
+      else
+      end
+    end
+    return body
+  end
+end
