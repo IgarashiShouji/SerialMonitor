@@ -13,9 +13,6 @@ def test_core()
   print "Core test\n"
   printf("  tick: %d\n", Core.tick(1))
   data = '010203040506070809'
-  printf("  modbus crc: %s -> %-6s : check %s\n",  data, Core.crc16(data), ('0EB2' == Core.crc16(data) ? 'OK' : 'NG'))
-  printf("  crc8 crc  : %s -> %-6s : check %s\n",  data, Core.crc8(data),  ('98'   == Core.crc8(data)  ? 'OK' : 'NG'))
-  printf("  checksum  : %s -> %-6s : check %s\n",  data, Core.sum(data),   ('01'   == Core.sum(data)   ? 'OK' : 'NG'))
   printf("  file timestamp: %s", Core.timestamp('test1.rb'))
   printf("  tick: %d\n", Core.tick(1))
   #printf("  date UTC           : %s\n", Core.date('UTC'))
@@ -158,6 +155,11 @@ def test_bin_edit
   str = 'tx:0123456'
   bin = BinEdit.new('tx:0123456')
   printf("  %s -> %s\n", str, bin.dump())
+
+  bin = BinEdit.new('010203040506070809')
+  printf("  modbus crc: %s -> %-6s : check %s\n",  bin.dump(), bin.crc16(), ('0EB2' == bin.crc16() ? 'OK' : 'NG'))
+  printf("  crc8 crc  : %s -> %-6s : check %s\n",  bin.dump(), bin.crc8(),  ('98'   == bin.crc8()  ? 'OK' : 'NG'))
+  printf("  checksum  : %s -> %-6s : check %s\n",  bin.dump(), bin.sum(),   ('01'   == bin.sum()   ? 'OK' : 'NG'))
 
   GC.start()
   print "BinEdit test end\n"

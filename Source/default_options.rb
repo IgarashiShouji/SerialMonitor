@@ -301,15 +301,18 @@ class Core
         exit 0
       end
       if nil != opts['crc'] then
-        printf("%s: %s\n", Core.crc16(opts['crc']), opts['crc']);
+        bin = BinEdit.new(opts['crc'])
+        printf("%s: %s\n", bin.crc16(), opts['crc']);
         exit 0
       end
       if nil != opts['crc8'] then
-        printf("%s: %s\n", Core.crc8(opts['crc8']), opts['crc8']);
+        bin = BinEdit.new(opts['crc8'])
+        printf("%s: %s\n", bin.crc8(), opts['crc8']);
         exit 0
       end
       if nil != opts['sum'] then
-        printf("%s: %s\n", Core.sum(opts['sum']), opts['sum']);
+        bin = BinEdit.new(opts['sum'])
+        printf("%s: %s\n", bin.sum(), opts['sum']);
         exit 0
       end
       if nil != opts['FLOAT'] then

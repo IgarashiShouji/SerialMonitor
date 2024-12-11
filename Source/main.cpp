@@ -54,7 +54,7 @@
 #include <OpenXLSX.hpp>
 
 /* -- static const & functions -- */
-static const char *  SoftwareRevision = "0.13.13";
+static const char *  SoftwareRevision = "0.13.14";
 std::chrono::system_clock::time_point start;
 
 static unsigned char toValue(unsigned char data)
@@ -158,45 +158,6 @@ static mrb_value mrb_opt_get(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_opt_size(mrb_state * mrb, mrb_value self);
 
 /* class Core */
-static mrb_value mrb_core_crc16(mrb_state* mrb, mrb_value self)
-{
-    mrb_int argc; mrb_value * argv; mrb_get_args(mrb, "*", &argv, &argc);
-    if((1 == argc) && (MRB_TT_STRING == mrb_type(argv[0])))
-    {
-        std::string data(RSTR_PTR(mrb_str_ptr(argv[0])));
-        BinaryControl bin(data);
-        char temp[5] = { 0 };
-        sprintf(temp, "%04X", bin.modbus_crc16());
-        return mrb_str_new_cstr(mrb, temp);
-    }
-    return mrb_nil_value();
-}
-static mrb_value mrb_core_crc8(mrb_state* mrb, mrb_value self)
-{
-    mrb_int argc; mrb_value * argv; mrb_get_args(mrb, "*", &argv, &argc);
-    if((1 == argc) && (MRB_TT_STRING == mrb_type(argv[0])))
-    {
-        std::string data(RSTR_PTR(mrb_str_ptr(argv[0])));
-        BinaryControl bin(data);
-        char temp[2] = { 0 };
-        sprintf(temp, "%02X", bin.crc8());
-        return mrb_str_new_cstr(mrb, temp);
-    }
-    return mrb_nil_value();
-}
-static mrb_value mrb_core_sum(mrb_state* mrb, mrb_value self)
-{
-    mrb_int argc; mrb_value * argv; mrb_get_args(mrb, "*", &argv, &argc);
-    if((1 == argc) && (MRB_TT_STRING == mrb_type(argv[0])))
-    {
-        std::string data(RSTR_PTR(mrb_str_ptr(argv[0])));
-        BinaryControl bin(data);
-        char temp[2] = { 0 };
-        sprintf(temp, "%02X", bin.xsum());
-        return mrb_str_new_cstr(mrb, temp);
-    }
-    return mrb_nil_value();
-}
 static mrb_value mrb_core_to_hex(mrb_state* mrb, mrb_value self)
 {
     union
@@ -2078,9 +2039,6 @@ public:
         {
             /* Class Core */
             struct RClass * core_class = mrb_define_class_under( mrb, mrb->kernel_module, "Core", mrb->object_class );
-            mrb_define_module_function(mrb, core_class, "crc16",        mrb_core_crc16,         MRB_ARGS_ARG( 1, 1 )    );
-            mrb_define_module_function(mrb, core_class, "crc8",         mrb_core_crc8,          MRB_ARGS_ARG( 1, 1 )    );
-            mrb_define_module_function(mrb, core_class, "sum",          mrb_core_sum,           MRB_ARGS_ARG( 1, 1 )    );
             mrb_define_module_function(mrb, core_class, "to_hex",       mrb_core_to_hex,        MRB_ARGS_ARG( 2, 1 )    );
             mrb_define_module_function(mrb, core_class, "gets",         mrb_core_gets,          MRB_ARGS_ANY()          );
             mrb_define_module_function(mrb, core_class, "exists",       mrb_core_exists,        MRB_ARGS_ARG( 1, 1 )    );
@@ -2577,7 +2535,6 @@ mrb_value mrb_bedit_crc16(mrb_state * mrb, mrb_value self)
 }
 mrb_value mrb_bedit_crc8(mrb_state * mrb, mrb_value self)
 {
-    mrb_value result;
     BinaryControl * bedit = static_cast<BinaryControl *>(DATA_PTR(self));
     if(nullptr != bedit)
     {
@@ -2589,7 +2546,6 @@ mrb_value mrb_bedit_crc8(mrb_state * mrb, mrb_value self)
 }
 mrb_value mrb_bedit_sum(mrb_state * mrb, mrb_value self)
 {
-    mrb_value result;
     BinaryControl * bedit = static_cast<BinaryControl *>(DATA_PTR(self));
     if(nullptr != bedit)
     {
