@@ -54,7 +54,7 @@
 #include <OpenXLSX.hpp>
 
 /* -- static const & functions -- */
-static const char *  SoftwareRevision = "0.13.12";
+static const char *  SoftwareRevision = "0.13.13";
 std::chrono::system_clock::time_point start;
 
 static unsigned char toValue(unsigned char data)
@@ -67,6 +67,13 @@ static unsigned char toValue(unsigned char data)
     return val;
 }
 
+static auto str_split = [](std::string & src, std::regex & reg)
+{
+    std::list<std::string> result;
+    std::copy( std::sregex_token_iterator{src.begin(), src.end(), reg, -1}, std::sregex_token_iterator{}, std::back_inserter(result) );
+    return result;
+};
+
 class BinaryControl
 {
 protected:
@@ -74,11 +81,11 @@ protected:
     size_t compress_size;
     size_t pos;
     unsigned char * data;
-    std::mutex mtx;
 
 public:
-    BinaryControl(void) : length(0), compress_size(0), pos(0), data(nullptr) { }
-    BinaryControl(size_t size_) : length(0), compress_size(0), pos(0), data(nullptr) { alloc(size_); }
+    BinaryControl(void)                             : length(0), compress_size(0), pos(0), data(nullptr) { }
+    BinaryControl(BinaryControl & src)              : length(0), compress_size(0), pos(0), data(nullptr) { clone(0, src.length, src); }
+    BinaryControl(size_t size_)                     : length(0), compress_size(0), pos(0), data(nullptr) { alloc(size_); }
     BinaryControl(size_t size_, unsigned char data) : length(0), compress_size(0), pos(0), data(nullptr) { alloc(size_); std::memset( this->data, data, size_); }
     BinaryControl(std::string & data)
       : length(0), compress_size(0), pos(0), data(nullptr)
@@ -86,8 +93,7 @@ public:
         auto reg_file = std::regex("^file:");
         auto reg_comp = std::regex("^compress:");
         auto reg_text = std::regex("^tx:");
-        auto reg_bin  = std::regex("^[0-9a-fA-F -_@#%]*$");
-        if     (std::regex_search(data, reg_file))
+        if(std::regex_search(data, reg_file))
         {   /* file */
             auto fname= std::regex_replace(data, reg_file, "");
             loadBinaryFile(fname);
@@ -104,536 +110,47 @@ public:
             alloc(data.size());
             std::memcpy( this->data, data.c_str(), length);
         }
-        else if(std::regex_search(data, reg_bin))
-        {   /* hex data */
+        else
+        {
+            data = std::regex_replace(data, std::regex("[^0-9a-fA-F]"), "");
             alloc(data.size()/2);
             length = this->write(0, static_cast<mrb_int>(length), data);
         }
-        else
-        {
-        }
-    }
-    BinaryControl(BinaryControl & src)
-      : length(0), compress_size(0), pos(0), data(nullptr)
-    {
-        clone(0, src.length, src);
     }
     virtual ~BinaryControl(void)
     {
-        std::lock_guard<std::mutex> lock(mtx);
         if(nullptr!=data)
         {
             std::free(data);
         }
+        length = compress_size = pos = 0;
+        data = nullptr;
     }
-    void alloc(size_t size)
-    {
-        std::lock_guard<std::mutex> lock(mtx);
-        length        = size;
-        compress_size = 0;
-        pos           = 0;
-        if( nullptr != data ) { std::free(data); data = nullptr;                        }
-        if( 0 < size )        { data = static_cast<unsigned char *>(std::malloc(size)); }
-    }
-    size_t resize(size_t size)
-    {
-        if(length < size)
-        {
-            auto temp = std::realloc(data, size);
-            if(nullptr == temp) { return length; }
-            data = static_cast<unsigned char *>(temp);
-        }
-        this->length = size;
-        return this->length;
-    }
-    unsigned char * ptr(void)
-    {
-        return data;
-    }
-    size_t size(void) const
-    {
-        if(0 < compress_size) { return compress_size; }
-        return length;
-    }
-    size_t get_pos(void)
-    {
-        if(pos < size()) { return pos; }
-        return 0;
-    }
-    void clone(mrb_int address, mrb_int size, const BinaryControl & src)
-    {
-        if(nullptr != data) { std::free(data); data = nullptr; }
-        if(0 == src.compress_size) { length = size; compress_size = 0;    }
-        else                       { length = size; compress_size = size; }
-        if(src.size() < size) { size = src.size(); }
-        data = static_cast<unsigned char *>(std::malloc(size));
-        std::memcpy(data, &(src.data[address]), size);
-        pos = 0;
-    }
-    size_t loadBinaryFile(std::string & fname)
-    {
-        std::filesystem::path path(fname);
-        auto            file_sz = std::filesystem::file_size(path);
-        unsigned char * temp    = static_cast<unsigned char *>(std::malloc(file_sz));
-        if((0 < file_sz) && (nullptr != temp))
-        {
-            if(std::filesystem::exists(fname))
-            {
-                std::ifstream fin(fname, std::ios::binary);
-                if(fin.is_open())
-                {
-                    unsigned char * org_data = data;
-                    fin.read(reinterpret_cast<char *>(temp), file_sz);
-                    {
-                        std::lock_guard<std::mutex> lock(mtx);
-                        data          = temp;
-                        length        = file_sz;
-                        compress_size = 0;
-                    }
-                    if(nullptr != org_data) { std::free(org_data); }
-                    pos = 0;
-                    return length;
-                }
-            }
-        }
-        return 0;
-    }
-    void saveBinaryFile(std::string & fname)
-    {
-        std::lock_guard<std::mutex> lock(mtx);
-        std::ofstream fout(fname, std::ios::binary);
-        fout.write(reinterpret_cast<char *>(data), size());
-    }
-    void chg_compress(void)
-    {
-        if(0 == compress_size)
-        {
-            compress_size = length;
-            length = 0;
-        }
-    }
-    uint32_t compress(void)
-    {
-        if(nullptr != data)
-        {
-            if(0 == compress_size)
-            {
-                auto size_max = LZ4_compressBound(length);
-                auto cmp_data = std::malloc(size_max);
-                if(nullptr != cmp_data)
-                {
-                    std::lock_guard<std::mutex> lock(mtx);
-                    compress_size = LZ4_compress_default(reinterpret_cast<const char *>(data), static_cast<char *>(cmp_data), length, size_max);
-                    if(compress_size < length)
-                    {
-                        std::free(data);
-                        data = static_cast<unsigned char *>(cmp_data);
-                        pos = 0;
-                        return compress_size;
-                    }
-                    std::free(cmp_data);
-                    compress_size = 0;
-                }
-            }
-        }
-        return 0;
-    }
-    uint32_t uncompress(void)
-    {
-        if(nullptr != data)
-        {
-            if(0 < compress_size)
-            {
-                std::lock_guard<std::mutex> lock(mtx);
-                if(0 < length)
-                {
-                    auto dst = std::malloc(length);
-                    if(nullptr != dst)
-                    {
-                        auto size = LZ4_decompress_safe(reinterpret_cast<const char *>(data), reinterpret_cast<char *>(dst), compress_size, length);
-                        if(0 < size)
-                        {
-                            std::free(data);
-                            data = static_cast<unsigned char *>(dst);
-                            compress_size = 0;
-                            length = size;
-                            pos = 0;
-                            return size;
-                        }
-                        std::free(dst);
-                    }
-                }
-                else
-                {
-                    size_t buff_sz = 256;
-                    char * buff = static_cast<char *>(std::malloc(buff_sz));
-                    LZ4_streamDecode_t lz4s = { { 0 } };
-                    for(auto cnt=0; cnt < 32; cnt ++)
-                    {
-                        auto sz = LZ4_decompress_safe(reinterpret_cast<const char *>(data), buff, compress_size, buff_sz);
-                        if(0 < sz)
-                        {
-                            length = sz;
-                            compress_size = 0;
-                            std::free(data);
-                            data = reinterpret_cast<unsigned char *>(buff);
-                            break;
-                        }
-                        buff_sz <<= 1;
-                        auto temp = std::realloc(buff, buff_sz);
-                        if(nullptr == temp) { break; }
-                        buff = static_cast<char *>(temp);
-                    }
-                }
-            }
-        }
-        return 0;
-    }
-    uint32_t memset(mrb_int address, mrb_int set_data, mrb_int sz)
-    {
-        uint32_t len = 0;
-        auto size = this->size();
-        if(address < size)
-        {
-            len = address - size;
-            if(sz < len) { len = sz; }
-            std::lock_guard<std::mutex> lock(mtx);
-            std::memset(&(data[address]), static_cast<uint8_t>(set_data), len);
-        }
-        return len;
-    }
-    uint32_t memcpy(mrb_int address_dst, mrb_int address_src, mrb_int len, BinaryControl & src)
-    {
-        auto dst_len = size()     - address_dst;
-        auto src_len = src.size() - address_src;
-        if(dst_len < len) { len = dst_len; }
-        if(src_len < len) { len = src_len; }
-        if(0 < len)
-        {
-            std::lock_guard<std::mutex> lock(mtx);
-            std::memcpy(&(data[address_dst]), &(src.data[address_src]), len);
-        }
-        return len;
-    }
-    int32_t memcmp(mrb_int address_dst, mrb_int address_src, mrb_int len, BinaryControl & src)
-    {
-        auto dst_len = size()     - address_dst;
-        auto src_len = src.size() - address_src;
-        if(dst_len < len) { len = dst_len; }
-        if(src_len < len) { len = src_len; }
-        if(0 < len)
-        {
-            std::lock_guard<std::mutex> lock(mtx);
-            return std::memcmp(&(data[address_dst]), &(src.data[address_src]), len);
-        }
-        return -2;
-    }
-    uint32_t write(mrb_int address, mrb_int size, std::string & data)
-    {
-        size_t cnt = 0;
-        auto length = this->size();
-        if(address < length)
-        {
-            length -= address;
-            if(length < size) { size = length; }
-            if(0 < size)
-            {
-                const unsigned char * str = reinterpret_cast<const unsigned char *>(data.c_str());
-                unsigned char val = 0;
-                auto str_len = data.size();
-                for(auto idx = 0, len = 0; (cnt < size) && (idx < str_len); idx ++)
-                {
-                    unsigned char tmp = toValue(str[idx]);
-                    if(tmp <= 0x0F)
-                    {
-                        val = (val << 4) | tmp;
-                        len ++;
-                        if(0 == (len & 1))
-                        {
-                            this->data[address + cnt] = val;
-                            cnt ++;
-                        }
-                    }
-                }
-            }
-        }
-        return cnt;
-    }
-    uint32_t write_big(mrb_int address, mrb_int size, std::string & src)
-    {
-        size_t cnt = 0;
-        auto length = this->size();
-        if(address < length)
-        {
-            length -= address;
-            if(length < size) { size = length; }
-            if(0 < size)
-            {
-                unsigned char * data = static_cast<unsigned char *>(std::malloc(size));
-                const unsigned char * str = reinterpret_cast<const unsigned char *>(src.c_str());
-                unsigned char val = 0;
-                auto str_len = src.size();
-                for(auto idx = 0, len = 0; (cnt < size) && (idx < str_len); idx ++)
-                {
-                    unsigned char tmp = toValue(str[idx]);
-                    if(tmp <= 0x0F)
-                    {
-                        val = (val << 4) | tmp;
-                        len ++;
-                        if(0 == (len & 1))
-                        {
-                            data[cnt] = val;
-                            cnt ++;
-                        }
-                    }
-                }
-                for(size_t idx = 0, top = cnt - 1; idx < cnt; idx ++)
-                {
-                    this->data[address + (top - idx)] = data[idx];
-                }
-                std::free(data);
-            }
-        }
-        return cnt;
-    }
-    uint32_t dump(mrb_int address, mrb_int size, std::string & output)
-    {
-        uint32_t cnt = 0;
-        auto length = this->size();
-        if(address < length)
-        {
-            length -= address;
-            if(length < size) { size = length; }
-            if(0 < size)
-            {
-                std::lock_guard<std::mutex> lock(mtx);
-                for( ; (cnt < size); cnt ++)
-                {
-                    char temp[4] = { 0 };
-                    sprintf(temp, "%02X", data[address + cnt]);
-                    output += temp;
-                }
-            }
-        }
-        return cnt;
-    }
-    uint32_t dump_big(mrb_int address, mrb_int size, std::string & output)
-    {
-        uint32_t cnt = 0;
-        auto length = this->size();
-        if(address < length)
-        {
-            length -= address;
-            if(length < size) { size = length; }
-            if(0 < size)
-            {
-                auto top = size - 1;
-                std::lock_guard<std::mutex> lock(mtx);
-                for( ; (cnt < size); cnt ++)
-                {
-                    char temp[4] = { 0 };
-                    sprintf(temp, "%02X", data[address + (top - cnt)]);
-                    output += temp;
-                }
-            }
-        }
-        return cnt;
-    }
-    bool get(mrb_state * mrb, uint32_t address, std::string & format_, mrb_value & array)
-    {
-        auto state = ' ';
-        std::string num;
-        auto format = format_ + ' ';
-        for(auto t: format)
-        {
-            auto length = this->size();
-            if(('0' <= t) && (t <= '9'))
-            {
-                num += t;
-            }
-            else
-            {
-                switch(state)
-                {
-                case 'a':
-                    {
-                        size_t size = stoi(num);
-                        if(address < length)
-                        {
-                            length -= address;
-                            if(length < size) { size = length; }
-                            if(0 < size)
-                            {
-                                char str[size + 1];
-                                str[size] = '\0';
-                                std::memcpy(str, &(data[address]), size);
-                                mrb_ary_push(mrb, array, mrb_str_new_cstr(mrb, str));
-                                address += size;
-                            }
-                        }
-                    }
-                    break;
-                case 'A':
-                    {
-                        size_t size = stoi(num);
-                        if(address < length)
-                        {
-                            length -= address;
-                            if(length < size) { size = length; }
-                            if(0 < size)
-                            {
-                                char str[size + 1];
-                                str[size] = '\0';
-                                for(size_t idx = 0, top = size - 1; idx < size; idx ++)
-                                {
-                                    str[top - idx] = data[address + idx];
-                                }
-                                mrb_ary_push(mrb, array, mrb_str_new_cstr(mrb, str));
-                                address += size;
-                            }
-                        }
-                    }
-                    break;
-                case 'h':
-                    {
-                        mrb_int addr = address;
-                        mrb_int size = static_cast<unsigned int>(stoi(num));
-                        std::string hex;
-                        dump(addr, size, hex);
-                        mrb_ary_push(mrb, array, mrb_str_new_cstr(mrb, hex.c_str()));
-                        address += size;
-                    }
-                    break;
-                case 'H':
-                    {
-                        mrb_int addr = address;
-                        mrb_int size = static_cast<unsigned int>(stoi(num));
-                        std::string hex;
-                        dump_big(addr, size, hex);
-                        mrb_ary_push(mrb, array, mrb_str_new_cstr(mrb, hex.c_str()));
-                        address += size;
-                    }
-                    break;
-                default:
-                    break;
-                }
-                num.clear();
-                state = ' ';
-                switch(t)
-                {
-                case 'b': {  Byte temp; temp.buff[0] = data[address]; mrb_ary_push(mrb, array, mrb_int_value(mrb, temp.data)); address += 1; } break;
-                case 'c': {  Byte temp; temp.buff[0] = data[address]; mrb_ary_push(mrb, array, mrb_int_value(mrb, temp.val));  address += 1; } break;
-                case 'w': {  Word temp; std::memcpy(&(temp.buff[0]), &(data[address]), 2); mrb_ary_push(mrb, array, mrb_int_value(mrb, temp.uint16)); address += 2; } break;
-                case 's': {  Word temp; std::memcpy(&(temp.buff[0]), &(data[address]), 2); mrb_ary_push(mrb, array, mrb_int_value(mrb, temp.int16));  address += 2; } break;
-                case 'd': { DWord temp; std::memcpy(&(temp.buff[0]), &(data[address]), 4); mrb_ary_push(mrb, array, mrb_int_value(mrb, temp.uint32));  address += 4; } break;
-                case 'i': { DWord temp; std::memcpy(&(temp.buff[0]), &(data[address]), 4); mrb_ary_push(mrb, array, mrb_int_value(mrb, temp.int32));   address += 4; } break;
-                case 'f': { DWord temp; std::memcpy(&(temp.buff[0]), &(data[address]), 4); mrb_ary_push(mrb, array, mrb_float_value(mrb, temp.value)); address += 4; } break;
-
-                case 'W': { Word temp;  for(auto idx = 0; idx < 2; idx ++) { temp.buff[idx] = data[address + (1-idx)]; } mrb_ary_push(mrb, array, mrb_int_value(mrb, temp.uint16));  address += 2; } break;
-                case 'S': { Word temp;  for(auto idx = 0; idx < 2; idx ++) { temp.buff[idx] = data[address + (1-idx)]; } mrb_ary_push(mrb, array, mrb_int_value(mrb, temp.int16));   address += 2; } break;
-                case 'D': { DWord temp; for(auto idx = 0; idx < 4; idx ++) { temp.buff[idx] = data[address + (3-idx)]; } mrb_ary_push(mrb, array, mrb_int_value(mrb, temp.uint32));  address += 4; } break;
-                case 'I': { DWord temp; for(auto idx = 0; idx < 4; idx ++) { temp.buff[idx] = data[address + (3-idx)]; } mrb_ary_push(mrb, array, mrb_int_value(mrb, temp.int32));   address += 4; } break;
-                case 'F': { DWord temp; for(auto idx = 0; idx < 4; idx ++) { temp.buff[idx] = data[address + (3-idx)]; } mrb_ary_push(mrb, array, mrb_float_value(mrb, temp.value)); address += 4; } break;
-
-                case 'A': state = t; break;
-                case 'a': state = t; break;
-                case 'H': state = t; break;
-                case 'h': state = t; break;
-                default:
-                    break;
-                }
-            }
-        }
-        pos = address;
-        return true;
-    }
-    mrb_int set(mrb_state * mrb, uint32_t address, std::string & format_, mrb_value & array)
-    {
-        mrb_int size = 0;
-        auto format = format_ + ' ';
-        for(auto t: format)
-        {
-            auto length = this->size();
-            switch(t)
-            {
-            case 'c': { DWord temp; temp.val    = static_cast< int8_t >(mrb_integer(mrb_ary_shift(mrb, array))); data[address] = temp.data; address += 1; size += 1; } break;
-            case 'b': { DWord temp; temp.data   = static_cast<uint8_t >(mrb_integer(mrb_ary_shift(mrb, array))); data[address] = temp.data; address += 1; size += 1; } break;
-            case 's': { DWord temp; temp.int16  = static_cast< int16_t>(mrb_integer(mrb_ary_shift(mrb, array))); std::memcpy(&(data[address]), &(temp.buff[0]), 2); address += 2; size += 2; } break;
-            case 'w': { DWord temp; temp.uint16 = static_cast<uint16_t>(mrb_integer(mrb_ary_shift(mrb, array))); std::memcpy(&(data[address]), &(temp.buff[0]), 2); address += 2; size += 2; } break;
-            case 'i': { DWord temp; temp.int32  = static_cast< int32_t>(mrb_integer(mrb_ary_shift(mrb, array))); std::memcpy(&(data[address]), &(temp.buff[0]), 4); address += 4; size += 4; } break;
-            case 'd': { DWord temp; temp.uint32 = static_cast<uint32_t>(mrb_integer(mrb_ary_shift(mrb, array))); std::memcpy(&(data[address]), &(temp.buff[0]), 4); address += 4; size += 4; } break;
-            case 'f': { DWord temp; temp.value  = static_cast<float>(mrb_float(mrb_ary_shift(mrb, array)));      std::memcpy(&(data[address]), &(temp.buff[0]), 4); address += 4; size += 4; } break;
-
-            case 'S': { DWord temp; temp.int16  = static_cast< int16_t>(mrb_integer(mrb_ary_shift(mrb, array))); for(auto idx = 0; idx < 2; idx ++) { data[address + (1-idx)] = temp.buff[idx]; } address += 2; size += 2; } break;
-            case 'W': { DWord temp; temp.uint16 = static_cast<uint16_t>(mrb_integer(mrb_ary_shift(mrb, array))); for(auto idx = 0; idx < 2; idx ++) { data[address + (1-idx)] = temp.buff[idx]; } address += 2; size += 2; } break;
-            case 'I': { DWord temp; temp.int32  = static_cast< int32_t>(mrb_integer(mrb_ary_shift(mrb, array))); for(auto idx = 0; idx < 4; idx ++) { data[address + (3-idx)] = temp.buff[idx]; } address += 4; size += 4; } break;
-            case 'D': { DWord temp; temp.uint32 = static_cast<uint32_t>(mrb_integer(mrb_ary_shift(mrb, array))); for(auto idx = 0; idx < 4; idx ++) { data[address + (3-idx)] = temp.buff[idx]; } address += 4; size += 4; } break;
-            case 'F': { DWord temp; temp.value  = static_cast<float>(mrb_float(mrb_ary_shift(mrb, array)));      for(auto idx = 0; idx < 4; idx ++) { data[address + (3-idx)] = temp.buff[idx]; } address += 4; size += 4; } break;
-
-            case 'a':
-                {
-                    auto item = mrb_ary_shift(mrb, array);
-                    if(address < length)
-                    {
-                        length -= address;
-                        char * msg = RSTR_PTR(mrb_str_ptr(item));
-                        size_t msg_sz = strlen(msg);
-                        if(length < msg_sz) { msg_sz = length; }
-                        std::memcpy(&(data[address]), msg, msg_sz);
-                        address += msg_sz;
-                        size += msg_sz;
-                    }
-                }
-                break;
-            case 'A':
-                {
-                    auto item = mrb_ary_shift(mrb, array);
-                    if(address < length)
-                    {
-                        char * msg = RSTR_PTR(mrb_str_ptr(item));
-                        size_t msg_sz = strlen(msg);
-                        for(size_t idx = 0, top = msg_sz - 1; idx < msg_sz; idx ++)
-                        {
-                            data[address + idx] = msg[top - idx];
-                        }
-                        address += msg_sz;
-                        size += msg_sz;
-                    }
-                }
-                break;
-            case 'H':
-                {
-                    auto item = mrb_ary_shift(mrb, array);
-                    char * msg = RSTR_PTR(mrb_str_ptr(item));
-                    std::string data(msg);
-                    auto w_size = write_big(address, (data.size() / 2), data);
-                    address += w_size;
-                    size += w_size;
-                }
-                break;
-            case 'h':
-                {
-                    auto item = mrb_ary_shift(mrb, array);
-                    char * msg = RSTR_PTR(mrb_str_ptr(item));
-                    std::string data(msg);
-                    auto w_size = write(address, (data.size() / 2), data);
-                    address += w_size;
-                    size += w_size;
-                }
-                break;
-            default:
-                break;
-            }
-        }
-        pos = address;
-        return size;
-    }
-    inline size_t ref_pos(void) const
-    {
-        return pos;
-    }
+    inline unsigned char * ptr(void)    { return data; }
+    inline size_t size(void) const      { if(0 < compress_size) { return compress_size; } return length; }
+    inline size_t get_pos(void) const   { if(pos < size()) { return pos; } return 0; }
+    inline size_t ref_pos(void) const   { return pos; }
+    void chg_compress(void);
+    void alloc(size_t size);
+    size_t resize(size_t size);
+    void clone(mrb_int address, mrb_int size, const BinaryControl & src);
+    size_t loadBinaryFile(std::string & fname);
+    void saveBinaryFile(std::string & fname);
+    uint32_t compress(void);
+    uint32_t uncompress(void);
+    uint32_t memset(mrb_int address, mrb_int set_data, mrb_int sz);
+    uint32_t memcpy(mrb_int address_dst, mrb_int address_src, mrb_int len, BinaryControl & src);
+    int32_t memcmp(mrb_int address_dst, mrb_int address_src, mrb_int len, BinaryControl & src);
+    uint32_t write(mrb_int address, mrb_int size, std::string & data);
+    uint32_t write_big(mrb_int address, mrb_int size, std::string & src);
+    uint32_t dump(mrb_int address, mrb_int size, std::string & output);
+    uint32_t dump_big(mrb_int address, mrb_int size, std::string & output);
+    bool get(mrb_state * mrb, uint32_t address, std::string & format_, mrb_value & array);
+    mrb_int set(mrb_state * mrb, uint32_t address, std::string & format_, mrb_value & array);
+    unsigned short modbus_crc16(void);
+    unsigned char crc8(void);
+    unsigned char xsum(void);
 };
-
 
 /* class Options */
 static mrb_value mrb_opt_initialize(mrb_state * mrb, mrb_value self);
@@ -641,108 +158,41 @@ static mrb_value mrb_opt_get(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_opt_size(mrb_state * mrb, mrb_value self);
 
 /* class Core */
-static auto str_split = [](std::string & src, std::regex & reg)
-{
-    std::list<std::string> result;
-    std::copy( std::sregex_token_iterator{src.begin(), src.end(), reg, -1}, std::sregex_token_iterator{}, std::back_inserter(result) );
-    return result;
-};
 static mrb_value mrb_core_crc16(mrb_state* mrb, mrb_value self)
 {
-    static const unsigned short modbusCRC[256] =
+    mrb_int argc; mrb_value * argv; mrb_get_args(mrb, "*", &argv, &argc);
+    if((1 == argc) && (MRB_TT_STRING == mrb_type(argv[0])))
     {
-        0x0000, 0xC1C0, 0x81C1, 0x4001, 0x01C3, 0xC003, 0x8002, 0x41C2, 0x01C6, 0xC006, 0x8007, 0x41C7, 0x0005, 0xC1C5, 0x81C4,
-        0x4004, 0x01CC, 0xC00C, 0x800D, 0x41CD, 0x000F, 0xC1CF, 0x81CE, 0x400E, 0x000A, 0xC1CA, 0x81CB, 0x400B, 0x01C9, 0xC009,
-        0x8008, 0x41C8, 0x01D8, 0xC018, 0x8019, 0x41D9, 0x001B, 0xC1DB, 0x81DA, 0x401A, 0x001E, 0xC1DE, 0x81DF, 0x401F, 0x01DD,
-        0xC01D, 0x801C, 0x41DC, 0x0014, 0xC1D4, 0x81D5, 0x4015, 0x01D7, 0xC017, 0x8016, 0x41D6, 0x01D2, 0xC012, 0x8013, 0x41D3,
-        0x0011, 0xC1D1, 0x81D0, 0x4010, 0x01F0, 0xC030, 0x8031, 0x41F1, 0x0033, 0xC1F3, 0x81F2, 0x4032, 0x0036, 0xC1F6, 0x81F7,
-        0x4037, 0x01F5, 0xC035, 0x8034, 0x41F4, 0x003C, 0xC1FC, 0x81FD, 0x403D, 0x01FF, 0xC03F, 0x803E, 0x41FE, 0x01FA, 0xC03A,
-        0x803B, 0x41FB, 0x0039, 0xC1F9, 0x81F8, 0x4038, 0x0028, 0xC1E8, 0x81E9, 0x4029, 0x01EB, 0xC02B, 0x802A, 0x41EA, 0x01EE,
-        0xC02E, 0x802F, 0x41EF, 0x002D, 0xC1ED, 0x81EC, 0x402C, 0x01E4, 0xC024, 0x8025, 0x41E5, 0x0027, 0xC1E7, 0x81E6, 0x4026,
-        0x0022, 0xC1E2, 0x81E3, 0x4023, 0x01E1, 0xC021, 0x8020, 0x41E0, 0x01A0, 0xC060, 0x8061, 0x41A1, 0x0063, 0xC1A3, 0x81A2,
-        0x4062, 0x0066, 0xC1A6, 0x81A7, 0x4067, 0x01A5, 0xC065, 0x8064, 0x41A4, 0x006C, 0xC1AC, 0x81AD, 0x406D, 0x01AF, 0xC06F,
-        0x806E, 0x41AE, 0x01AA, 0xC06A, 0x806B, 0x41AB, 0x0069, 0xC1A9, 0x81A8, 0x4068, 0x0078, 0xC1B8, 0x81B9, 0x4079, 0x01BB,
-        0xC07B, 0x807A, 0x41BA, 0x01BE, 0xC07E, 0x807F, 0x41BF, 0x007D, 0xC1BD, 0x81BC, 0x407C, 0x01B4, 0xC074, 0x8075, 0x41B5,
-        0x0077, 0xC1B7, 0x81B6, 0x4076, 0x0072, 0xC1B2, 0x81B3, 0x4073, 0x01B1, 0xC071, 0x8070, 0x41B0, 0x0050, 0xC190, 0x8191,
-        0x4051, 0x0193, 0xC053, 0x8052, 0x4192, 0x0196, 0xC056, 0x8057, 0x4197, 0x0055, 0xC195, 0x8194, 0x4054, 0x019C, 0xC05C,
-        0x805D, 0x419D, 0x005F, 0xC19F, 0x819E, 0x405E, 0x005A, 0xC19A, 0x819B, 0x405B, 0x0199, 0xC059, 0x8058, 0x4198, 0x0188,
-        0xC048, 0x8049, 0x4189, 0x004B, 0xC18B, 0x818A, 0x404A, 0x004E, 0xC18E, 0x818F, 0x404F, 0x018D, 0xC04D, 0x804C, 0x418C,
-        0x0044, 0xC184, 0x8185, 0x4045, 0x0187, 0xC047, 0x8046, 0x4186, 0x0182, 0xC042, 0x8043, 0x4183, 0x0041, 0xC181, 0x8180,
-        0x4040
-    };
-    char * arg;
-    mrb_get_args(mrb, "z", &arg);
-    std::string data(arg);
-    auto max = data.size();
-    if(0 == (max % 2))
-    {
-        MyEntity::CalcCRC16 crc(modbusCRC);
-        for(unsigned int idx = 0; idx < max; idx += 2)
-        {
-            std::stringstream ss;
-            ss << std::hex << data.substr(idx, 2);
-            int val;
-            ss >> val;
-            crc << val;
-        }
+        std::string data(RSTR_PTR(mrb_str_ptr(argv[0])));
+        BinaryControl bin(data);
         char temp[5] = { 0 };
-        sprintf(temp, "%04X", *crc);
+        sprintf(temp, "%04X", bin.modbus_crc16());
         return mrb_str_new_cstr(mrb, temp);
     }
     return mrb_nil_value();
 }
 static mrb_value mrb_core_crc8(mrb_state* mrb, mrb_value self)
 {
-    static const unsigned char crctab8[16] = { 0x00,0x9B,0xAD,0x36,0xC1,0x5A,0x6C,0xF7,0x19,0x82,0xB4,0x2F,0xD8,0x43,0x75,0xEE };
-    char * arg;
-    mrb_get_args(mrb, "z", &arg);
-    std::string data(arg);
-    auto max = data.size();
-    if(0 == ( max % 2 ))
+    mrb_int argc; mrb_value * argv; mrb_get_args(mrb, "*", &argv, &argc);
+    if((1 == argc) && (MRB_TT_STRING == mrb_type(argv[0])))
     {
-        unsigned char crc = 0;
-        unsigned char high = 0;
-        for(unsigned int idx = 0; idx < max; idx += 2)
-        {
-            std::stringstream ss;
-            ss << std::hex << data.substr(idx, 2);
-            int val;
-            ss >> val;
-
-            unsigned char data = static_cast<unsigned char>(val);
-            high = crc >> 4;
-            crc <<= 4;
-            crc ^= crctab8[ high ^ (data >> 4) ];
-
-            high = crc >> 4;
-            crc <<= 4;
-            crc ^= crctab8[ high ^ (data & 0x0f) ];
-        }
-        char temp[3] = { 0 };
-        sprintf(temp, "%02x", crc);
+        std::string data(RSTR_PTR(mrb_str_ptr(argv[0])));
+        BinaryControl bin(data);
+        char temp[2] = { 0 };
+        sprintf(temp, "%02X", bin.crc8());
         return mrb_str_new_cstr(mrb, temp);
     }
     return mrb_nil_value();
 }
 static mrb_value mrb_core_sum(mrb_state* mrb, mrb_value self)
 {
-    char * arg;
-    mrb_get_args(mrb, "z", &arg);
-    std::string data(arg);
-    auto max = data.size();
-    if(0 == (max % 2))
+    mrb_int argc; mrb_value * argv; mrb_get_args(mrb, "*", &argv, &argc);
+    if((1 == argc) && (MRB_TT_STRING == mrb_type(argv[0])))
     {
-        unsigned char sum = 0;
-        for(unsigned int idx = 0; idx < max; idx += 2)
-        {
-            std::stringstream ss;
-            ss << std::hex << data.substr(idx, 2);
-            int val;
-            ss >> val;
-            sum ^= static_cast<unsigned char>(val);
-        }
-        char temp[3] = {0};
-        sprintf(temp, "%02x", sum);
+        std::string data(RSTR_PTR(mrb_str_ptr(argv[0])));
+        BinaryControl bin(data);
+        char temp[2] = { 0 };
+        sprintf(temp, "%02X", bin.xsum());
         return mrb_str_new_cstr(mrb, temp);
     }
     return mrb_nil_value();
@@ -1080,6 +530,36 @@ static mrb_value mrb_core_date(mrb_state* mrb, mrb_value self)
     return mrb_str_new_cstr(mrb, (date.str()).c_str());
 }
 
+/* class BinEdit */
+static mrb_value mrb_bedit_initialize(mrb_state * mrb, mrb_value self);
+static mrb_value mrb_bedit_length(mrb_state * mrb, mrb_value self);
+static mrb_value mrb_bedit_save(mrb_state * mrb, mrb_value self);
+static mrb_value mrb_bedit_memset(mrb_state * mrb, mrb_value self);
+static mrb_value mrb_bedit_memcpy(mrb_state * mrb, mrb_value self);
+static mrb_value mrb_bedit_memcmp(mrb_state * mrb, mrb_value self);
+static mrb_value mrb_bedit_write(mrb_state * mrb, mrb_value self);
+static mrb_value mrb_bedit_dump(mrb_state * mrb, mrb_value self);
+static mrb_value mrb_bedit_get(mrb_state * mrb, mrb_value self);
+static mrb_value mrb_bedit_set(mrb_state * mrb, mrb_value self);
+static mrb_value mrb_bedit_pos(mrb_state * mrb, mrb_value self);
+static mrb_value mrb_bedit_crc16(mrb_state * mrb, mrb_value self);
+static mrb_value mrb_bedit_crc8(mrb_state * mrb, mrb_value self);
+static mrb_value mrb_bedit_sum(mrb_state * mrb, mrb_value self);
+static mrb_value mrb_bedit_compress(mrb_state * mrb, mrb_value self);
+static mrb_value mrb_bedit_uncompress(mrb_state * mrb, mrb_value self);
+static void mrb_bedit_context_free(mrb_state * mrb, void * ptr);
+static const struct mrb_data_type mrb_bedit_context_type = { "mrb_open_bedit_context", mrb_bedit_context_free, };
+static BinaryControl * get_bedit_ptr(mrb_value & argv)
+{
+    const mrb_data_type * src_type = DATA_TYPE(argv);
+    if( src_type == &mrb_bedit_context_type )
+    {
+        BinaryControl * bin_src = static_cast<BinaryControl *>(DATA_PTR(argv));
+        return bin_src;
+    }
+    return nullptr;
+}
+
 /* class CppRegexp */
 static mrb_value mrb_cppregexp_initialize(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_cppregexp_length(mrb_state * mrb, mrb_value self);
@@ -1187,23 +667,6 @@ static mrb_value mrb_xlsx_set_value(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_xlsx_cell(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_xlsx_save(mrb_state * mrb, mrb_value self);
 static void mrb_xlsx_context_free(mrb_state * mrb, void * ptr);
-
-/* class BinEdit */
-static mrb_value mrb_bedit_initialize(mrb_state * mrb, mrb_value self);
-static mrb_value mrb_bedit_length(mrb_state * mrb, mrb_value self);
-static mrb_value mrb_bedit_save(mrb_state * mrb, mrb_value self);
-static mrb_value mrb_bedit_memset(mrb_state * mrb, mrb_value self);
-static mrb_value mrb_bedit_memcpy(mrb_state * mrb, mrb_value self);
-static mrb_value mrb_bedit_memcmp(mrb_state * mrb, mrb_value self);
-static mrb_value mrb_bedit_write(mrb_state * mrb, mrb_value self);
-static mrb_value mrb_bedit_dump(mrb_state * mrb, mrb_value self);
-static mrb_value mrb_bedit_get(mrb_state * mrb, mrb_value self);
-static mrb_value mrb_bedit_set(mrb_state * mrb, mrb_value self);
-static mrb_value mrb_bedit_pos(mrb_state * mrb, mrb_value self);
-static mrb_value mrb_bedit_compress(mrb_state * mrb, mrb_value self);
-static mrb_value mrb_bedit_uncompress(mrb_state * mrb, mrb_value self);
-static void mrb_bedit_context_free(mrb_state * mrb, void * ptr);
-static const struct mrb_data_type mrb_bedit_context_type = { "mrb_open_bedit_context", mrb_bedit_context_free, };
 
 
 /* class */
@@ -1806,19 +1269,6 @@ public:
     }
     void exit(int code) { }
 
-    mrb_value core_gets(mrb_state* mrb, mrb_value self)
-    {
-        try
-        {
-            std::string str("");
-            std::getline(std::cin, str);
-            return mrb_str_new_cstr( mrb, str.c_str() );
-        }
-        catch(std::exception & exp)
-        {
-            return mrb_nil_value();
-        }
-    }
     mrb_value opt_init(mrb_state * mrb, mrb_value self)
     {
         return self;
@@ -2529,16 +1979,6 @@ public:
         return self;
     }
 
-    BinaryControl * get_bedit_ptr(mrb_value & argv)
-    {
-        const mrb_data_type * src_type = DATA_TYPE(argv);
-        if( src_type == &mrb_bedit_context_type )
-        {
-            BinaryControl * bin_src = static_cast<BinaryControl *>(DATA_PTR(argv));
-            return bin_src;
-        }
-        return nullptr;
-    }
     mrb_value bedit_init(mrb_state * mrb, mrb_value self)
     {
         BinaryControl * bedit = nullptr;
@@ -2610,324 +2050,6 @@ public:
         mrb_data_init(self, bedit, &mrb_bedit_context_type);
         return self;
     }
-    mrb_value bedit_length(mrb_state * mrb, mrb_value self)
-    {
-        BinaryControl * bedit = static_cast<BinaryControl *>(DATA_PTR(self));
-        if(nullptr != bedit)
-        {
-            return mrb_int_value(mrb, bedit->size());
-        }
-        return mrb_nil_value();
-    }
-    mrb_value bedit_save(mrb_state * mrb, mrb_value self)
-    {
-        BinaryControl * bedit = static_cast<BinaryControl *>(DATA_PTR(self));
-        if(nullptr != bedit)
-        {
-            char * fname_ptr;
-            mrb_get_args(mrb, "z", &fname_ptr);
-            std::string fname(fname_ptr);
-            bedit->saveBinaryFile(fname);
-        }
-        return self;
-    }
-    mrb_value bedit_memset(mrb_state * mrb, mrb_value self)
-    {
-        BinaryControl * bedit = static_cast<BinaryControl *>(DATA_PTR(self));
-        if(nullptr != bedit)
-        {
-            mrb_int size = 0;
-            mrb_int argc;
-            mrb_value * argv;
-            mrb_get_args(mrb, "*", &argv, &argc);
-            switch(argc)
-            {
-            case 1: if(MRB_TT_INTEGER == mrb_type(argv[0]))     { size = bedit->memset(                   0, mrb_integer(argv[0]),        bedit->size()); break; }
-            case 2: if(  (MRB_TT_INTEGER == mrb_type(argv[0]))
-                       &&(MRB_TT_INTEGER == mrb_type(argv[1]))) { size = bedit->memset(                   0, mrb_integer(argv[0]), mrb_integer(argv[1])); break; }
-            case 3: if(  (MRB_TT_INTEGER == mrb_type(argv[0]))
-                       &&(MRB_TT_INTEGER == mrb_type(argv[1]))
-                       &&(MRB_TT_INTEGER == mrb_type(argv[2]))) { size = bedit->memset(mrb_integer(argv[0]), mrb_integer(argv[1]), mrb_integer(argv[2])); break; }
-            default: { break; }
-            }
-            return mrb_int_value(mrb, size);
-        }
-        return mrb_int_value(mrb, 0);
-    }
-    mrb_value bedit_memcpy(mrb_state * mrb, mrb_value self)
-    {
-        BinaryControl * bedit = static_cast<BinaryControl *>(DATA_PTR(self));
-        if(nullptr != bedit)
-        {
-            mrb_int argc;
-            mrb_value * argv;
-            mrb_get_args(mrb, "*", &argv, &argc);
-            switch(argc)
-            {
-            case 1:
-                if(MRB_TT_OBJECT == mrb_type(argv[0]))
-                {
-                    BinaryControl * src = get_bedit_ptr(argv[0]);
-                    if(nullptr != src) { return mrb_int_value(mrb, bedit->memcpy(0, 0, src->size(), *src)); }
-                }
-                break;
-            case 2:
-                if(  (MRB_TT_INTEGER == mrb_type(argv[0]))
-                   &&(MRB_TT_OBJECT  == mrb_type(argv[1])))
-                {
-                    BinaryControl * src = get_bedit_ptr(argv[1]);
-                    if(nullptr != src) { return mrb_int_value(mrb, bedit->memcpy(mrb_integer(argv[0]), 0, src->size(), *src)); }
-                }
-                break;
-            case 3:
-                if(  (MRB_TT_INTEGER == mrb_type(argv[0]))
-                   &&(MRB_TT_INTEGER == mrb_type(argv[1]))
-                   &&(MRB_TT_OBJECT  == mrb_type(argv[2])))
-                {
-                    BinaryControl * src = get_bedit_ptr(argv[2]);
-                    if(nullptr != src) { return mrb_int_value(mrb, bedit->memcpy(mrb_integer(argv[0]), 0, mrb_integer(argv[1]), *src)); }
-                }
-                break;
-            case 4:
-                if(  (MRB_TT_INTEGER == mrb_type(argv[0]))
-                   &&(MRB_TT_INTEGER == mrb_type(argv[1]))
-                   &&(MRB_TT_INTEGER == mrb_type(argv[2]))
-                   &&(MRB_TT_OBJECT  == mrb_type(argv[3])))
-                {
-                    BinaryControl * src = get_bedit_ptr(argv[3]);
-                    if(nullptr != src) { return mrb_int_value(mrb, bedit->memcpy(mrb_integer(argv[0]), mrb_integer(argv[1]), mrb_integer(argv[2]), *src)); }
-                }
-                break;
-            default:
-                break;
-            }
-        }
-        return mrb_int_value(mrb, 0);
-    }
-    mrb_value bedit_cmp(mrb_state * mrb, mrb_value self)
-    {
-        BinaryControl * bedit = static_cast<BinaryControl *>(DATA_PTR(self));
-        if(nullptr != bedit)
-        {
-            mrb_int argc;
-            mrb_value * argv;
-            mrb_get_args(mrb, "*", &argv, &argc);
-            switch(argc)
-            {
-            case 1:
-                if(MRB_TT_OBJECT == mrb_type(argv[0]))
-                {
-                    BinaryControl * src = get_bedit_ptr(argv[0]);
-                    if(nullptr != src) { return mrb_int_value(mrb, bedit->memcmp(0, 0, src->size(), *src)); }
-                }
-                break;
-            default:
-                break;
-            }
-        }
-        return mrb_int_value(mrb, -2);
-    }
-    mrb_value bedit_write(mrb_state * mrb, mrb_value self)
-    {
-        BinaryControl * bedit = static_cast<BinaryControl *>(DATA_PTR(self));
-        if(nullptr != bedit)
-        {
-            mrb_int address = 0;
-            mrb_int size    = 0;
-            char * data_ptr = nullptr;
-            mrb_int argc;
-            mrb_value * argv;
-            mrb_get_args(mrb, "*", &argv, &argc);
-            switch(argc)
-            {
-            case 1:
-                if(MRB_TT_STRING == mrb_type(argv[0]))
-                {
-                    struct RString * str = mrb_str_ptr(argv[0]);
-                    data_ptr = RSTR_PTR(str);
-                }
-                break;
-            case 2:
-                if(  (MRB_TT_INTEGER == mrb_type(argv[0]))
-                   &&(MRB_TT_STRING  == mrb_type(argv[1])))
-                {
-                    address = mrb_integer(argv[0]);
-                    struct RString * str = mrb_str_ptr(argv[1]);
-                    data_ptr = RSTR_PTR(str);
-                }
-                break;
-            case 3:
-                if(  (MRB_TT_INTEGER == mrb_type(argv[0]))
-                   &&(MRB_TT_INTEGER == mrb_type(argv[1]))
-                   &&(MRB_TT_STRING  == mrb_type(argv[2])))
-                {
-                    address = mrb_integer(argv[0]);
-                    size    = mrb_integer(argv[1]);
-                    struct RString * str = mrb_str_ptr(argv[2]);
-                    data_ptr = RSTR_PTR(str);
-                }
-                break;
-            default:
-                break;
-            }
-            if(nullptr != data_ptr)
-            {
-                std::string data(data_ptr);
-                auto wsize = bedit->write(address, size, data);
-                return mrb_int_value(mrb, wsize);
-            }
-        }
-        return mrb_int_value(mrb, 0);
-    }
-    mrb_value bedit_dump(mrb_state * mrb, mrb_value self)
-    {
-        BinaryControl * bedit = static_cast<BinaryControl *>(DATA_PTR(self));
-        if(nullptr != bedit)
-        {
-            mrb_int address = 0;
-            mrb_int size    = bedit->size();
-            mrb_int argc;
-            mrb_value * argv;
-            mrb_get_args(mrb, "*", &argv, &argc);
-            switch(argc)
-            {
-            case 1:
-                mrb_get_args(mrb, "i", &size);
-                break;
-            case 2:
-                mrb_get_args(mrb, "ii", &address, &size);
-                break;
-            default:
-                break;
-            }
-            if(0 < size)
-            {
-                std::string output;
-                if( 0 < bedit->dump(address, size, output) )
-                {
-                    return mrb_str_new_cstr(mrb, output.c_str());
-                }
-            }
-        }
-        return mrb_nil_value();
-    }
-    mrb_value bedit_get(mrb_state * mrb, mrb_value self)
-    {
-        BinaryControl * bedit = static_cast<BinaryControl *>(DATA_PTR(self));
-        if(nullptr != bedit)
-        {
-            mrb_int address = bedit->get_pos();
-            char *  fmt_ptr = nullptr;
-            mrb_int argc;
-            mrb_value * argv;
-            mrb_get_args(mrb, "*", &argv, &argc);
-            switch(argc)
-            {
-            case 1:
-                mrb_get_args(mrb, "z", &fmt_ptr);
-                break;
-            case 2:
-                mrb_get_args(mrb, "iz", &address, &fmt_ptr);
-                break;
-            default:
-                break;
-            }
-            if(nullptr != fmt_ptr)
-            {
-                std::string fmt(fmt_ptr);
-                mrb_value arry = mrb_ary_new(mrb);
-                if( bedit->get(mrb, address, fmt, arry) )
-                {
-                    struct RArray *rarry = mrb_ary_ptr(arry);
-                    mrb_int len = ARY_LEN(rarry);
-                    switch(len)
-                    {
-                    case 0:
-                        break;
-                    case 1:
-                        return mrb_ary_shift(mrb, arry);
-                        break;
-                    default:
-                        return arry;
-                    }
-                }
-            }
-        }
-        return mrb_nil_value();
-    }
-    mrb_value bedit_set(mrb_state * mrb, mrb_value self)
-    {
-        BinaryControl * bedit = static_cast<BinaryControl *>(DATA_PTR(self));
-        if(nullptr != bedit)
-        {
-            mrb_int address = bedit->get_pos();
-            char *  fmt_ptr = nullptr;
-            mrb_value arry;
-            mrb_int argc;
-            mrb_value * argv;
-            mrb_get_args(mrb, "*", &argv, &argc);
-            switch(argc)
-            {
-            case 2:
-                if(  (MRB_TT_STRING == mrb_type(argv[0]))
-                   &&(MRB_TT_ARRAY  == mrb_type(argv[1])))
-                {
-                    fmt_ptr = RSTR_PTR(mrb_str_ptr(argv[0]));
-                    arry = argv[1];
-                }
-                break;
-            case 3:
-                if(  (MRB_TT_INTEGER == mrb_type(argv[0]))
-                   &&(MRB_TT_STRING  == mrb_type(argv[1]))
-                   &&(MRB_TT_ARRAY   == mrb_type(argv[2])))
-
-                {
-                    address = mrb_integer(argv[0]);
-                    fmt_ptr = RSTR_PTR(mrb_str_ptr(argv[1]));
-                    arry = argv[2];
-                }
-                break;
-            default:
-                break;
-            }
-            if(nullptr!=fmt_ptr)
-            {
-                std::string fmt(fmt_ptr);
-                return mrb_int_value(mrb, bedit->set(mrb, address, fmt, arry));
-            }
-        }
-        return mrb_nil_value();
-    }
-    mrb_value bedit_pos(mrb_state * mrb, mrb_value self)
-    {
-        BinaryControl * bedit = static_cast<BinaryControl *>(DATA_PTR(self));
-        if(nullptr != bedit)
-        {
-            return mrb_int_value(mrb, bedit->ref_pos());
-        }
-        return mrb_nil_value();
-    }
-
-    mrb_value bedit_compress(mrb_state * mrb, mrb_value self)
-    {
-        BinaryControl * bedit = static_cast<BinaryControl *>(DATA_PTR(self));
-        if(nullptr != bedit)
-        {
-            auto size = bedit->compress();
-            return mrb_int_value(mrb, size);
-        }
-        return mrb_int_value(mrb, 0);
-    }
-    mrb_value bedit_uncompress(mrb_state * mrb, mrb_value self)
-    {
-        BinaryControl * bedit = static_cast<BinaryControl *>(DATA_PTR(self));
-        if(nullptr != bedit)
-        {
-            auto size = bedit->uncompress();
-            return mrb_int_value(mrb, size);
-        }
-        return mrb_int_value(mrb, 0);
-    }
 
     void main(void)
     {
@@ -2973,6 +2095,25 @@ public:
             mrb_define_method( mrb, opt_class, "size",                  mrb_opt_size,           MRB_ARGS_NONE()         );
             mrb_define_method( mrb, opt_class, "[]",                    mrb_opt_get,            MRB_ARGS_ARG( 1, 1 )    );
 
+            /* Class BinEdit */
+            struct RClass * bedit_class = mrb_define_class_under( mrb, mrb->kernel_module, "BinEdit", mrb->object_class );
+            mrb_define_method( mrb, bedit_class, "initialize",      mrb_bedit_initialize,       MRB_ARGS_ANY()          );
+            mrb_define_method( mrb, bedit_class, "length",          mrb_bedit_length,           MRB_ARGS_ARG( 1, 1 )    );
+            mrb_define_method( mrb, bedit_class, "save",            mrb_bedit_save,             MRB_ARGS_ARG( 1, 1 )    );
+            mrb_define_method( mrb, bedit_class, "compress",        mrb_bedit_compress,         MRB_ARGS_NONE()         );
+            mrb_define_method( mrb, bedit_class, "uncompress",      mrb_bedit_uncompress,       MRB_ARGS_NONE()         );
+            mrb_define_method( mrb, bedit_class, "memset",          mrb_bedit_memset,           MRB_ARGS_ARG( 3, 1 )    );
+            mrb_define_method( mrb, bedit_class, "memcpy",          mrb_bedit_memcpy,           MRB_ARGS_ARG( 3, 1 )    );
+            mrb_define_method( mrb, bedit_class, "memcmp",          mrb_bedit_memcmp,           MRB_ARGS_ARG( 3, 1 )    );
+            mrb_define_method( mrb, bedit_class, "write",           mrb_bedit_write,            MRB_ARGS_ARG( 2, 1 )    );
+            mrb_define_method( mrb, bedit_class, "dump",            mrb_bedit_dump,             MRB_ARGS_ARG( 2, 1 )    );
+            mrb_define_method( mrb, bedit_class, "get",             mrb_bedit_get,              MRB_ARGS_ARG( 2, 1 )    );
+            mrb_define_method( mrb, bedit_class, "set",             mrb_bedit_set,              MRB_ARGS_ARG( 3, 1 )    );
+            mrb_define_method( mrb, bedit_class, "pos",             mrb_bedit_pos,              MRB_ARGS_NONE()         );
+            mrb_define_method( mrb, bedit_class, "crc16",           mrb_bedit_crc16,            MRB_ARGS_ARG( 1, 1 )    );
+            mrb_define_method( mrb, bedit_class, "crc8",            mrb_bedit_crc8,             MRB_ARGS_ARG( 1, 1 )    );
+            mrb_define_method( mrb, bedit_class, "sum",             mrb_bedit_sum,              MRB_ARGS_ARG( 1, 1 )    );
+
             /* Class CppRegexp */
             struct RClass * cppregexp_class = mrb_define_class_under( mrb, mrb->kernel_module, "CppRegexp", mrb->object_class );
             mrb_define_module_function(mrb, cppregexp_class, "reg_match",    mrb_core_reg_match,       MRB_ARGS_ARG( 2, 1 )  );
@@ -3001,22 +2142,6 @@ public:
             mrb_define_method( mrb, thread_class, "synchronize",        mrb_thread_sync,        MRB_ARGS_NONE()         );
             mrb_define_method( mrb, thread_class, "notify",             mrb_thread_notify,      MRB_ARGS_NONE()         );
             mrb_define_method( mrb, thread_class, "stop",               mrb_thread_stop,        MRB_ARGS_NONE()         );
-
-            /* Class BinEdit */
-            struct RClass * bedit_class = mrb_define_class_under( mrb, mrb->kernel_module, "BinEdit", mrb->object_class );
-            mrb_define_method( mrb, bedit_class, "initialize",      mrb_bedit_initialize,       MRB_ARGS_ANY()          );
-            mrb_define_method( mrb, bedit_class, "length",          mrb_bedit_length,           MRB_ARGS_ARG( 1, 1 )    );
-            mrb_define_method( mrb, bedit_class, "save",            mrb_bedit_save,             MRB_ARGS_ARG( 1, 1 )    );
-            mrb_define_method( mrb, bedit_class, "compress",        mrb_bedit_compress,         MRB_ARGS_NONE()         );
-            mrb_define_method( mrb, bedit_class, "uncompress",      mrb_bedit_uncompress,       MRB_ARGS_NONE()         );
-            mrb_define_method( mrb, bedit_class, "memset",          mrb_bedit_memset,           MRB_ARGS_ARG( 3, 1 )    );
-            mrb_define_method( mrb, bedit_class, "memcpy",          mrb_bedit_memcpy,           MRB_ARGS_ARG( 3, 1 )    );
-            mrb_define_method( mrb, bedit_class, "memcmp",          mrb_bedit_memcmp,           MRB_ARGS_ARG( 3, 1 )    );
-            mrb_define_method( mrb, bedit_class, "write",           mrb_bedit_write,            MRB_ARGS_ARG( 2, 1 )    );
-            mrb_define_method( mrb, bedit_class, "dump",            mrb_bedit_dump,             MRB_ARGS_ARG( 2, 1 )    );
-            mrb_define_method( mrb, bedit_class, "get",             mrb_bedit_get,              MRB_ARGS_ARG( 2, 1 )    );
-            mrb_define_method( mrb, bedit_class, "set",             mrb_bedit_set,              MRB_ARGS_ARG( 3, 1 )    );
-            mrb_define_method( mrb, bedit_class, "pos",             mrb_bedit_pos,              MRB_ARGS_NONE()         );
 
             /* Class Smon */
             struct RClass * smon_class = mrb_define_class_under( mrb, mrb->kernel_module, "Smon", mrb->object_class     );
@@ -3083,24 +2208,397 @@ Application * Application::getObject(void)
     return Application::obj;
 }
 
-mrb_value mrb_core_gets(mrb_state* mrb, mrb_value self)             { auto result = (Application::getObject())->core_gets(mrb, self);                               return result; }
-mrb_value mrb_opt_initialize(mrb_state * mrb, mrb_value self)       { auto result = (Application::getObject())->opt_init(mrb, self);                                return result; }
-mrb_value mrb_opt_size(mrb_state * mrb, mrb_value self)             { auto result = (Application::getObject())->opt_size(mrb, self);                                return result; }
-mrb_value mrb_opt_get(mrb_state * mrb, mrb_value self)              { auto result = (Application::getObject())->opt_get(mrb, self);                                 return result; }
+mrb_value mrb_core_gets(mrb_state* mrb, mrb_value self)
+{
+    try
+    {
+        std::string str("");
+        std::getline(std::cin, str);
+        return mrb_str_new_cstr( mrb, str.c_str() );
+    } catch(std::exception & exp) { }
+    return mrb_nil_value();
+}
 
-mrb_value mrb_bedit_initialize(mrb_state * mrb, mrb_value self)     { auto result = (Application::getObject())->bedit_init(mrb, self);   mrb_garbage_collect(mrb);  return result; }
-mrb_value mrb_bedit_length(mrb_state * mrb, mrb_value self)         { auto result = (Application::getObject())->bedit_length(mrb, self);                            return result; }
-mrb_value mrb_bedit_save(mrb_state * mrb, mrb_value self)           { auto result = (Application::getObject())->bedit_save(mrb, self);                              return result; }
-mrb_value mrb_bedit_compress(mrb_state * mrb, mrb_value self)       { auto result = (Application::getObject())->bedit_compress(mrb, self);                          return result; }
-mrb_value mrb_bedit_uncompress(mrb_state * mrb, mrb_value self)     { auto result = (Application::getObject())->bedit_uncompress(mrb, self);                        return result; }
-mrb_value mrb_bedit_write(mrb_state * mrb, mrb_value self)          { auto result = (Application::getObject())->bedit_write(mrb, self);                             return result; }
-mrb_value mrb_bedit_memset(mrb_state * mrb, mrb_value self)         { auto result = (Application::getObject())->bedit_memset(mrb, self);                            return result; }
-mrb_value mrb_bedit_memcpy(mrb_state * mrb, mrb_value self)         { auto result = (Application::getObject())->bedit_memcpy(mrb, self);                            return result; }
-mrb_value mrb_bedit_memcmp(mrb_state * mrb, mrb_value self)         { auto result = (Application::getObject())->bedit_cmp(mrb, self);                               return result; }
-mrb_value mrb_bedit_dump(mrb_state * mrb, mrb_value self)           { auto result = (Application::getObject())->bedit_dump(mrb, self);   mrb_garbage_collect(mrb);  return result; }
-mrb_value mrb_bedit_get(mrb_state * mrb, mrb_value self)            { auto result = (Application::getObject())->bedit_get(mrb, self);    mrb_garbage_collect(mrb);  return result; }
-mrb_value mrb_bedit_set(mrb_state * mrb, mrb_value self)            { auto result = (Application::getObject())->bedit_set(mrb, self);    mrb_garbage_collect(mrb);  return result; }
-mrb_value mrb_bedit_pos(mrb_state * mrb, mrb_value self)            { auto result = (Application::getObject())->bedit_pos(mrb, self);                               return result; }
+mrb_value mrb_opt_initialize(mrb_state * mrb, mrb_value self)   { auto result = (Application::getObject())->opt_init(mrb, self);    mrb_garbage_collect(mrb);   return result; }
+mrb_value mrb_opt_size(mrb_state * mrb, mrb_value self)         { auto result = (Application::getObject())->opt_size(mrb, self);    mrb_garbage_collect(mrb);   return result; }
+mrb_value mrb_opt_get(mrb_state * mrb, mrb_value self)          { auto result = (Application::getObject())->opt_get(mrb, self);     mrb_garbage_collect(mrb);   return result; }
+
+mrb_value mrb_bedit_initialize(mrb_state * mrb, mrb_value self) { auto result = (Application::getObject())->bedit_init(mrb, self);  mrb_garbage_collect(mrb);   return result; }
+mrb_value mrb_bedit_save(mrb_state * mrb, mrb_value self)
+{
+    BinaryControl * bedit = static_cast<BinaryControl *>(DATA_PTR(self));
+    if(nullptr != bedit)
+    {
+        mrb_int argc; mrb_value * argv; mrb_get_args(mrb, "*", &argv, &argc);
+        if( (1==argc) && (MRB_TT_STRING == mrb_type(argv[0])) )
+        {
+            std::string fname( RSTR_PTR( mrb_str_ptr( argv[0] ) ) );
+            bedit->saveBinaryFile(fname);
+        }
+    }
+    return self;
+}
+mrb_value mrb_bedit_compress(mrb_state * mrb, mrb_value self)
+{
+    BinaryControl * bedit = static_cast<BinaryControl *>(DATA_PTR(self));
+    if(nullptr != bedit)
+    {
+        auto size = bedit->compress();
+        return mrb_int_value(mrb, size);
+    }
+    return mrb_int_value(mrb, 0);
+}
+mrb_value mrb_bedit_uncompress(mrb_state * mrb, mrb_value self)
+{
+    BinaryControl * bedit = static_cast<BinaryControl *>(DATA_PTR(self));
+    if(nullptr != bedit)
+    {
+        auto size = bedit->uncompress();
+        return mrb_int_value(mrb, size);
+    }
+    return mrb_int_value(mrb, 0);
+}
+mrb_value mrb_bedit_length(mrb_state * mrb, mrb_value self)
+{
+    BinaryControl * bedit = static_cast<BinaryControl *>(DATA_PTR(self));
+    if(nullptr != bedit)
+    {
+        return mrb_int_value(mrb, bedit->size());
+    }
+    return mrb_nil_value();
+}
+mrb_value mrb_bedit_write(mrb_state * mrb, mrb_value self)
+{
+    BinaryControl * bedit = static_cast<BinaryControl *>(DATA_PTR(self));
+    if(nullptr != bedit)
+    {
+        mrb_int address = 0; mrb_int size = 0; char * data_ptr = nullptr;
+        mrb_int argc; mrb_value * argv; mrb_get_args(mrb, "*", &argv, &argc);
+        switch(argc)
+        {
+        case 1:
+            if(MRB_TT_STRING == mrb_type(argv[0]))
+            {
+                data_ptr = RSTR_PTR( mrb_str_ptr(argv[0]) );
+            }
+            break;
+        case 2:
+            if(  (MRB_TT_INTEGER == mrb_type(argv[0]))
+               &&(MRB_TT_STRING  == mrb_type(argv[1])))
+            {
+                address = mrb_integer(argv[0]);
+                data_ptr = RSTR_PTR( mrb_str_ptr(argv[1]) );
+            }
+            break;
+        case 3:
+            if(  (MRB_TT_INTEGER == mrb_type(argv[0]))
+               &&(MRB_TT_INTEGER == mrb_type(argv[1]))
+               &&(MRB_TT_STRING  == mrb_type(argv[2])))
+            {
+                address = mrb_integer(argv[0]);
+                size    = mrb_integer(argv[1]);
+                data_ptr = RSTR_PTR( mrb_str_ptr(argv[2]) );
+            }
+            break;
+        default:
+            break;
+        }
+        if(nullptr != data_ptr)
+        {
+            std::string data(data_ptr);
+            auto wsize = bedit->write(address, size, data);
+            return mrb_int_value(mrb, wsize);
+        }
+    }
+    return mrb_int_value(mrb, 0);
+}
+mrb_value mrb_bedit_memset(mrb_state * mrb, mrb_value self)
+{
+    BinaryControl * bedit = static_cast<BinaryControl *>(DATA_PTR(self));
+    if(nullptr != bedit)
+    {
+        mrb_int size = 0;
+        mrb_int argc; mrb_value * argv; mrb_get_args(mrb, "*", &argv, &argc);
+        switch(argc)
+        {
+        case 1:
+            if(MRB_TT_INTEGER == mrb_type(argv[0]))         // arg 1: set data
+            {
+                size = bedit->memset(0, mrb_integer(argv[0]), bedit->size());
+                break;
+            }
+        case 2:
+            if(  (MRB_TT_INTEGER == mrb_type(argv[0]))      // arg 1: set data
+               &&(MRB_TT_INTEGER == mrb_type(argv[1])))     // arg 2: set size
+            {
+                size = bedit->memset(0, mrb_integer(argv[0]), mrb_integer(argv[1]));
+                break;
+            }
+        case 3:
+            if(  (MRB_TT_INTEGER == mrb_type(argv[0]))      // arg 1: set start address
+               &&(MRB_TT_INTEGER == mrb_type(argv[1]))      // arg 2: set data
+               &&(MRB_TT_INTEGER == mrb_type(argv[2])))     // arg 3: set size
+            {
+                size = bedit->memset(mrb_integer(argv[0]), mrb_integer(argv[1]), mrb_integer(argv[2]));
+                break;
+            }
+        default:
+            break;
+        }
+        return mrb_int_value(mrb, size);
+    }
+    return mrb_int_value(mrb, 0);
+}
+mrb_value mrb_bedit_memcpy(mrb_state * mrb, mrb_value self)
+{
+    BinaryControl * bedit = static_cast<BinaryControl *>(DATA_PTR(self));
+    if(nullptr != bedit)
+    {
+        mrb_int argc; mrb_value * argv; mrb_get_args(mrb, "*", &argv, &argc);
+        switch(argc)
+        {
+        case 1:
+            if(MRB_TT_OBJECT == mrb_type(argv[0]))          // arg 1: Source BinEdit
+            {
+                BinaryControl * src = get_bedit_ptr(argv[0]);
+                if(nullptr != src)
+                {
+                    return mrb_int_value(mrb, bedit->memcpy(0, 0, src->size(), *src));
+                }
+            }
+            break;
+        case 2:
+            if(  (MRB_TT_INTEGER == mrb_type(argv[0]))      // arg 1: dst start address
+               &&(MRB_TT_OBJECT  == mrb_type(argv[1])))     // arg 2: Source BinEdit
+            {
+                BinaryControl * src = get_bedit_ptr(argv[1]);
+                if(nullptr != src)
+                {
+                    return mrb_int_value(mrb, bedit->memcpy(mrb_integer(argv[0]), 0, src->size(), *src));
+                }
+            }
+            break;
+        case 3:
+            if(  (MRB_TT_INTEGER == mrb_type(argv[0]))      // arg 1: dst start address
+               &&(MRB_TT_INTEGER == mrb_type(argv[1]))      // arg 2: copy size
+               &&(MRB_TT_OBJECT  == mrb_type(argv[2])))     // arg 3: Source BinEdit
+            {
+                BinaryControl * src = get_bedit_ptr(argv[2]);
+                if(nullptr != src)
+                {
+                    return mrb_int_value(mrb, bedit->memcpy(mrb_integer(argv[0]), 0, mrb_integer(argv[1]), *src));
+                }
+            }
+            break;
+        case 4:
+            if(  (MRB_TT_INTEGER == mrb_type(argv[0]))      // arg 1: dest binary start address
+               &&(MRB_TT_INTEGER == mrb_type(argv[1]))      // arg 2: source binary start address
+               &&(MRB_TT_INTEGER == mrb_type(argv[2]))      // arg 3: copy size
+               &&(MRB_TT_OBJECT  == mrb_type(argv[3])))     // arg 4: Source BinEdit
+            {
+                BinaryControl * src = get_bedit_ptr(argv[3]);
+                if(nullptr != src)
+                {
+                    return mrb_int_value(mrb, bedit->memcpy(mrb_integer(argv[0]), mrb_integer(argv[1]), mrb_integer(argv[2]), *src));
+                }
+            }
+            break;
+        default:
+            break;
+        }
+    }
+    return mrb_int_value(mrb, 0);
+}
+mrb_value mrb_bedit_memcmp(mrb_state * mrb, mrb_value self)
+{
+    BinaryControl * bedit = static_cast<BinaryControl *>(DATA_PTR(self));
+    if(nullptr != bedit)
+    {
+        mrb_int argc; mrb_value * argv; mrb_get_args(mrb, "*", &argv, &argc);
+        switch(argc)
+        {
+        case 1:
+            if(MRB_TT_OBJECT == mrb_type(argv[0]))
+            {
+                BinaryControl * src = get_bedit_ptr(argv[0]);
+                if(nullptr != src)
+                {
+                    return mrb_int_value(mrb, bedit->memcmp(0, 0, src->size(), *src));
+                }
+            }
+            break;
+        default:
+            break;
+        }
+    }
+    return mrb_int_value(mrb, -2);
+}
+mrb_value mrb_bedit_dump(mrb_state * mrb, mrb_value self)
+{
+    BinaryControl * bedit = static_cast<BinaryControl *>(DATA_PTR(self));
+    if(nullptr != bedit)
+    {
+        mrb_int address = 0;
+        mrb_int size    = bedit->size();
+        mrb_int argc; mrb_value * argv; mrb_get_args(mrb, "*", &argv, &argc);
+        switch(argc)
+        {
+        case 1:
+            if( MRB_TT_INTEGER == mrb_type(argv[0]) ) { size = mrb_integer(argv[0]); }
+            break;
+        case 2:
+            if(   (MRB_TT_INTEGER == mrb_type(argv[0]))     // arg 1: address
+               && (MRB_TT_INTEGER == mrb_type(argv[0])) )   // arg 2: size
+            {
+                address = mrb_integer(argv[0]);
+                size    = mrb_integer(argv[1]);
+            }
+            break;
+        default:
+            break;
+        }
+        if(0 < size)
+        {
+            std::string output;
+            if( 0 < bedit->dump(address, size, output) )
+            {
+                return mrb_str_new_cstr(mrb, output.c_str());
+            }
+        }
+    }
+    return mrb_nil_value();
+}
+mrb_value mrb_bedit_get(mrb_state * mrb, mrb_value self)
+{
+    BinaryControl * bedit = static_cast<BinaryControl *>(DATA_PTR(self));
+    if(nullptr != bedit)
+    {
+        mrb_int address = bedit->get_pos();
+        char *  fmt_ptr = nullptr;
+        mrb_int argc; mrb_value * argv; mrb_get_args(mrb, "*", &argv, &argc);
+        switch(argc)
+        {
+        case 1:
+            if( MRB_TT_STRING == mrb_type(argv[0]) ) { fmt_ptr = RSTR_PTR(mrb_str_ptr(argv[0])); }  // arg 1: format
+            break;
+        case 2:
+            if(   (MRB_TT_INTEGER == mrb_type(argv[0]))     // arg 1: address
+               && (MRB_TT_STRING == mrb_type(argv[1])) )    // arg 2: format
+            {
+                address = mrb_integer(argv[0]);
+                fmt_ptr = RSTR_PTR(mrb_str_ptr(argv[1]));
+            }
+            break;
+        default:
+            break;
+        }
+        if(nullptr != fmt_ptr)
+        {
+            std::string fmt(fmt_ptr);
+            mrb_value arry = mrb_ary_new(mrb);
+            if( bedit->get(mrb, address, fmt, arry) )
+            {
+                struct RArray *rarry = mrb_ary_ptr(arry);
+                mrb_int len = ARY_LEN(rarry);
+                switch(len)
+                {
+                case 0:
+                    break;
+                case 1:
+                    return mrb_ary_shift(mrb, arry);
+                    break;
+                default:
+                    return arry;
+                }
+            }
+        }
+    }
+    return mrb_nil_value();
+}
+mrb_value mrb_bedit_set(mrb_state * mrb, mrb_value self)
+{
+    BinaryControl * bedit = static_cast<BinaryControl *>(DATA_PTR(self));
+    if(nullptr != bedit)
+    {
+        mrb_int address = bedit->get_pos();
+        char *  fmt_ptr = nullptr;
+        mrb_value arry;
+        mrb_int argc; mrb_value * argv; mrb_get_args(mrb, "*", &argv, &argc);
+        switch(argc)
+        {
+        case 2:
+            if(  (MRB_TT_STRING == mrb_type(argv[0]))
+               &&(MRB_TT_ARRAY  == mrb_type(argv[1])))
+            {
+                fmt_ptr = RSTR_PTR(mrb_str_ptr(argv[0]));
+                arry = argv[1];
+            }
+            break;
+        case 3:
+            if(  (MRB_TT_INTEGER == mrb_type(argv[0]))
+               &&(MRB_TT_STRING  == mrb_type(argv[1]))
+               &&(MRB_TT_ARRAY   == mrb_type(argv[2])))
+            {
+                address = mrb_integer(argv[0]);
+                fmt_ptr = RSTR_PTR(mrb_str_ptr(argv[1]));
+                arry = argv[2];
+            }
+            break;
+        default:
+            break;
+        }
+        if(nullptr!=fmt_ptr)
+        {
+            std::string fmt(fmt_ptr);
+            return mrb_int_value(mrb, bedit->set(mrb, address, fmt, arry));
+        }
+    }
+    return mrb_nil_value();
+}
+mrb_value mrb_bedit_pos(mrb_state * mrb, mrb_value self)
+{
+    BinaryControl * bedit = static_cast<BinaryControl *>(DATA_PTR(self));
+    if(nullptr != bedit)
+    {
+        return mrb_int_value(mrb, bedit->ref_pos());
+    }
+    return mrb_nil_value();
+}
+mrb_value mrb_bedit_crc16(mrb_state * mrb, mrb_value self)
+{
+    BinaryControl * bedit = static_cast<BinaryControl *>(DATA_PTR(self));
+    if(nullptr != bedit)
+    {
+        char temp[5] = { 0 };
+        sprintf(temp, "%04X", bedit->modbus_crc16());
+        return mrb_str_new_cstr(mrb, temp);
+    }
+    return mrb_nil_value();
+}
+mrb_value mrb_bedit_crc8(mrb_state * mrb, mrb_value self)
+{
+    mrb_value result;
+    BinaryControl * bedit = static_cast<BinaryControl *>(DATA_PTR(self));
+    if(nullptr != bedit)
+    {
+        char temp[3] = { 0 };
+        sprintf(temp, "%02X", bedit->crc8());
+        return mrb_str_new_cstr(mrb, temp);
+    }
+    return mrb_nil_value();
+}
+mrb_value mrb_bedit_sum(mrb_state * mrb, mrb_value self)
+{
+    mrb_value result;
+    BinaryControl * bedit = static_cast<BinaryControl *>(DATA_PTR(self));
+    if(nullptr != bedit)
+    {
+        char temp[3] = { 0 };
+        sprintf(temp, "%02X", bedit->xsum());
+        return mrb_str_new_cstr(mrb, temp);
+    }
+    return mrb_nil_value();
+}
 
 mrb_value mrb_cppregexp_initialize(mrb_state * mrb, mrb_value self) { auto result = (Application::getObject())->cppregexp_init(mrb, self);                          return result; }
 mrb_value mrb_cppregexp_length(mrb_state * mrb, mrb_value self)     { auto result = (Application::getObject())->cppregexp_length(mrb, self);                        return result; }
@@ -3179,6 +2677,565 @@ void mrb_xlsx_context_free(mrb_state * mrb, void * ptr)
         delete xlsx;
     }
 }
+
+/* -------- << class BinaryControl >>-------- */
+
+void BinaryControl::chg_compress(void)
+{
+    if(0 == compress_size)
+    {
+        compress_size = length;
+        length = 0;
+    }
+}
+
+void BinaryControl::alloc(size_t size)
+{
+    length        = size;
+    compress_size = 0;
+    pos           = 0;
+    if( nullptr != data ) { std::free(data); data = nullptr;                        }
+    if( 0 < size )        { data = static_cast<unsigned char *>(std::malloc(size)); }
+}
+
+size_t BinaryControl::resize(size_t size)
+{
+    if(length < size)
+    {
+        auto temp = std::realloc(data, size);
+        if(nullptr == temp) { return length; }
+        data = static_cast<unsigned char *>(temp);
+    }
+    this->length = size;
+    return this->length;
+}
+
+void BinaryControl::clone(mrb_int address, mrb_int size, const BinaryControl & src)
+{
+    if(nullptr != data) { std::free(data); data = nullptr; }
+    if(0 == src.compress_size) { length = size; compress_size = 0;    }
+    else                       { length = size; compress_size = size; }
+    if(src.size() < size) { size = src.size(); }
+    data = static_cast<unsigned char *>(std::malloc(size));
+    std::memcpy(data, &(src.data[address]), size);
+    pos = 0;
+}
+
+size_t BinaryControl::loadBinaryFile(std::string & fname)
+{
+    std::filesystem::path path(fname);
+    auto            file_sz = std::filesystem::file_size(path);
+    unsigned char * temp    = static_cast<unsigned char *>(std::malloc(file_sz));
+    if((0 < file_sz) && (nullptr != temp))
+    {
+        if(std::filesystem::exists(fname))
+        {
+            std::ifstream fin(fname, std::ios::binary);
+            if(fin.is_open())
+            {
+                unsigned char * org_data = data;
+                fin.read(reinterpret_cast<char *>(temp), file_sz);
+                {
+                    data          = temp;
+                    length        = file_sz;
+                    compress_size = 0;
+                }
+                if(nullptr != org_data) { std::free(org_data); }
+                pos = 0;
+                return length;
+            }
+        }
+    }
+    return 0;
+}
+
+void BinaryControl::saveBinaryFile(std::string & fname)
+{
+    std::ofstream fout(fname, std::ios::binary);
+    fout.write(reinterpret_cast<char *>(data), size());
+}
+
+uint32_t BinaryControl::compress(void)
+{
+    if(nullptr != data)
+    {
+        if(0 == compress_size)
+        {
+            auto size_max = LZ4_compressBound(length);
+            auto cmp_data = std::malloc(size_max);
+            if(nullptr != cmp_data)
+            {
+                compress_size = LZ4_compress_default(reinterpret_cast<const char *>(data), static_cast<char *>(cmp_data), length, size_max);
+                if(compress_size < length)
+                {
+                    std::free(data);
+                    data = static_cast<unsigned char *>(cmp_data);
+                    pos = 0;
+                    return compress_size;
+                }
+                std::free(cmp_data);
+                compress_size = 0;
+            }
+        }
+    }
+    return 0;
+}
+
+uint32_t BinaryControl::uncompress(void)
+{
+    if(nullptr != data)
+    {
+        if(0 < compress_size)
+        {
+            if(0 < length)
+            {
+                auto dst = std::malloc(length);
+                if(nullptr != dst)
+                {
+                    auto size = LZ4_decompress_safe(reinterpret_cast<const char *>(data), reinterpret_cast<char *>(dst), compress_size, length);
+                    if(0 < size)
+                    {
+                        std::free(data);
+                        data = static_cast<unsigned char *>(dst);
+                        compress_size = 0;
+                        length = size;
+                        pos = 0;
+                        return size;
+                    }
+                    std::free(dst);
+                }
+            }
+            else
+            {
+                size_t buff_sz = 256;
+                char * buff = static_cast<char *>(std::malloc(buff_sz));
+                LZ4_streamDecode_t lz4s = { { 0 } };
+                for(auto cnt=0; cnt < 32; cnt ++)
+                {
+                    auto sz = LZ4_decompress_safe(reinterpret_cast<const char *>(data), buff, compress_size, buff_sz);
+                    if(0 < sz)
+                    {
+                        length = sz;
+                        compress_size = 0;
+                        std::free(data);
+                        data = reinterpret_cast<unsigned char *>(buff);
+                        break;
+                    }
+                    buff_sz <<= 1;
+                    auto temp = std::realloc(buff, buff_sz);
+                    if(nullptr == temp) { break; }
+                    buff = static_cast<char *>(temp);
+                }
+            }
+        }
+    }
+    return 0;
+}
+
+uint32_t BinaryControl::memset(mrb_int address, mrb_int set_data, mrb_int sz)
+{
+    uint32_t len = 0;
+    auto size = this->size();
+    if(address < size)
+    {
+        len = address - size;
+        if(sz < len) { len = sz; }
+        std::memset(&(data[address]), static_cast<uint8_t>(set_data), len);
+    }
+    return len;
+}
+
+uint32_t BinaryControl::memcpy(mrb_int address_dst, mrb_int address_src, mrb_int len, BinaryControl & src)
+{
+    auto dst_len = size()     - address_dst;
+    auto src_len = src.size() - address_src;
+    if(dst_len < len) { len = dst_len; }
+    if(src_len < len) { len = src_len; }
+    if(0 < len)
+    {
+        std::memcpy(&(data[address_dst]), &(src.data[address_src]), len);
+    }
+    return len;
+}
+
+int32_t BinaryControl::memcmp(mrb_int address_dst, mrb_int address_src, mrb_int len, BinaryControl & src)
+{
+    auto dst_len = size()     - address_dst;
+    auto src_len = src.size() - address_src;
+    if(dst_len < len) { len = dst_len; }
+    if(src_len < len) { len = src_len; }
+    if(0 < len)
+    {
+        return std::memcmp(&(data[address_dst]), &(src.data[address_src]), len);
+    }
+    return -2;
+}
+
+uint32_t BinaryControl::write(mrb_int address, mrb_int size, std::string & data)
+{
+    size_t cnt = 0;
+    auto length = this->size();
+    if(address < length)
+    {
+        length -= address;
+        if(length < size) { size = length; }
+        if(0 < size)
+        {
+            const unsigned char * str = reinterpret_cast<const unsigned char *>(data.c_str());
+            unsigned char val = 0;
+            auto str_len = data.size();
+            for(auto idx = 0, len = 0; (cnt < size) && (idx < str_len); idx ++)
+            {
+                unsigned char tmp = toValue(str[idx]);
+                if(tmp <= 0x0F)
+                {
+                    val = (val << 4) | tmp;
+                    len ++;
+                    if(0 == (len & 1))
+                    {
+                        this->data[address + cnt] = val;
+                        cnt ++;
+                    }
+                }
+            }
+        }
+    }
+    return cnt;
+}
+
+uint32_t BinaryControl::write_big(mrb_int address, mrb_int size, std::string & src)
+{
+    size_t cnt = 0;
+    auto length = this->size();
+    if(address < length)
+    {
+        length -= address;
+        if(length < size) { size = length; }
+        if(0 < size)
+        {
+            unsigned char * data = static_cast<unsigned char *>(std::malloc(size));
+            const unsigned char * str = reinterpret_cast<const unsigned char *>(src.c_str());
+            unsigned char val = 0;
+            auto str_len = src.size();
+            for(auto idx = 0, len = 0; (cnt < size) && (idx < str_len); idx ++)
+            {
+                unsigned char tmp = toValue(str[idx]);
+                if(tmp <= 0x0F)
+                {
+                    val = (val << 4) | tmp;
+                    len ++;
+                    if(0 == (len & 1))
+                    {
+                        data[cnt] = val;
+                        cnt ++;
+                    }
+                }
+            }
+            for(size_t idx = 0, top = cnt - 1; idx < cnt; idx ++)
+            {
+                this->data[address + (top - idx)] = data[idx];
+            }
+            std::free(data);
+        }
+    }
+    return cnt;
+}
+
+uint32_t BinaryControl::dump(mrb_int address, mrb_int size, std::string & output)
+{
+    uint32_t cnt = 0;
+    auto length = this->size();
+    if(address < length)
+    {
+        length -= address;
+        if(length < size) { size = length; }
+        if(0 < size)
+        {
+            for( ; (cnt < size); cnt ++)
+            {
+                char temp[4] = { 0 };
+                sprintf(temp, "%02X", data[address + cnt]);
+                output += temp;
+            }
+        }
+    }
+    return cnt;
+}
+
+uint32_t BinaryControl::dump_big(mrb_int address, mrb_int size, std::string & output)
+{
+    uint32_t cnt = 0;
+    auto length = this->size();
+    if(address < length)
+    {
+        length -= address;
+        if(length < size) { size = length; }
+        if(0 < size)
+        {
+            auto top = size - 1;
+            for( ; (cnt < size); cnt ++)
+            {
+                char temp[4] = { 0 };
+                sprintf(temp, "%02X", data[address + (top - cnt)]);
+                output += temp;
+            }
+        }
+    }
+    return cnt;
+}
+
+bool BinaryControl::get(mrb_state * mrb, uint32_t address, std::string & format_, mrb_value & array)
+{
+    auto state = ' ';
+    std::string num;
+    auto format = format_ + ' ';
+    for(auto t: format)
+    {
+        auto length = this->size();
+        if(('0' <= t) && (t <= '9'))
+        {
+            num += t;
+        }
+        else
+        {
+            switch(state)
+            {
+            case 'a':
+                {
+                    size_t size = stoi(num);
+                    if(address < length)
+                    {
+                        length -= address;
+                        if(length < size) { size = length; }
+                        if(0 < size)
+                        {
+                            char str[size + 1];
+                            str[size] = '\0';
+                            std::memcpy(str, &(data[address]), size);
+                            mrb_ary_push(mrb, array, mrb_str_new_cstr(mrb, str));
+                            address += size;
+                        }
+                    }
+                }
+                break;
+            case 'A':
+                {
+                    size_t size = stoi(num);
+                    if(address < length)
+                    {
+                        length -= address;
+                        if(length < size) { size = length; }
+                        if(0 < size)
+                        {
+                            char str[size + 1];
+                            str[size] = '\0';
+                            for(size_t idx = 0, top = size - 1; idx < size; idx ++)
+                            {
+                                str[top - idx] = data[address + idx];
+                            }
+                            mrb_ary_push(mrb, array, mrb_str_new_cstr(mrb, str));
+                            address += size;
+                        }
+                    }
+                }
+                break;
+            case 'h':
+                {
+                    mrb_int addr = address;
+                    mrb_int size = static_cast<unsigned int>(stoi(num));
+                    std::string hex;
+                    dump(addr, size, hex);
+                    mrb_ary_push(mrb, array, mrb_str_new_cstr(mrb, hex.c_str()));
+                    address += size;
+                }
+                break;
+            case 'H':
+                {
+                    mrb_int addr = address;
+                    mrb_int size = static_cast<unsigned int>(stoi(num));
+                    std::string hex;
+                    dump_big(addr, size, hex);
+                    mrb_ary_push(mrb, array, mrb_str_new_cstr(mrb, hex.c_str()));
+                    address += size;
+                }
+                break;
+            default:
+                break;
+            }
+            num.clear();
+            state = ' ';
+            switch(t)
+            {
+            case 'b': {  Byte temp; temp.buff[0] = data[address]; mrb_ary_push(mrb, array, mrb_int_value(mrb, temp.data)); address += 1; } break;
+            case 'c': {  Byte temp; temp.buff[0] = data[address]; mrb_ary_push(mrb, array, mrb_int_value(mrb, temp.val));  address += 1; } break;
+            case 'w': {  Word temp; std::memcpy(&(temp.buff[0]), &(data[address]), 2); mrb_ary_push(mrb, array, mrb_int_value(mrb, temp.uint16)); address += 2; } break;
+            case 's': {  Word temp; std::memcpy(&(temp.buff[0]), &(data[address]), 2); mrb_ary_push(mrb, array, mrb_int_value(mrb, temp.int16));  address += 2; } break;
+            case 'd': { DWord temp; std::memcpy(&(temp.buff[0]), &(data[address]), 4); mrb_ary_push(mrb, array, mrb_int_value(mrb, temp.uint32));  address += 4; } break;
+            case 'i': { DWord temp; std::memcpy(&(temp.buff[0]), &(data[address]), 4); mrb_ary_push(mrb, array, mrb_int_value(mrb, temp.int32));   address += 4; } break;
+            case 'f': { DWord temp; std::memcpy(&(temp.buff[0]), &(data[address]), 4); mrb_ary_push(mrb, array, mrb_float_value(mrb, temp.value)); address += 4; } break;
+
+            case 'W': { Word temp;  for(auto idx = 0; idx < 2; idx ++) { temp.buff[idx] = data[address + (1-idx)]; } mrb_ary_push(mrb, array, mrb_int_value(mrb, temp.uint16));  address += 2; } break;
+            case 'S': { Word temp;  for(auto idx = 0; idx < 2; idx ++) { temp.buff[idx] = data[address + (1-idx)]; } mrb_ary_push(mrb, array, mrb_int_value(mrb, temp.int16));   address += 2; } break;
+            case 'D': { DWord temp; for(auto idx = 0; idx < 4; idx ++) { temp.buff[idx] = data[address + (3-idx)]; } mrb_ary_push(mrb, array, mrb_int_value(mrb, temp.uint32));  address += 4; } break;
+            case 'I': { DWord temp; for(auto idx = 0; idx < 4; idx ++) { temp.buff[idx] = data[address + (3-idx)]; } mrb_ary_push(mrb, array, mrb_int_value(mrb, temp.int32));   address += 4; } break;
+            case 'F': { DWord temp; for(auto idx = 0; idx < 4; idx ++) { temp.buff[idx] = data[address + (3-idx)]; } mrb_ary_push(mrb, array, mrb_float_value(mrb, temp.value)); address += 4; } break;
+
+            case 'A': state = t; break;
+            case 'a': state = t; break;
+            case 'H': state = t; break;
+            case 'h': state = t; break;
+            default:
+                break;
+            }
+        }
+    }
+    pos = address;
+    return true;
+}
+
+mrb_int BinaryControl::set(mrb_state * mrb, uint32_t address, std::string & format_, mrb_value & array)
+{
+    mrb_int size = 0;
+    auto format = format_ + ' ';
+    for(auto t: format)
+    {
+        auto length = this->size();
+        switch(t)
+        {
+        case 'c': { DWord temp; temp.val    = static_cast< int8_t >(mrb_integer(mrb_ary_shift(mrb, array))); data[address] = temp.data; address += 1; size += 1; } break;
+        case 'b': { DWord temp; temp.data   = static_cast<uint8_t >(mrb_integer(mrb_ary_shift(mrb, array))); data[address] = temp.data; address += 1; size += 1; } break;
+        case 's': { DWord temp; temp.int16  = static_cast< int16_t>(mrb_integer(mrb_ary_shift(mrb, array))); std::memcpy(&(data[address]), &(temp.buff[0]), 2); address += 2; size += 2; } break;
+        case 'w': { DWord temp; temp.uint16 = static_cast<uint16_t>(mrb_integer(mrb_ary_shift(mrb, array))); std::memcpy(&(data[address]), &(temp.buff[0]), 2); address += 2; size += 2; } break;
+        case 'i': { DWord temp; temp.int32  = static_cast< int32_t>(mrb_integer(mrb_ary_shift(mrb, array))); std::memcpy(&(data[address]), &(temp.buff[0]), 4); address += 4; size += 4; } break;
+        case 'd': { DWord temp; temp.uint32 = static_cast<uint32_t>(mrb_integer(mrb_ary_shift(mrb, array))); std::memcpy(&(data[address]), &(temp.buff[0]), 4); address += 4; size += 4; } break;
+        case 'f': { DWord temp; temp.value  = static_cast<float>(mrb_float(mrb_ary_shift(mrb, array)));      std::memcpy(&(data[address]), &(temp.buff[0]), 4); address += 4; size += 4; } break;
+
+        case 'S': { DWord temp; temp.int16  = static_cast< int16_t>(mrb_integer(mrb_ary_shift(mrb, array))); for(auto idx = 0; idx < 2; idx ++) { data[address + (1-idx)] = temp.buff[idx]; } address += 2; size += 2; } break;
+        case 'W': { DWord temp; temp.uint16 = static_cast<uint16_t>(mrb_integer(mrb_ary_shift(mrb, array))); for(auto idx = 0; idx < 2; idx ++) { data[address + (1-idx)] = temp.buff[idx]; } address += 2; size += 2; } break;
+        case 'I': { DWord temp; temp.int32  = static_cast< int32_t>(mrb_integer(mrb_ary_shift(mrb, array))); for(auto idx = 0; idx < 4; idx ++) { data[address + (3-idx)] = temp.buff[idx]; } address += 4; size += 4; } break;
+        case 'D': { DWord temp; temp.uint32 = static_cast<uint32_t>(mrb_integer(mrb_ary_shift(mrb, array))); for(auto idx = 0; idx < 4; idx ++) { data[address + (3-idx)] = temp.buff[idx]; } address += 4; size += 4; } break;
+        case 'F': { DWord temp; temp.value  = static_cast<float>(mrb_float(mrb_ary_shift(mrb, array)));      for(auto idx = 0; idx < 4; idx ++) { data[address + (3-idx)] = temp.buff[idx]; } address += 4; size += 4; } break;
+
+        case 'a':
+            {
+                auto item = mrb_ary_shift(mrb, array);
+                if(address < length)
+                {
+                    length -= address;
+                    char * msg = RSTR_PTR(mrb_str_ptr(item));
+                    size_t msg_sz = strlen(msg);
+                    if(length < msg_sz) { msg_sz = length; }
+                    std::memcpy(&(data[address]), msg, msg_sz);
+                    address += msg_sz;
+                    size += msg_sz;
+                }
+            }
+            break;
+        case 'A':
+            {
+                auto item = mrb_ary_shift(mrb, array);
+                if(address < length)
+                {
+                    char * msg = RSTR_PTR(mrb_str_ptr(item));
+                    size_t msg_sz = strlen(msg);
+                    for(size_t idx = 0, top = msg_sz - 1; idx < msg_sz; idx ++)
+                    {
+                        data[address + idx] = msg[top - idx];
+                    }
+                    address += msg_sz;
+                    size += msg_sz;
+                }
+            }
+            break;
+        case 'H':
+            {
+                auto item = mrb_ary_shift(mrb, array);
+                char * msg = RSTR_PTR(mrb_str_ptr(item));
+                std::string data(msg);
+                auto w_size = write_big(address, (data.size() / 2), data);
+                address += w_size;
+                size += w_size;
+            }
+            break;
+        case 'h':
+            {
+                auto item = mrb_ary_shift(mrb, array);
+                char * msg = RSTR_PTR(mrb_str_ptr(item));
+                std::string data(msg);
+                auto w_size = write(address, (data.size() / 2), data);
+                address += w_size;
+                size += w_size;
+            }
+            break;
+        default:
+            break;
+        }
+    }
+    pos = address;
+    return size;
+}
+
+unsigned short BinaryControl::modbus_crc16(void)
+{
+    static const unsigned short modbusCRC[256] =
+    {
+        0x0000, 0xC1C0, 0x81C1, 0x4001, 0x01C3, 0xC003, 0x8002, 0x41C2, 0x01C6, 0xC006, 0x8007, 0x41C7, 0x0005, 0xC1C5, 0x81C4,
+        0x4004, 0x01CC, 0xC00C, 0x800D, 0x41CD, 0x000F, 0xC1CF, 0x81CE, 0x400E, 0x000A, 0xC1CA, 0x81CB, 0x400B, 0x01C9, 0xC009,
+        0x8008, 0x41C8, 0x01D8, 0xC018, 0x8019, 0x41D9, 0x001B, 0xC1DB, 0x81DA, 0x401A, 0x001E, 0xC1DE, 0x81DF, 0x401F, 0x01DD,
+        0xC01D, 0x801C, 0x41DC, 0x0014, 0xC1D4, 0x81D5, 0x4015, 0x01D7, 0xC017, 0x8016, 0x41D6, 0x01D2, 0xC012, 0x8013, 0x41D3,
+        0x0011, 0xC1D1, 0x81D0, 0x4010, 0x01F0, 0xC030, 0x8031, 0x41F1, 0x0033, 0xC1F3, 0x81F2, 0x4032, 0x0036, 0xC1F6, 0x81F7,
+        0x4037, 0x01F5, 0xC035, 0x8034, 0x41F4, 0x003C, 0xC1FC, 0x81FD, 0x403D, 0x01FF, 0xC03F, 0x803E, 0x41FE, 0x01FA, 0xC03A,
+        0x803B, 0x41FB, 0x0039, 0xC1F9, 0x81F8, 0x4038, 0x0028, 0xC1E8, 0x81E9, 0x4029, 0x01EB, 0xC02B, 0x802A, 0x41EA, 0x01EE,
+        0xC02E, 0x802F, 0x41EF, 0x002D, 0xC1ED, 0x81EC, 0x402C, 0x01E4, 0xC024, 0x8025, 0x41E5, 0x0027, 0xC1E7, 0x81E6, 0x4026,
+        0x0022, 0xC1E2, 0x81E3, 0x4023, 0x01E1, 0xC021, 0x8020, 0x41E0, 0x01A0, 0xC060, 0x8061, 0x41A1, 0x0063, 0xC1A3, 0x81A2,
+        0x4062, 0x0066, 0xC1A6, 0x81A7, 0x4067, 0x01A5, 0xC065, 0x8064, 0x41A4, 0x006C, 0xC1AC, 0x81AD, 0x406D, 0x01AF, 0xC06F,
+        0x806E, 0x41AE, 0x01AA, 0xC06A, 0x806B, 0x41AB, 0x0069, 0xC1A9, 0x81A8, 0x4068, 0x0078, 0xC1B8, 0x81B9, 0x4079, 0x01BB,
+        0xC07B, 0x807A, 0x41BA, 0x01BE, 0xC07E, 0x807F, 0x41BF, 0x007D, 0xC1BD, 0x81BC, 0x407C, 0x01B4, 0xC074, 0x8075, 0x41B5,
+        0x0077, 0xC1B7, 0x81B6, 0x4076, 0x0072, 0xC1B2, 0x81B3, 0x4073, 0x01B1, 0xC071, 0x8070, 0x41B0, 0x0050, 0xC190, 0x8191,
+        0x4051, 0x0193, 0xC053, 0x8052, 0x4192, 0x0196, 0xC056, 0x8057, 0x4197, 0x0055, 0xC195, 0x8194, 0x4054, 0x019C, 0xC05C,
+        0x805D, 0x419D, 0x005F, 0xC19F, 0x819E, 0x405E, 0x005A, 0xC19A, 0x819B, 0x405B, 0x0199, 0xC059, 0x8058, 0x4198, 0x0188,
+        0xC048, 0x8049, 0x4189, 0x004B, 0xC18B, 0x818A, 0x404A, 0x004E, 0xC18E, 0x818F, 0x404F, 0x018D, 0xC04D, 0x804C, 0x418C,
+        0x0044, 0xC184, 0x8185, 0x4045, 0x0187, 0xC047, 0x8046, 0x4186, 0x0182, 0xC042, 0x8043, 0x4183, 0x0041, 0xC181, 0x8180,
+        0x4040
+    };
+    MyEntity::CalcCRC16 crc(modbusCRC);
+    for(size_t idx = 0; idx < length; idx ++)
+    {
+        crc << data[idx];
+    }
+    return *crc;
+}
+
+unsigned char BinaryControl::crc8(void)
+{
+    static const unsigned char crctab8[16] = { 0x00,0x9B,0xAD,0x36,0xC1,0x5A,0x6C,0xF7,0x19,0x82,0xB4,0x2F,0xD8,0x43,0x75,0xEE };
+
+    unsigned char crc = 0;
+    unsigned char high = 0;
+    for(unsigned int idx = 0; idx < length; idx ++)
+    {
+        unsigned char data = this->data[idx];
+        high = crc >> 4;
+        crc <<= 4;
+        crc ^= crctab8[ high ^ (data >> 4) ];
+
+        high = crc >> 4;
+        crc <<= 4;
+        crc ^= crctab8[ high ^ (data & 0x0f) ];
+    }
+    return crc;
+}
+
+unsigned char BinaryControl::xsum(void)
+{
+    unsigned char sum = 0;
+    for(unsigned int idx = 0; idx < length; idx ++)
+    {
+        sum ^= this->data[idx];
+    }
+    return sum;
+}
+
 
 
 extern "C"
