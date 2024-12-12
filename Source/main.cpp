@@ -213,8 +213,6 @@ static mrb_value mrb_core_file_timestamp(mrb_state* mrb, mrb_value self)
     return mrb_str_new_cstr( mrb, (timestamp.str()).c_str() );
 #endif
 }
-static mrb_value mrb_smon_comlist(mrb_state* mrb, mrb_value self);
-static mrb_value mrb_smon_pipelist(mrb_state* mrb, mrb_value self);
 static std::string makeQRsvg(const std::string & arg)
 {
     const char *text = arg.c_str();
@@ -358,6 +356,9 @@ static BinaryControl * get_bedit_ptr(mrb_value & argv)
 }
 
 /* class CppRegexp */
+static mrb_value mrb_cppregexp_reg_match(mrb_state* mrb, mrb_value self);
+static mrb_value mrb_cppregexp_reg_replace(mrb_state* mrb, mrb_value self);
+static mrb_value mrb_cppregexp_reg_split(mrb_state* mrb, mrb_value self);
 static mrb_value mrb_cppregexp_initialize(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_cppregexp_length(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_cppregexp_match(mrb_state * mrb, mrb_value self);
@@ -365,66 +366,6 @@ static mrb_value mrb_cppregexp_grep(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_cppregexp_replace(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_cppregexp_select(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_cppregexp_split(mrb_state * mrb, mrb_value self);
-static mrb_value mrb_core_reg_match(mrb_state* mrb, mrb_value self)
-{
-    mrb_value proc; mrb_int argc; mrb_value * argv;
-    mrb_get_args(mrb, "&*", &proc, &argv, &argc);
-    if(   (2 == argc)
-       && (mrb_type(argv[0]) == MRB_TT_STRING)
-       && (mrb_type(argv[1]) == MRB_TT_STRING) )
-    {
-        char * str = RSTR_PTR(mrb_str_ptr(argv[0]));
-        char * reg = RSTR_PTR(mrb_str_ptr(argv[1]));
-        if( std::regex_search(str, std::regex(reg)) ) { return mrb_bool_value(true); }
-    }
-    return mrb_bool_value(false);
-}
-static mrb_value mrb_core_reg_replace(mrb_state* mrb, mrb_value self)
-{
-    mrb_value proc; mrb_int argc; mrb_value * argv;
-    mrb_get_args(mrb, "&*", &proc, &argv, &argc);
-    std::string result("");
-    switch(argc)
-    {
-    case 1:
-    case 2:
-        if(mrb_type(argv[0]) == MRB_TT_STRING)
-        {
-            result = RSTR_PTR(mrb_str_ptr(argv[0]));
-        }
-        break;
-    case 3:
-        if(    (mrb_type(argv[0]) == MRB_TT_STRING)
-            && (mrb_type(argv[1]) == MRB_TT_STRING)
-            && (mrb_type(argv[2]) == MRB_TT_STRING) )
-        {
-            char * str = RSTR_PTR(mrb_str_ptr(argv[0]));
-            char * reg = RSTR_PTR(mrb_str_ptr(argv[1]));
-            char * rep = RSTR_PTR(mrb_str_ptr(argv[2]));
-            result = std::regex_replace(str, std::regex(reg), rep);
-        }
-        break;
-    }
-    return mrb_str_new_cstr( mrb, result.c_str() );
-}
-static mrb_value mrb_core_split(mrb_state* mrb, mrb_value self)
-{
-    mrb_value proc; mrb_int argc; mrb_value * argv;
-    mrb_get_args(mrb, "&*", &proc, &argv, &argc);
-    mrb_value arry = mrb_ary_new(mrb);
-    if(    (2 == argc)
-        && (mrb_type(argv[0]) == MRB_TT_STRING)
-        && (mrb_type(argv[1]) == MRB_TT_STRING) )
-    {
-        std::string str(RSTR_PTR(mrb_str_ptr(argv[0])));
-        std::regex  reg(RSTR_PTR(mrb_str_ptr(argv[1])));
-        for(auto && str : str_split(str, reg))
-        {
-            mrb_ary_push(mrb, arry , mrb_str_new_cstr(mrb, str.c_str()));
-        }
-    }
-    return arry;
-}
 static void mrb_regexp_context_free(mrb_state * mrb, void * ptr);
 
 /* class thread */
@@ -446,7 +387,9 @@ static mrb_value mrb_thread_ms_sleep(mrb_state * mrb, mrb_value self)
 }
 static void mrb_thread_context_free(mrb_state * mrb, void * ptr);
 
-/* class SerialMonitor */
+/* class serialmonitor */
+static mrb_value mrb_smon_comlist(mrb_state* mrb, mrb_value self);
+static mrb_value mrb_smon_pipelist(mrb_state* mrb, mrb_value self);
 static mrb_value mrb_smon_initialize(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_smon_wait(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_smon_send(mrb_state * mrb, mrb_value self);
@@ -1696,9 +1639,9 @@ public:
 
             /* Class CppRegexp */
             struct RClass * cppregexp_class = mrb_define_class_under( mrb, mrb->kernel_module, "CppRegexp", mrb->object_class );
-            mrb_define_module_function(mrb, cppregexp_class, "reg_match",    mrb_core_reg_match,       MRB_ARGS_ARG( 2, 1 )  );
-            mrb_define_module_function(mrb, cppregexp_class, "reg_replace",  mrb_core_reg_replace,     MRB_ARGS_ARG( 3, 1 )  );
-            mrb_define_module_function(mrb, cppregexp_class, "reg_split",    mrb_core_split,           MRB_ARGS_ARG( 2, 1 )  );
+            mrb_define_module_function(mrb, cppregexp_class, "reg_match",    mrb_cppregexp_reg_match,       MRB_ARGS_ARG( 2, 1 )  );
+            mrb_define_module_function(mrb, cppregexp_class, "reg_replace",  mrb_cppregexp_reg_replace,     MRB_ARGS_ARG( 3, 1 )  );
+            mrb_define_module_function(mrb, cppregexp_class, "reg_split",    mrb_cppregexp_reg_split,       MRB_ARGS_ARG( 2, 1 )  );
             mrb_define_method( mrb, cppregexp_class,    "initialize",   mrb_cppregexp_initialize, MRB_ARGS_ANY()        );
             mrb_define_method( mrb, cppregexp_class,    "length",       mrb_cppregexp_length,     MRB_ARGS_NONE()       );
             mrb_define_method( mrb, cppregexp_class,    "match",        mrb_cppregexp_match,      MRB_ARGS_ANY()        );
@@ -2178,6 +2121,66 @@ mrb_value mrb_bedit_sum(mrb_state * mrb, mrb_value self)
     return mrb_nil_value();
 }
 
+static mrb_value mrb_cppregexp_reg_match(mrb_state* mrb, mrb_value self)
+{
+    mrb_value proc; mrb_int argc; mrb_value * argv;
+    mrb_get_args(mrb, "&*", &proc, &argv, &argc);
+    if(   (2 == argc)
+       && (mrb_type(argv[0]) == MRB_TT_STRING)
+       && (mrb_type(argv[1]) == MRB_TT_STRING) )
+    {
+        char * str = RSTR_PTR(mrb_str_ptr(argv[0]));
+        char * reg = RSTR_PTR(mrb_str_ptr(argv[1]));
+        if( std::regex_search(str, std::regex(reg)) ) { return mrb_bool_value(true); }
+    }
+    return mrb_bool_value(false);
+}
+static mrb_value mrb_cppregexp_reg_replace(mrb_state* mrb, mrb_value self)
+{
+    mrb_value proc; mrb_int argc; mrb_value * argv;
+    mrb_get_args(mrb, "&*", &proc, &argv, &argc);
+    std::string result("");
+    switch(argc)
+    {
+    case 1:
+    case 2:
+        if(mrb_type(argv[0]) == MRB_TT_STRING)
+        {
+            result = RSTR_PTR(mrb_str_ptr(argv[0]));
+        }
+        break;
+    case 3:
+        if(    (mrb_type(argv[0]) == MRB_TT_STRING)
+            && (mrb_type(argv[1]) == MRB_TT_STRING)
+            && (mrb_type(argv[2]) == MRB_TT_STRING) )
+        {
+            char * str = RSTR_PTR(mrb_str_ptr(argv[0]));
+            char * reg = RSTR_PTR(mrb_str_ptr(argv[1]));
+            char * rep = RSTR_PTR(mrb_str_ptr(argv[2]));
+            result = std::regex_replace(str, std::regex(reg), rep);
+        }
+        break;
+    }
+    return mrb_str_new_cstr( mrb, result.c_str() );
+}
+static mrb_value mrb_cppregexp_reg_split(mrb_state* mrb, mrb_value self)
+{
+    mrb_value proc; mrb_int argc; mrb_value * argv;
+    mrb_get_args(mrb, "&*", &proc, &argv, &argc);
+    mrb_value arry = mrb_ary_new(mrb);
+    if(    (2 == argc)
+        && (mrb_type(argv[0]) == MRB_TT_STRING)
+        && (mrb_type(argv[1]) == MRB_TT_STRING) )
+    {
+        std::string str(RSTR_PTR(mrb_str_ptr(argv[0])));
+        std::regex  reg(RSTR_PTR(mrb_str_ptr(argv[1])));
+        for(auto && str : str_split(str, reg))
+        {
+            mrb_ary_push(mrb, arry , mrb_str_new_cstr(mrb, str.c_str()));
+        }
+    }
+    return arry;
+}
 mrb_value mrb_cppregexp_initialize(mrb_state * mrb, mrb_value self) { auto result = (Application::getObject())->cppregexp_init(mrb, self);                          return result; }
 mrb_value mrb_cppregexp_length(mrb_state * mrb, mrb_value self)
 {
