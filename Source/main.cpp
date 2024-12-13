@@ -55,7 +55,6 @@
 
 /* -- static const & functions -- */
 static const char *  SoftwareRevision = "0.13.14";
-std::chrono::system_clock::time_point start;
 
 static unsigned char toValue(unsigned char data)
 {
@@ -74,7 +73,15 @@ static auto str_split = [](std::string & src, std::regex & reg)
     return result;
 };
 
-class BinaryControl
+class Object
+{
+protected:
+public:
+    Object(void) {}
+    virtual ~Object(void) {}
+};
+
+class BinaryControl : public Object
 {
 protected:
     size_t length;
@@ -152,178 +159,19 @@ public:
     unsigned char xsum(void);
 };
 
+/* class Core */
+static mrb_value mrb_core_to_hex(mrb_state* mrb, mrb_value self);
+static mrb_value mrb_core_gets(mrb_state* mrb, mrb_value self);
+static mrb_value mrb_core_exists(mrb_state* mrb, mrb_value self);
+static mrb_value mrb_core_file_timestamp(mrb_state* mrb, mrb_value self);
+static mrb_value mrb_core_make_qr(mrb_state* mrb, mrb_value self);
+static mrb_value mrb_core_tick(mrb_state* mrb, mrb_value self);
+static mrb_value mrb_core_date(mrb_state* mrb, mrb_value self);
+
 /* class Options */
 static mrb_value mrb_opt_initialize(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_opt_get(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_opt_size(mrb_state * mrb, mrb_value self);
-
-/* class Core */
-static mrb_value mrb_core_to_hex(mrb_state* mrb, mrb_value self)
-{
-    union
-    {
-        float       f;
-        mrb_int     val;
-        uint8_t     data[4];
-        uint16_t    data16[2];
-        uint32_t    data32;
-    } num;
-    char str_data[8+1];
-    char * type_ptr;
-    mrb_get_args(mrb, "zi", &type_ptr, &num);
-    std::string type(type_ptr);
-    if(("int16" == type) || ("uint16" == type))
-    {
-        sprintf(str_data, "%04X", num.data16[0]);
-        return mrb_str_new_cstr( mrb, str_data );
-    }
-    if("float" == type)
-    {
-        mrb_float mrb_f;
-        mrb_get_args(mrb, "zf", &type_ptr, &mrb_f);
-        num.f = mrb_f;
-    }
-    sprintf(str_data, "%08X", num.data32);
-    return mrb_str_new_cstr( mrb, str_data );
-}
-static mrb_value mrb_core_gets(mrb_state* mrb, mrb_value self);
-static mrb_value mrb_core_exists(mrb_state* mrb, mrb_value self)
-{
-    char * arg;
-    mrb_get_args(mrb, "z", &arg);
-    return mrb_bool_value(std::filesystem::exists(arg));
-}
-static mrb_value mrb_core_file_timestamp(mrb_state* mrb, mrb_value self)
-{
-    char * arg;
-    mrb_get_args(mrb, "z", &arg);
-#if 0
-    std::filesystem::path path(arg);
-    auto ftime = std::filesystem::last_write_time(path);
-    auto time = ( std::chrono::duration_cast<std::chrono::seconds>(ftime.time_since_epoch()) ).count();
-    const std::tm * ltime = std::localtime(&time);
-    std::ostringstream timestamp;
-    timestamp << std::put_time(ltime, "%c");
-    return mrb_str_new_cstr( mrb, (timestamp.str()).c_str() );
-#else
-    boost::filesystem::path path(arg);
-    auto ftime = boost::filesystem::last_write_time(path);
-    std::ostringstream timestamp;
-    timestamp << ctime(&ftime);
-    return mrb_str_new_cstr( mrb, (timestamp.str()).c_str() );
-#endif
-}
-static std::string makeQRsvg(const std::string & arg)
-{
-    const char *text = arg.c_str();
-    const qrcodegen::QrCode::Ecc errCorLvl = qrcodegen::QrCode::Ecc::LOW;
-    const qrcodegen::QrCode qr = qrcodegen::QrCode::encodeText(text, errCorLvl);
-    int border = 4;
-    if((border * 2) > INT_MAX - qr.getSize())
-    {
-        throw std::overflow_error("Border too large");
-    }
-    std::ostringstream sb;
-    sb << "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n";
-    sb << "<!DOCTYPE svg PUBLIC \"-//W3C//DTD SVG 1.1//EN\" \"http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd\">\n";
-    sb << "<svg xmlns=\"http://www.w3.org/2000/svg\" version=\"1.1\" viewBox=\"0 0 ";
-    sb << (qr.getSize() + border * 2) << " " << (qr.getSize() + border * 2) << "\" stroke=\"none\">\n";
-    sb << "  <rect width=\"100%\" height=\"100%\" fill=\"#FFFFFF\"/>\n";
-    sb << "  <path d=\"";
-    for(int y = 0; y < qr.getSize(); y++)
-    {
-        for(int x = 0; x < qr.getSize(); x++)
-        {
-            if(qr.getModule(x, y))
-            {
-                if(x != 0 || y != 0) { sb << " "; }
-                sb << "M" << (x + border) << "," << (y + border) << "h1v1h-1z";
-            }
-        }
-    }
-    sb << "\" fill=\"#000000\"/>\n";
-    sb << "</svg>\n";
-    return sb.str();
-}
-static mrb_value mrb_core_make_qr(mrb_state* mrb, mrb_value self)
-{
-    char * mruby_arg;
-    mrb_get_args(mrb, "z", &mruby_arg);
-    std::string arg(mruby_arg);
-    if(0 < arg.size())
-    {
-        auto qr_code = makeQRsvg(arg);
-        return mrb_str_new_cstr(mrb, qr_code.c_str());
-    }
-    return mrb_nil_value();
-}
-
-static mrb_value mrb_core_tick(mrb_state* mrb, mrb_value self)
-{
-    auto now = std::chrono::system_clock::now();
-    auto temp = start;
-    start = now;
-    mrb_int argc; mrb_value * argv;
-    mrb_get_args(mrb, "*", &argv, &argc);
-    if(1 == argc)
-    {
-        switch(mrb_type(argv[0]))
-        {
-        case MRB_TT_INTEGER:
-            if(0 == mrb_integer(argv[0])) { return mrb_int_value(mrb, std::chrono::duration_cast<std::chrono::microseconds>(now - temp).count()); }
-            break;
-        case MRB_TT_STRING:
-            {
-                std::string arg(RSTR_PTR(mrb_str_ptr(argv[0])));
-                if(arg == "us") { return mrb_int_value(mrb, std::chrono::duration_cast<std::chrono::microseconds>(now - temp).count()); }
-            }
-            break;
-        default:
-            break;
-        }
-    }
-    return mrb_int_value( mrb, std::chrono::duration_cast<std::chrono::milliseconds>(now - temp).count());
-}
-
-static mrb_value mrb_core_date(mrb_state* mrb, mrb_value self)
-{
-    std::stringstream date;
-    auto now = std::chrono::system_clock::now();
-    mrb_int argc; mrb_value * argv;
-    mrb_get_args(mrb, "*", &argv, &argc);
-#if 0
-// MXE Build Error
-    if((1 == argc) && (MRB_TT_STRING == mrb_type(argv[0])))
-    {
-        //std::string time_zone("Asia/Tokyo");
-        std::string time_zone(RSTR_PTR(mrb_str_ptr(argv[0])));
-        auto tz = std::chrono::locate_zone(time_zone);
-        auto ltime = tz->to_local(now);
-        std::time_t time = std::chrono::system_clock::to_time_t(tz->to_sys(ltime));
-        std::tm * lt = std::localtime(&time);
-        uint64_t ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
-        date << lt->tm_year+1900;
-        date << "/" << std::setfill('0') << std::right << std::setw(2) << lt->tm_mon + 1;
-        date << "/" << std::setfill('0') << std::right << std::setw(2) << lt->tm_mday;
-        date << " " << std::setfill('0') << std::right << std::setw(2) << lt->tm_hour;
-        date << ":" << std::setfill('0') << std::right << std::setw(2) << lt->tm_min;
-        date << ":" << std::setfill('0') << std::right << std::setw(2) << lt->tm_sec;
-        date << "." << std::setfill('0') << std::right << std::setw(3) << (ms % 1000);
-        return mrb_str_new_cstr(mrb, (date.str()).c_str());
-    }
-#endif
-    std::time_t time = std::chrono::system_clock::to_time_t(now);
-    std::tm * lt = std::localtime(&time);
-    uint64_t ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
-    date << lt->tm_year+1900;
-    date << "/" << std::setfill('0') << std::right << std::setw(2) << lt->tm_mon + 1;
-    date << "/" << std::setfill('0') << std::right << std::setw(2) << lt->tm_mday;
-    date << " " << std::setfill('0') << std::right << std::setw(2) << lt->tm_hour;
-    date << ":" << std::setfill('0') << std::right << std::setw(2) << lt->tm_min;
-    date << ":" << std::setfill('0') << std::right << std::setw(2) << lt->tm_sec;
-    date << "." << std::setfill('0') << std::right << std::setw(3) << (ms % 1000);
-    return mrb_str_new_cstr(mrb, (date.str()).c_str());
-}
 
 /* class BinEdit */
 static mrb_value mrb_bedit_initialize(mrb_state * mrb, mrb_value self);
@@ -370,13 +218,12 @@ static void mrb_regexp_context_free(mrb_state * mrb, void * ptr);
 
 /* class thread */
 static mrb_value mrb_thread_initialize(mrb_state * mrb, mrb_value self);
-static mrb_value mrb_thread_run(mrb_state * mrb, mrb_value self);
-static mrb_value mrb_thread_join(mrb_state * mrb, mrb_value self);
-static mrb_value mrb_thread_is_run(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_thread_state(mrb_state * mrb, mrb_value self);
-static mrb_value mrb_thread_sync(mrb_state * mrb, mrb_value self);
+static mrb_value mrb_thread_run(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_thread_wait(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_thread_notify(mrb_state * mrb, mrb_value self);
+static mrb_value mrb_thread_sync(mrb_state * mrb, mrb_value self);
+static mrb_value mrb_thread_join(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_thread_stop(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_thread_ms_sleep(mrb_state * mrb, mrb_value self)
 {
@@ -547,21 +394,21 @@ public:
         std::unique_lock<std::mutex> lock(mtx);
         if(nullptr == this->mrb)
         {
-                mrb_get_args(mrb, "&", &proc);
-                if (!mrb_nil_p(proc))
+            mrb_get_args(mrb, "&", &proc);
+            if(!mrb_nil_p(proc))
+            {
+                result = true;
+                state = Wakeup;
+                std::thread temp(&WorkerThread::run_context, this, 0);
+                th_ctrl.swap(temp);
+                auto lamda = [this]
                 {
-                    result = true;
-                    state = Wakeup;
-                    std::thread temp(&WorkerThread::run_context, this, 0);
-                    th_ctrl.swap(temp);
-                    auto lamda = [this]
-                    {
-                        if(state == Wakeup) { return false; }
-                        return true;
-                    };
-                    state = Wakeup;
-                    cond.wait(lock, lamda);
-                }
+                    if(state == Wakeup) { return false; }
+                    return true;
+                };
+                state = Wakeup;
+                cond.wait(lock, lamda);
+            }
         }
         lock.unlock();
         return result;
@@ -621,7 +468,7 @@ public:
         cond.wait(lock, lamda);
         lock.unlock();
     }
-    void notify(mrb_state * mrb)
+    void notify(void)
     {
         std::lock_guard<std::mutex> lock(mtx);
         state = Run;
@@ -1110,86 +957,6 @@ public:
         mrb_data_init(self, th_ctrl, &mrb_thread_context_type);
         return self;
     }
-    mrb_value thread_run(mrb_state * mrb, mrb_value self)
-    {
-        mrb_value proc;
-        mrb_get_args(mrb, "&", &proc);
-        if (!mrb_nil_p(proc))
-        {
-            WorkerThread * th_ctrl = static_cast<WorkerThread *>(DATA_PTR(self));
-            if(nullptr != th_ctrl )
-            {
-                th_ctrl->run(mrb, self);
-            }
-        }
-        return mrb_nil_value();
-    }
-    mrb_value thread_join(mrb_state * mrb, mrb_value self)
-    {
-        WorkerThread * th_ctrl = static_cast<WorkerThread *>(DATA_PTR(self));
-        if(nullptr != th_ctrl)
-        {
-            th_ctrl->join();
-        }
-        return mrb_nil_value();
-    }
-    mrb_value thread_state(mrb_state * mrb, mrb_value self)
-    {
-        WorkerThread * th_ctrl = static_cast<WorkerThread *>(DATA_PTR(self));
-        if(nullptr != th_ctrl)
-        {
-            return mrb_fixnum_value(th_ctrl->get_state());
-        }
-        return mrb_nil_value();
-    }
-    mrb_value thread_wait(mrb_state * mrb, mrb_value self)
-    {
-        WorkerThread * th_ctrl = static_cast<WorkerThread *>(DATA_PTR(self));
-        if(nullptr != th_ctrl)
-        {
-            th_ctrl->wait(mrb);
-        }
-        return mrb_nil_value();
-    }
-    mrb_value thread_notiry(mrb_state * mrb, mrb_value self)
-    {
-        mrb_value proc = mrb_nil_value();
-        mrb_get_args(mrb, "&", &proc);
-        if (!mrb_nil_p(proc))
-        {
-            WorkerThread * th_ctrl = static_cast<WorkerThread * >(DATA_PTR(self));
-            if(nullptr != th_ctrl)
-            {
-                auto result = th_ctrl->notify(mrb, proc);
-                return result;
-            }
-        }
-        return mrb_nil_value();
-    }
-    mrb_value thread_stop(mrb_state * mrb, mrb_value self)
-    {
-        WorkerThread * th_ctrl = static_cast<WorkerThread *>(DATA_PTR(self));
-        if(nullptr != th_ctrl)
-        {
-            th_ctrl->stop(mrb);
-        }
-        return mrb_nil_value();
-    }
-    mrb_value thread_sync(mrb_state * mrb, mrb_value self)
-    {
-        mrb_value proc = mrb_nil_value();
-        mrb_get_args(mrb, "&", &proc);
-        if (!mrb_nil_p(proc))
-        {
-            WorkerThread * th_ctrl = static_cast<WorkerThread * >(DATA_PTR(self));
-            if(nullptr != th_ctrl)
-            {
-                auto result = th_ctrl->sync(mrb, proc);
-                return result;
-            }
-        }
-        return mrb_nil_value();
-    }
 
     mrb_value smon_init(mrb_state * mrb, mrb_value self)
     {
@@ -1658,12 +1425,12 @@ public:
             mrb_define_const(  mrb, thread_class, "WAIT_JOIN",          mrb_fixnum_value(WorkerThread::WaitJoin)        );
             mrb_define_module_function( mrb, thread_class, "ms_sleep",  mrb_thread_ms_sleep,    MRB_ARGS_ARG( 1, 1 )    );
             mrb_define_method( mrb, thread_class, "initialize",         mrb_thread_initialize,  MRB_ARGS_ANY()          );
-            mrb_define_method( mrb, thread_class, "run",                mrb_thread_run,         MRB_ARGS_ANY()          );
-            mrb_define_method( mrb, thread_class, "join",               mrb_thread_join,        MRB_ARGS_ANY()          );
             mrb_define_method( mrb, thread_class, "state",              mrb_thread_state,       MRB_ARGS_ANY()          );
+            mrb_define_method( mrb, thread_class, "run",                mrb_thread_run,         MRB_ARGS_ANY()          );
             mrb_define_method( mrb, thread_class, "wait",               mrb_thread_wait,        MRB_ARGS_NONE()         );
-            mrb_define_method( mrb, thread_class, "synchronize",        mrb_thread_sync,        MRB_ARGS_NONE()         );
             mrb_define_method( mrb, thread_class, "notify",             mrb_thread_notify,      MRB_ARGS_NONE()         );
+            mrb_define_method( mrb, thread_class, "synchronize",        mrb_thread_sync,        MRB_ARGS_NONE()         );
+            mrb_define_method( mrb, thread_class, "join",               mrb_thread_join,        MRB_ARGS_ANY()          );
             mrb_define_method( mrb, thread_class, "stop",               mrb_thread_stop,        MRB_ARGS_NONE()         );
 
             /* Class Smon */
@@ -1731,6 +1498,34 @@ Application * Application::getObject(void)
     return Application::obj;
 }
 
+mrb_value mrb_core_to_hex(mrb_state* mrb, mrb_value self)
+{
+    union
+    {
+        float       f;
+        mrb_int     val;
+        uint8_t     data[4];
+        uint16_t    data16[2];
+        uint32_t    data32;
+    } num;
+    char str_data[8+1];
+    char * type_ptr;
+    mrb_get_args(mrb, "zi", &type_ptr, &num);
+    std::string type(type_ptr);
+    if(("int16" == type) || ("uint16" == type))
+    {
+        sprintf(str_data, "%04X", num.data16[0]);
+        return mrb_str_new_cstr( mrb, str_data );
+    }
+    if("float" == type)
+    {
+        mrb_float mrb_f;
+        mrb_get_args(mrb, "zf", &type_ptr, &mrb_f);
+        num.f = mrb_f;
+    }
+    sprintf(str_data, "%08X", num.data32);
+    return mrb_str_new_cstr( mrb, str_data );
+}
 mrb_value mrb_core_gets(mrb_state* mrb, mrb_value self)
 {
     try
@@ -1741,12 +1536,168 @@ mrb_value mrb_core_gets(mrb_state* mrb, mrb_value self)
     } catch(std::exception & exp) { }
     return mrb_nil_value();
 }
+mrb_value mrb_core_exists(mrb_state* mrb, mrb_value self)
+{
+    char * arg;
+    mrb_get_args(mrb, "z", &arg);
+    return mrb_bool_value(std::filesystem::exists(arg));
+}
+mrb_value mrb_core_file_timestamp(mrb_state* mrb, mrb_value self)
+{
+    char * arg;
+    mrb_get_args(mrb, "z", &arg);
+    boost::filesystem::path path(arg);
+    auto ftime = boost::filesystem::last_write_time(path);
+    std::ostringstream timestamp;
+    timestamp << ctime(&ftime);
+    return mrb_str_new_cstr( mrb, (timestamp.str()).c_str() );
+}
+static std::string makeQRsvg(const std::string & arg)
+{
+    const char *text = arg.c_str();
+    const qrcodegen::QrCode::Ecc errCorLvl = qrcodegen::QrCode::Ecc::LOW;
+    const qrcodegen::QrCode qr = qrcodegen::QrCode::encodeText(text, errCorLvl);
+    int border = 4;
+    if((border * 2) > INT_MAX - qr.getSize())
+    {
+        throw std::overflow_error("Border too large");
+    }
+    std::ostringstream sb;
+    sb << "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n";
+    sb << "<!DOCTYPE svg PUBLIC \"-//W3C//DTD SVG 1.1//EN\"";
+    sb <<                                   " \"http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd\">\n";
+    sb << "<svg xmlns=\"http://www.w3.org/2000/svg\" version=\"1.1\" viewBox=\"0 0 ";
+    sb << (qr.getSize() + border * 2) << " " << (qr.getSize() + border * 2) << "\" stroke=\"none\">\n";
+    sb << "  <rect width=\"100%\" height=\"100%\" fill=\"#FFFFFF\"/>\n";
+    sb << "  <path d=\"";
+    for(int y = 0; y < qr.getSize(); y++)
+    {
+        for(int x = 0; x < qr.getSize(); x++)
+        {
+            if(qr.getModule(x, y))
+            {
+                if(x != 0 || y != 0) { sb << " "; }
+                sb << "M" << (x + border) << "," << (y + border) << "h1v1h-1z";
+            }
+        }
+    }
+    sb << "\" fill=\"#000000\"/>\n";
+    sb << "</svg>\n";
+    return sb.str();
+}
+mrb_value mrb_core_make_qr(mrb_state* mrb, mrb_value self)
+{
+    char * mruby_arg;
+    mrb_get_args(mrb, "z", &mruby_arg);
+    std::string arg(mruby_arg);
+    if(0 < arg.size())
+    {
+        auto qr_code = makeQRsvg(arg);
+        return mrb_str_new_cstr(mrb, qr_code.c_str());
+    }
+    return mrb_nil_value();
+}
+mrb_value mrb_core_tick(mrb_state* mrb, mrb_value self)
+{
+    static std::chrono::system_clock::time_point start = std::chrono::system_clock::now();
+    auto now = std::chrono::system_clock::now();
+    auto temp = start;
+    start = now;
+    mrb_int argc; mrb_value * argv;
+    mrb_get_args(mrb, "*", &argv, &argc);
+    if(1 == argc)
+    {
+        switch(mrb_type(argv[0]))
+        {
+        case MRB_TT_INTEGER:
+            if(0 == mrb_integer(argv[0]))
+            {
+                auto tick = std::chrono::duration_cast<std::chrono::microseconds>(now-temp).count();
+                return mrb_int_value(mrb, tick);
+            }
+            break;
+        case MRB_TT_STRING:
+            {
+                std::string arg(RSTR_PTR(mrb_str_ptr(argv[0])));
+                if(arg == "us")
+                {
+                    auto tick = std::chrono::duration_cast<std::chrono::microseconds>(now-temp).count();
+                    return mrb_int_value(mrb, tick);
+                }
+            }
+            break;
+        default:
+            break;
+        }
+    }
+    auto tick = std::chrono::duration_cast<std::chrono::milliseconds>(now - temp).count();
+    return mrb_int_value( mrb, tick);
+}
+mrb_value mrb_core_date(mrb_state* mrb, mrb_value self)
+{
+    std::stringstream date;
+    auto now = std::chrono::system_clock::now();
+    mrb_int argc; mrb_value * argv;
+    mrb_get_args(mrb, "*", &argv, &argc);
+#if 0
+// MXE Build Error
+    if((1 == argc) && (MRB_TT_STRING == mrb_type(argv[0])))
+    {
+        //std::string time_zone("Asia/Tokyo");
+        std::string time_zone(RSTR_PTR(mrb_str_ptr(argv[0])));
+        auto tz = std::chrono::locate_zone(time_zone);
+        auto ltime = tz->to_local(now);
+        std::time_t time = std::chrono::system_clock::to_time_t(tz->to_sys(ltime));
+        std::tm * lt = std::localtime(&time);
+        uint64_t ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
+        date << lt->tm_year+1900;
+        date << "/" << std::setfill('0') << std::right << std::setw(2) << lt->tm_mon + 1;
+        date << "/" << std::setfill('0') << std::right << std::setw(2) << lt->tm_mday;
+        date << " " << std::setfill('0') << std::right << std::setw(2) << lt->tm_hour;
+        date << ":" << std::setfill('0') << std::right << std::setw(2) << lt->tm_min;
+        date << ":" << std::setfill('0') << std::right << std::setw(2) << lt->tm_sec;
+        date << "." << std::setfill('0') << std::right << std::setw(3) << (ms % 1000);
+        return mrb_str_new_cstr(mrb, (date.str()).c_str());
+    }
+#endif
+    std::time_t time = std::chrono::system_clock::to_time_t(now);
+    std::tm * lt = std::localtime(&time);
+    uint64_t ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
+    date << lt->tm_year+1900;
+    date << "/" << std::setfill('0') << std::right << std::setw(2) << lt->tm_mon + 1;
+    date << "/" << std::setfill('0') << std::right << std::setw(2) << lt->tm_mday;
+    date << " " << std::setfill('0') << std::right << std::setw(2) << lt->tm_hour;
+    date << ":" << std::setfill('0') << std::right << std::setw(2) << lt->tm_min;
+    date << ":" << std::setfill('0') << std::right << std::setw(2) << lt->tm_sec;
+    date << "." << std::setfill('0') << std::right << std::setw(3) << (ms % 1000);
+    return mrb_str_new_cstr(mrb, (date.str()).c_str());
+}
 
-mrb_value mrb_opt_initialize(mrb_state * mrb, mrb_value self)   { auto result = (Application::getObject())->opt_init(mrb, self);    mrb_garbage_collect(mrb);   return result; }
-mrb_value mrb_opt_size(mrb_state * mrb, mrb_value self)         { auto result = (Application::getObject())->opt_size(mrb, self);    mrb_garbage_collect(mrb);   return result; }
-mrb_value mrb_opt_get(mrb_state * mrb, mrb_value self)          { auto result = (Application::getObject())->opt_get(mrb, self);     mrb_garbage_collect(mrb);   return result; }
+mrb_value mrb_opt_initialize(mrb_state * mrb, mrb_value self)
+{
+    auto result = (Application::getObject())->opt_init(mrb, self);
+    mrb_garbage_collect(mrb);
+    return result;
+}
+mrb_value mrb_opt_size(mrb_state * mrb, mrb_value self)
+{
+    auto result = (Application::getObject())->opt_size(mrb, self);
+    mrb_garbage_collect(mrb);
+    return result;
+}
+mrb_value mrb_opt_get(mrb_state * mrb, mrb_value self)
+{
+    auto result = (Application::getObject())->opt_get(mrb, self);
+    mrb_garbage_collect(mrb);
+    return result;
+}
 
-mrb_value mrb_bedit_initialize(mrb_state * mrb, mrb_value self) { auto result = (Application::getObject())->bedit_init(mrb, self);  mrb_garbage_collect(mrb);   return result; }
+mrb_value mrb_bedit_initialize(mrb_state * mrb, mrb_value self)
+{
+    auto result = (Application::getObject())->bedit_init(mrb, self);
+    mrb_garbage_collect(mrb);
+    return result;
+}
 mrb_value mrb_bedit_save(mrb_state * mrb, mrb_value self)
 {
     BinaryControl * bedit = static_cast<BinaryControl *>(DATA_PTR(self));
@@ -1784,10 +1735,7 @@ mrb_value mrb_bedit_uncompress(mrb_state * mrb, mrb_value self)
 mrb_value mrb_bedit_length(mrb_state * mrb, mrb_value self)
 {
     BinaryControl * bedit = static_cast<BinaryControl *>(DATA_PTR(self));
-    if(nullptr != bedit)
-    {
-        return mrb_int_value(mrb, bedit->size());
-    }
+    if(nullptr != bedit) { return mrb_int_value(mrb, bedit->size()); }
     return mrb_nil_value();
 }
 mrb_value mrb_bedit_write(mrb_state * mrb, mrb_value self)
@@ -2181,7 +2129,12 @@ static mrb_value mrb_cppregexp_reg_split(mrb_state* mrb, mrb_value self)
     }
     return arry;
 }
-mrb_value mrb_cppregexp_initialize(mrb_state * mrb, mrb_value self) { auto result = (Application::getObject())->cppregexp_init(mrb, self);                          return result; }
+mrb_value mrb_cppregexp_initialize(mrb_state * mrb, mrb_value self)
+{
+    auto result = (Application::getObject())->cppregexp_init(mrb, self);
+    mrb_garbage_collect(mrb);
+    return result;
+}
 mrb_value mrb_cppregexp_length(mrb_state * mrb, mrb_value self)
 {
     CppRegexp * reg = static_cast<CppRegexp *>(DATA_PTR(self));
@@ -2402,13 +2355,70 @@ mrb_value mrb_cppregexp_split(mrb_state * mrb, mrb_value self)
 }
 
 mrb_value mrb_thread_initialize(mrb_state * mrb, mrb_value self)    { auto result = (Application::getObject())->thread_init(mrb, self);                             return result; }
-mrb_value mrb_thread_run(mrb_state * mrb, mrb_value self)           { auto result = (Application::getObject())->thread_run(mrb, self);                              return result; }
-mrb_value mrb_thread_state(mrb_state * mrb, mrb_value self)         { auto result = (Application::getObject())->thread_state(mrb, self);                            return result; }
-mrb_value mrb_thread_join(mrb_state * mrb, mrb_value self)          { auto result = (Application::getObject())->thread_join(mrb, self);  mrb_garbage_collect(mrb);  return result; }
-mrb_value mrb_thread_wait(mrb_state * mrb, mrb_value self)          { auto result = (Application::getObject())->thread_wait(mrb, self);  mrb_garbage_collect(mrb);  return result; }
-mrb_value mrb_thread_notify(mrb_state * mrb, mrb_value self)        { auto result = (Application::getObject())->thread_notiry(mrb, self);                           return result; }
-mrb_value mrb_thread_stop(mrb_state * mrb, mrb_value self)          { auto result = (Application::getObject())->thread_stop(mrb, self);                             return result; }
-mrb_value mrb_thread_sync(mrb_state * mrb, mrb_value self)          { auto result = (Application::getObject())->thread_sync(mrb, self);                             return result; }
+mrb_value mrb_thread_state(mrb_state * mrb, mrb_value self)
+{
+    WorkerThread * th_ctrl = static_cast<WorkerThread *>(DATA_PTR(self));
+    if(nullptr != th_ctrl) { return mrb_fixnum_value(th_ctrl->get_state()); }
+    return mrb_nil_value();
+}
+mrb_value mrb_thread_run(mrb_state * mrb, mrb_value self)
+{
+    WorkerThread * th_ctrl = static_cast<WorkerThread *>(DATA_PTR(self));
+    if(nullptr != th_ctrl ) { th_ctrl->run(mrb, self); }
+    return mrb_nil_value();
+}
+mrb_value mrb_thread_wait(mrb_state * mrb, mrb_value self)
+{
+    WorkerThread * th_ctrl = static_cast<WorkerThread *>(DATA_PTR(self));
+    if(nullptr != th_ctrl) { th_ctrl->wait(mrb); }
+    mrb_garbage_collect(mrb);
+    return mrb_nil_value();
+}
+mrb_value mrb_thread_notify(mrb_state * mrb, mrb_value self)
+{
+    mrb_value proc = mrb_nil_value();
+    mrb_get_args(mrb, "&", &proc);
+    if (!mrb_nil_p(proc))
+    {
+        WorkerThread * th_ctrl = static_cast<WorkerThread * >(DATA_PTR(self));
+        if(nullptr != th_ctrl)
+        {
+            auto result = th_ctrl->notify(mrb, proc);
+            return result;
+        }
+        th_ctrl->notify();
+        return mrb_bool_value(true);
+    }
+    return mrb_nil_value();
+}
+mrb_value mrb_thread_sync(mrb_state * mrb, mrb_value self)
+{
+    mrb_value proc = mrb_nil_value();
+    mrb_get_args(mrb, "&", &proc);
+    if (!mrb_nil_p(proc))
+    {
+        WorkerThread * th_ctrl = static_cast<WorkerThread * >(DATA_PTR(self));
+        if(nullptr != th_ctrl)
+        {
+            auto result = th_ctrl->sync(mrb, proc);
+            return result;
+        }
+    }
+    return mrb_nil_value();
+}
+mrb_value mrb_thread_join(mrb_state * mrb, mrb_value self)
+{
+    WorkerThread * th_ctrl = static_cast<WorkerThread *>(DATA_PTR(self));
+    if(nullptr != th_ctrl) { th_ctrl->join(); }
+    mrb_garbage_collect(mrb);
+    return mrb_nil_value();
+}
+mrb_value mrb_thread_stop(mrb_state * mrb, mrb_value self)
+{
+    WorkerThread * th_ctrl = static_cast<WorkerThread *>(DATA_PTR(self));
+    if(nullptr != th_ctrl) { th_ctrl->stop(mrb); }
+    return mrb_nil_value();
+}
 
 static mrb_value mrb_smon_comlist(mrb_state* mrb, mrb_value self)
 {
@@ -3172,7 +3182,6 @@ unsigned short BinaryControl::modbus_crc16(void)
 unsigned char BinaryControl::crc8(void)
 {
     static const unsigned char crctab8[16] = { 0x00,0x9B,0xAD,0x36,0xC1,0x5A,0x6C,0xF7,0x19,0x82,0xB4,0x2F,0xD8,0x43,0x75,0xEE };
-
     unsigned char crc = 0;
     unsigned char high = 0;
     for(unsigned int idx = 0; idx < length; idx ++)
@@ -3270,7 +3279,6 @@ int main(int argc, char * argv[])
             arg.push_back(str);
         }
         Application app( argmap, arg );
-        start = std::chrono::system_clock::now();
         app.main();
     }
     catch(std::exception & exp) { std::cerr << "exeption: " << exp.what() << std::endl; }

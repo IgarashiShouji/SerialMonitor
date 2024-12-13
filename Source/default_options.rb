@@ -274,6 +274,7 @@ class Core
     end
   end
   def self.__CheckOptions()
+    Core.tick()
     opts = Args.new
     if nil == opts['mruby-script'] then
       if nil != opts['comlist'] then
@@ -355,6 +356,7 @@ class Core
         exit 0
       end
     end
+    Core.tick()
   end
 end
 Core.__CheckOptions()
