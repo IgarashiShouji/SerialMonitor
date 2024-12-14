@@ -76,9 +76,13 @@ static auto str_split = [](std::string & src, std::regex & reg)
 class Object
 {
 protected:
+    unsigned int id;
+    std::map<unsigned int, Object *> * res;
 public:
-    Object(void) {}
-    virtual ~Object(void) {}
+    inline Object(void);
+    virtual ~Object(void);
+    inline void setControlID(unsigned int id, std::map<unsigned int, Object *> * res);
+    inline unsigned int ControlID(void);
 };
 
 class BinaryControl : public Object
@@ -90,57 +94,21 @@ protected:
     unsigned char * data;
 
 public:
-    BinaryControl(void)                             : length(0), compress_size(0), pos(0), data(nullptr) { }
-    BinaryControl(BinaryControl & src)              : length(0), compress_size(0), pos(0), data(nullptr) { clone(0, src.length, src); }
-    BinaryControl(size_t size_)                     : length(0), compress_size(0), pos(0), data(nullptr) { alloc(size_); }
-    BinaryControl(size_t size_, unsigned char data) : length(0), compress_size(0), pos(0), data(nullptr) { alloc(size_); std::memset( this->data, data, size_); }
-    BinaryControl(std::string & data)
-      : length(0), compress_size(0), pos(0), data(nullptr)
-    {
-        auto reg_file = std::regex("^file:");
-        auto reg_comp = std::regex("^compress:");
-        auto reg_text = std::regex("^tx:");
-        if(std::regex_search(data, reg_file))
-        {   /* file */
-            auto fname= std::regex_replace(data, reg_file, "");
-            loadBinaryFile(fname);
-        }
-        else if(std::regex_search(data, reg_comp))
-        {   /* compress file */
-            auto fname= std::regex_replace(data, reg_comp, "");
-            loadBinaryFile(fname);
-            chg_compress();
-        }
-        else if(std::regex_search(data, reg_text))
-        {   /* text data */
-            data = std::regex_replace(data, reg_text, "");
-            alloc(data.size());
-            std::memcpy( this->data, data.c_str(), length);
-        }
-        else
-        {
-            data = std::regex_replace(data, std::regex("[^0-9a-fA-F]"), "");
-            alloc(data.size()/2);
-            length = this->write(0, static_cast<mrb_int>(length), data);
-        }
-    }
-    virtual ~BinaryControl(void)
-    {
-        if(nullptr!=data)
-        {
-            std::free(data);
-        }
-        length = compress_size = pos = 0;
-        data = nullptr;
-    }
-    inline unsigned char * ptr(void)    { return data; }
-    inline size_t size(void) const      { if(0 < compress_size) { return compress_size; } return length; }
-    inline size_t get_pos(void) const   { if(pos < size()) { return pos; } return 0; }
-    inline size_t ref_pos(void) const   { return pos; }
+    inline BinaryControl(void);
+    inline BinaryControl(BinaryControl & src);
+    inline BinaryControl(size_t size_);
+    inline BinaryControl(size_t size_, unsigned char data);
+    BinaryControl(std::string & data);
+    virtual ~BinaryControl(void);
+    inline unsigned char * ptr(void);
+    inline size_t size(void) const;
+    inline size_t get_pos(void) const;
+    inline size_t ref_pos(void) const;
     void chg_compress(void);
     void alloc(size_t size);
     size_t resize(size_t size);
     void clone(mrb_int address, mrb_int size, const BinaryControl & src);
+    inline void attach(unsigned char * ptr, size_t size);
     size_t loadBinaryFile(std::string & fname);
     void saveBinaryFile(std::string & fname);
     uint32_t compress(void);
@@ -158,7 +126,151 @@ public:
     unsigned char crc8(void);
     unsigned char xsum(void);
 };
+class  CppRegexp: public Object
+{
+private:
+    std::vector<std::regex> regs;
+public:
+    inline CppRegexp(void);
+    inline CppRegexp(std::string & str);
+    inline CppRegexp(const char * str_);
+    inline CppRegexp(const std::list<std::string> & arg);
+    virtual ~CppRegexp(void);
+    inline void reg_add(const std::string & str);
+    inline void reg_add(const std::list<std::string> & arg);
+    inline unsigned int length(void);
+    bool match(const std::string & str);
+    std::list<std::string> match(std::list<std::string> & text);
+    std::list<std::string> grep(std::list<std::string> & text);
+    void replace(std::list<std::string> & text, const char * rep);
+    unsigned int select(const char * str);
+    std::list<std::string> split(std::string & org);
+};
 
+/* class inline methods */
+inline Object::Object(void)
+  : id(0), res(nullptr)
+{
+}
+Object::~Object(void)
+{
+    if(nullptr != res)
+    {
+        res->erase(id);
+    }
+}
+inline void Object::setControlID(unsigned int id, std::map<unsigned int, Object *> * res)
+{
+    if(nullptr != res)
+    {
+        this->id = id;
+        this->res = res;
+        (*res)[id] = this;
+    }
+}
+inline unsigned int Object::ControlID(void)
+{
+    return this->id;
+}
+inline BinaryControl::BinaryControl(void)
+  : length(0), compress_size(0), pos(0), data(nullptr)
+{
+}
+inline BinaryControl::BinaryControl(BinaryControl & src)
+  : length(0), compress_size(0), pos(0), data(nullptr)
+{
+    clone(0, src.length, src);
+}
+inline BinaryControl::BinaryControl(size_t size_)
+  : length(0), compress_size(0), pos(0), data(nullptr)
+{
+    alloc(size_);
+}
+inline BinaryControl::BinaryControl(size_t size_, unsigned char data)
+  : length(0), compress_size(0), pos(0), data(nullptr)
+{
+    alloc(size_);
+    std::memset(this->data, data, size_);
+}
+inline unsigned char * BinaryControl::ptr(void)
+{
+    return data;
+}
+inline size_t BinaryControl::size(void) const
+{
+    if(0 < compress_size)
+    {
+        return compress_size;
+    }
+    return length;
+}
+inline size_t BinaryControl::get_pos(void) const
+{
+    if(pos < size())
+    {
+        return pos;
+    }
+    return 0;
+}
+inline size_t BinaryControl::ref_pos(void) const
+{
+    return pos;
+}
+inline void BinaryControl::attach(unsigned char * ptr, size_t size)
+{
+    if(nullptr != data) { std::free(data); }
+    compress_size = pos = 0;
+    length = size;
+    data = ptr;
+}
+
+inline CppRegexp::CppRegexp(void)
+  : regs(0)
+{
+}
+inline CppRegexp::CppRegexp(std::string & str)
+  : regs(1)
+{
+    std::regex reg(str);
+    regs[0] = reg;
+}
+inline CppRegexp::CppRegexp(const char * arg)
+  : regs(1)
+{
+    std::string str(arg);
+    std::regex reg(str);
+    regs[0] = reg;
+}
+inline CppRegexp::CppRegexp(const std::list<std::string> & arg)
+  : regs(arg.size())
+{
+    unsigned int idx = 0;
+    for(auto & str : arg)
+    {
+        std::regex reg(str);
+        regs[idx] = reg;
+        idx ++;
+    }
+}
+inline void CppRegexp::reg_add(const std::string & str)
+{
+
+    std::regex reg(str);
+    regs.push_back(reg);
+}
+inline void CppRegexp::reg_add(const std::list<std::string> & arg)
+{
+    for(auto & str : arg)
+    {
+        reg_add(str);
+    }
+}
+inline unsigned int CppRegexp::length(void)
+{
+    return regs.size();
+}
+
+/* mruby interfaces */
 /* class Core */
 static mrb_value mrb_core_to_hex(mrb_state* mrb, mrb_value self);
 static mrb_value mrb_core_gets(mrb_state* mrb, mrb_value self);
@@ -238,8 +350,10 @@ static void mrb_thread_context_free(mrb_state * mrb, void * ptr);
 static mrb_value mrb_smon_comlist(mrb_state* mrb, mrb_value self);
 static mrb_value mrb_smon_pipelist(mrb_state* mrb, mrb_value self);
 static mrb_value mrb_smon_initialize(mrb_state * mrb, mrb_value self);
-static mrb_value mrb_smon_wait(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_smon_send(mrb_state * mrb, mrb_value self);
+static mrb_value mrb_smon_wait(mrb_state * mrb, mrb_value self);
+static mrb_value mrb_smon_read(mrb_state * mrb, mrb_value self);
+static mrb_value mrb_smon_read_wait(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_smon_close(mrb_state * mrb, mrb_value self);
 static void mrb_smon_context_free(mrb_state * mrb, void * ptr);
 
@@ -257,109 +371,7 @@ static void mrb_xlsx_context_free(mrb_state * mrb, void * ptr);
 
 
 /* class */
-class CppRegexp
-{
-private:
-    std::vector<std::regex> regs;
-public:
-    virtual ~CppRegexp(void) {}
-    CppRegexp(const char * str)
-    {
-        std::regex reg(str);
-        regs.push_back(reg);
-    }
-    CppRegexp(const std::list<std::string> & arg)
-    {
-        for(auto & str : arg)
-        {
-            std::regex reg(str);
-            regs.push_back(reg);
-        }
-    }
-    unsigned int length(void) { return regs.size(); }
-    bool match(const std::string & str)
-    {
-        for( auto & reg : regs )
-        {
-            if( std::regex_search(str, reg) ) { return true; }
-        }
-        return false;
-    }
-    std::list<std::string> match(std::list<std::string> & text)
-    {
-        std::list<std::string> result;
-        for(auto & str : text)
-        {
-            if( match( str ) )
-            {
-                result.push_back( str );
-            }
-        }
-        return result;
-    }
-    std::list<std::string> grep( std::list<std::string> & text )
-    {
-        std::list<std::string> result;
-        for(auto & str : text)
-        {
-            bool match = true;
-            for( auto & reg : regs )
-            {
-                if( ! std::regex_search(str, reg) )
-                {
-                    match = false;
-                    break;
-                }
-            }
-            if( match )
-            {
-                result.push_back( str );
-            }
-        }
-        return result;
-    }
-    void replace( std::list<std::string> & text, const char * rep)
-    {
-        if(rep != nullptr)
-        {
-            for(auto & str : text)
-            {
-                for( auto & reg : regs )
-                {
-                    str = std::regex_replace(str, reg, rep);
-                }
-            }
-        }
-    }
-    unsigned int select(const char * str)
-    {
-        unsigned int idx = 0;
-        for( auto & reg : regs )
-        {
-            if( std::regex_search(str, reg) ) { break; }
-            idx ++;
-        }
-        return idx;
-    }
-    std::list<std::string> split(std::string & org)
-    {
-        std::list<std::string> result;
-        result.push_back( org );
-        for( auto & reg : regs )
-        {
-            std::list<std::string> temp;
-            for( auto str : result )
-            {
-                for(auto & item : str_split(str, reg)) { temp.push_back(item); }
-            }
-            result.clear();
-            result = temp;
-        }
-        return result;
-    }
-};
-
-class WorkerThread
+class WorkerThread : public Object
 {
 public:
     enum Status
@@ -368,7 +380,7 @@ public:
         Wakeup,
         Run,
         Wait,
-        WaitJoin
+        WaitStop
     };
 protected:
     enum Status             state;
@@ -426,7 +438,7 @@ public:
         }
         while(Run == state)
         {
-            mrb_yield_argv(mrb, proc, 0, NULL);
+            mrb_yield_argv(this->mrb, proc, 0, NULL);
         }
         std::lock_guard<std::mutex> lock(mtx);
         if(nullptr != this->mrb)
@@ -435,15 +447,18 @@ public:
             this->mrb = nullptr;
         }
         state = Stop;
+        cond.notify_all();
+        th_ctrl.detach();
     }
     void join(void)
     {
-        bool check = false;
+        auto lamda = [this]
         {
-            std::lock_guard<std::mutex> lock(mtx);
-            if(state != Stop ) { check = true; }
-        }
-        if(check) { th_ctrl.join(); }
+            if(state != Stop) { return false; }
+            return true;
+        };
+        std::unique_lock<std::mutex> lock(mtx);
+        cond.wait(lock, lamda);
     }
     enum Status get_state(void) const { return state; }
     void wait(mrb_state * mrb)
@@ -453,6 +468,9 @@ public:
             switch(state)
             {
             case Run:
+                return true;
+                break;
+            case WaitStop:
                 return true;
                 break;
             case Stop:
@@ -496,9 +514,9 @@ public:
         case Wakeup:
         case Run:
         case Wait:
-            state = WaitJoin;
+            state = WaitStop;
             break;
-        case WaitJoin:
+        case WaitStop:
             break;
         case Stop:
         default:
@@ -509,7 +527,7 @@ public:
     }
 };
 
-class SerialMonitor : public MyEntity::TimerHandler
+class SerialMonitor : public Object, MyEntity::TimerHandler
 {
 public:
     enum State
@@ -532,7 +550,6 @@ public:
 protected:
     std::string                              arg;
     std::vector<size_t>                      timer;
-    std::map<SerialMonitor *, std::string> & res_list;
     SerialControl *                          com;
     MyEntity::OneShotTimerEventer<size_t> *  tevter;
     unsigned int                             cache_size;
@@ -543,8 +560,8 @@ protected:
     std::condition_variable                  cond;
     std::list<ReciveInfo>                    rcv_cache;
 public:
-    SerialMonitor(mrb_value & self, const char * arg_, std::vector<size_t> & timer_default, std::map<SerialMonitor *, std::string> & list, std::string def_boud, bool rts_ctrl)
-      : arg(arg_), timer(timer_default), res_list(list), com(nullptr), tevter(nullptr), cache_size(1024), rcv_enable(true)
+    SerialMonitor(mrb_value & self, const char * arg_, std::vector<size_t> & timer_default, std::string def_boud, bool rts_ctrl)
+      : arg(arg_), timer(timer_default), com(nullptr), tevter(nullptr), cache_size(1024), rcv_enable(true)
     {   /* str_split */
         std::vector<std::string> args;
         std::regex reg(",");
@@ -585,7 +602,7 @@ public:
             }
         }
         com = SerialControl::createObject(name.c_str(), info.baud, info.parity, info.stop, rts_ctrl);
-        cache.buff  = new unsigned char [cache_size];
+        cache.buff  = static_cast<unsigned char *>(std::malloc(cache_size));
         cache.cnt   = 0;
         cache.state = NONE;
         std::thread temp(&SerialMonitor::recive, this, 0);
@@ -611,23 +628,21 @@ public:
                 return false;
             };
             cond.wait(lock, lamda);
-            th_recive.detach();
             delete com;
             com = nullptr;
         }
         if(nullptr != cache.buff)
         {
-            delete [] cache.buff;
+            std::free(cache.buff);
             cache.buff = nullptr;
         }
         cache.cnt   = 0;
         for(auto & item : rcv_cache)
         {
-            delete [] item.buff;
+            std::free(item.buff);
             item.buff = nullptr;
         }
         rcv_cache.clear();
-        res_list.erase(this);
     }
     void send(BinaryControl & bin, unsigned int timer)
     {
@@ -645,24 +660,48 @@ public:
             }
         }
     }
-    void send(std::string data, unsigned int timer)
+    SerialMonitor::State read(BinaryControl * bin)
     {
-        if( nullptr != com)
+        ReciveInfo rcv_info = { NONE, 0, nullptr, nullptr };
+        std::lock_guard<std::mutex> lock(mtx);
+        if(0 < rcv_cache.size())
         {
-            BinaryControl bin(data);
-            if(0 < bin.size())
+            rcv_info = *(rcv_cache.begin());
+            rcv_cache.pop_front();
+            if(0 < rcv_info.cnt)
             {
-                try { com->send(bin.ptr(), bin.size()); } catch(...) { }
-                std::this_thread::sleep_for(std::chrono::milliseconds(timer));
-                if( nullptr != tevter)
-                {
-                    std::lock_guard<std::mutex> lock(mtx);
-                    tevter->restart();
-                }
+                bin->attach(rcv_info.buff, rcv_info.cnt);
             }
         }
+        return rcv_info.state;
     }
-    SerialMonitor::State recive_wait(std::string & data)
+    SerialMonitor::State read_wait(BinaryControl * bin)
+    {
+        ReciveInfo rcv_info = { NONE, 0, nullptr, nullptr };
+        auto lamda = [this, &rcv_info]
+        {
+            if(cache.state == CLOSE)
+            {
+                this->close();
+                return true;
+            }
+            if(0 < rcv_cache.size())
+            {
+                rcv_info = *(rcv_cache.begin());
+                rcv_cache.pop_front();
+                return true;
+            }
+            return false;
+        };
+        std::unique_lock<std::mutex> lock(mtx);
+        cond.wait(lock, lamda);
+        if(0 < rcv_info.cnt)
+        {
+            bin->attach(rcv_info.buff, rcv_info.cnt);
+        }
+        return rcv_info.state;
+    }
+    SerialMonitor::State read_wait(std::string & data)
     {
         ReciveInfo rcv_info = { NONE, 0, nullptr, nullptr };
         auto lamda = [this, &rcv_info]
@@ -684,12 +723,11 @@ public:
         cond.wait(lock, lamda);
         for(unsigned int idx = 0; idx < rcv_info.cnt; idx ++)
         {
-            char temp[4];
+            char temp[4] = { 0 };
             sprintf(temp, "%02X", rcv_info.buff[idx]);
-            temp[2] = '\0';
             data += temp;
         }
-        delete [] rcv_info.buff;
+        std::free(rcv_info.buff);
         return rcv_info.state;
     }
     void recive(size_t id)
@@ -713,7 +751,7 @@ public:
                  {
                      cache.state = CACHE_FULL;
                      rcv_cache.push_back(cache);
-                     cache.buff  = new unsigned char [cache_size];
+                     cache.buff  = static_cast<unsigned char *>(std::malloc(cache_size));
                      cache.cnt   = 0;
                      cond.notify_all();
                  }
@@ -724,9 +762,10 @@ public:
         cache.state = CLOSE;
         cache.cnt   = 0;
         rcv_cache.push_back(cache);
-        cache.buff  = new unsigned char [cache_size];
+        cache.buff  = static_cast<unsigned char *>(std::malloc(cache_size));
         cache.cnt   = 0;
         cond.notify_all();
+        th_recive.detach();
     }
     virtual void handler(unsigned int idx)
     {
@@ -740,7 +779,7 @@ public:
                 {
                     cache.state = evt_state[idx];
                     rcv_cache.push_back(cache);
-                    cache.buff = new unsigned char [cache_size];
+                    cache.buff = static_cast<unsigned char *>(std::malloc(cache_size));
                     cache.cnt  = 0;
                     cond.notify_all();
                 }
@@ -749,7 +788,7 @@ public:
     }
 };
 
-class OpenXLSXCtrl
+class OpenXLSXCtrl : public Object
 {
 public:
     enum Type
@@ -774,7 +813,7 @@ public:
     void open(const std::string & fname)             { doc.open(fname);             }
     void workbook(void)                              { book = doc.workbook();       }
     std::vector<std::string> getWorkSheetNames(void) { return book.worksheetNames(); }
-    void worksheet(char * sheet_name)
+    void worksheet(std::string & sheet_name)
     {
         auto list = book.worksheetNames();
         for(auto & name: list)
@@ -788,16 +827,16 @@ public:
         book.addWorksheet(sheet_name);
         sheet = book.worksheet(sheet_name);
     }
-    void set_sheet_name(char * sheet_name)            { sheet.setName(sheet_name);                                      }
-    void set_cell_value(char * cell_name, int val)    { sheet.cell(OpenXLSX::XLCellReference(cell_name)).value() = val; }
-    void set_cell_value(char * cell_name, char * val) { sheet.cell(OpenXLSX::XLCellReference(cell_name)).value() = val; }
-    void set_cell_value(char * cell_name, float val)
+    void set_sheet_name(std::string & sheet_name)            { sheet.setName(sheet_name);                                      }
+    void set_cell_value(std::string & cell_name, int val)    { sheet.cell(OpenXLSX::XLCellReference(cell_name)).value() = val; }
+    void set_cell_value(std::string & cell_name, char * val) { sheet.cell(OpenXLSX::XLCellReference(cell_name)).value() = val; }
+    void set_cell_value(std::string & cell_name, float val)
     {
         DWord temp = { .value = val };
         if((temp.uint32 & 0x7fffff) != 0x7fffff) { sheet.cell(OpenXLSX::XLCellReference(cell_name)).value() = val; }
         else                                     { sheet.cell(OpenXLSX::XLCellReference(cell_name)).value() = "NaN"; }
     }
-    OpenXLSXCtrl::Type get_cell(char * cell_name, int & val_int, float & val_float, std::string & str) const
+    OpenXLSXCtrl::Type get_cell(std::string & cell_name, int & val_int, float & val_float, std::string & str) const
     {
         switch( (sheet.cell(OpenXLSX::XLCellReference(cell_name)).value()).type() )
         {
@@ -805,7 +844,7 @@ public:
             return Empty;
         case OpenXLSX::XLValueType::Boolean:
             if( (sheet.cell(OpenXLSX::XLCellReference(cell_name)).value()).get<bool>() ) { val_int = 1; }
-            else                    { val_int = 0; }
+            else                                                                         { val_int = 0; }
             return Boolean;
         case OpenXLSX::XLValueType::Integer:
             val_int = static_cast<int>((sheet.cell(OpenXLSX::XLCellReference(cell_name)).value()).get<int64_t>());
@@ -826,21 +865,21 @@ public:
     void close(void) { doc.close(); }
 };
 
-class Application
+class Application : public Object
 {
 protected:
     static Application *                    obj;
     boost::program_options::variables_map & opts;
     std::vector<std::string> &              args;
     std::vector<size_t>                     timer;
-    std::map<SerialMonitor *, std::string>  res_list;
+    unsigned int                            id;
+    std::map<unsigned int, Object *>        res;
     std::mutex                              mtx;
     std::condition_variable                 cond;
-    std::mutex                              com_wait_mtx;
 public:
     static Application * getObject(void);
     Application( boost::program_options::variables_map & optmap, std::vector<std::string> & arg)
-      : opts(optmap), args(arg), timer(4)
+      : opts(optmap), args(arg), timer(4), id(1)
     {
         obj = this;
         timer[0] =   30;
@@ -850,20 +889,37 @@ public:
     }
     virtual ~Application(void)
     {
-        std::list<SerialMonitor *> keys;
-        for( auto & p : res_list )  keys.push_back(p.first);
-        for( auto & ptr : keys )    delete ptr;
+        std::list<unsigned int> keys;
+        for(auto & item : res) keys.push_back(item.first);
+        for(auto & key : keys) delete res[key];
     }
     void exit(int code) { }
+    void push(Object * obj)
+    {
+        if(nullptr != obj)
+        {
+            for(unsigned int id = this->id + 1; id != this->id; id ++)
+            {
+                if(res.count(id) == 0)
+                {
+                    this->id = id;
+                    obj->setControlID(id, &res);
+                    break;
+                }
+            }
+        }
+    }
 
     mrb_value opt_init(mrb_state * mrb, mrb_value self)
     {
         return self;
     }
+
     mrb_value opt_size(mrb_state * mrb, mrb_value self)
     {
         return mrb_int_value( mrb, args.size() );
     }
+
     mrb_value opt_get(mrb_state * mrb, mrb_value self)
     {
         mrb_value y = mrb_get_arg1(mrb);
@@ -897,386 +953,11 @@ public:
         return mrb_nil_value();
     }
 
-    mrb_value cppregexp_init(mrb_state * mrb, mrb_value self)
-    {
-        static const struct mrb_data_type mrb_cpp_regexp_context_type =
-        {
-            "mrb_cpp_regexp_context", mrb_regexp_context_free,
-        };
-        mrb_int argc; mrb_value * argv;
-        mrb_get_args(mrb, "*", &argv, &argc);
-        CppRegexp * regexp = nullptr;
-        std::list<std::string> arg;
-        mrb_value item;
-        switch(argc)
-        {
-        case 1:
-            switch(mrb_type(argv[0]))
-            {
-            case MRB_TT_STRING:
-                regexp = new CppRegexp( RSTR_PTR( mrb_str_ptr( argv[0] ) ) );
-                break;
-            case MRB_TT_ARRAY:
-                while( !mrb_nil_p( item = mrb_ary_shift(mrb, argv[0])) )
-                {
-                    if(MRB_TT_STRING == mrb_type(item))
-                    {
-                        std::string str( RSTR_PTR(mrb_str_ptr(item)) );
-                        arg.push_back( str );
-                    }
-                }
-                regexp = new CppRegexp( arg );
-                break;
-            }
-            break;
-        default:
-            for(auto idx = 0; idx < argc; idx ++)
-            {
-                if(MRB_TT_STRING == mrb_type(argv[idx]))
-                {
-                    std::string str( RSTR_PTR(mrb_str_ptr(argv[idx])) );
-                    arg.push_back( str );
-                }
-                regexp = new CppRegexp( arg );
-            }
-            break;
-        }
-        mrb_data_init(self, regexp, &mrb_cpp_regexp_context_type);
-        return self;
-    }
-
-    mrb_value thread_init(mrb_state * mrb, mrb_value self)
-    {
-        static const struct mrb_data_type mrb_thread_context_type =
-        {
-            "mrb_cpp_thread_context", mrb_thread_context_free,
-        };
-        mrb_value proc; mrb_int argc; mrb_value * argv;
-        mrb_get_args(mrb, "&*", &proc, &argv, &argc);
-        WorkerThread * th_ctrl = new WorkerThread();
-        mrb_data_init(self, th_ctrl, &mrb_thread_context_type);
-        return self;
-    }
-
-    mrb_value smon_init(mrb_state * mrb, mrb_value self)
-    {
-        static const struct mrb_data_type mrb_smon_context_type =
-        {
-            "mrb_smon_context", mrb_smon_context_free,
-        };
-        char * arg;
-        mrb_get_args(mrb, "z", &arg);
-        std::string boud("1200O1");
-        bool rts_ctrl = true;
-        if(opts.count("baud"))
-        {
-            boud = opts["baud"].as<std::string>();
-        }
-        if(opts.count("no-rts"))
-        {
-            rts_ctrl = false;
-        }
-        SerialMonitor * smon = new SerialMonitor(self, arg, timer, res_list, boud, rts_ctrl);
-        mrb_data_init(self, smon, &mrb_smon_context_type);
-        return self;
-    }
-    mrb_value smon_wait(mrb_state * mrb, mrb_value self)
-    {
-        SerialMonitor * smon = static_cast<SerialMonitor *>(DATA_PTR(self));
-        if(nullptr != smon)
-        {
-            mrb_value proc = mrb_nil_value();
-            mrb_get_args(mrb, "&", &proc);
-            if (!mrb_nil_p(proc))
-            {
-                std::string data;
-                auto state = smon->recive_wait(data);
-                mrb_value argv[2];
-                argv[0] = mrb_fixnum_value(state);
-                switch(state)
-                {
-                case SerialMonitor::CACHE_FULL:
-                case SerialMonitor::GAP:
-                    argv[1] = mrb_str_new_cstr(mrb, data.c_str());
-                    break;
-#if 0
-                case SerialMonitor::TIME_OUT_1:
-                case SerialMonitor::TIME_OUT_2:
-                case SerialMonitor::TIME_OUT_3:
-                case SerialMonitor::CLOSE:
-                case SerialMonitor::NONE:
-#endif
-                default:
-                    argv[1] = mrb_str_new_cstr(mrb, "");
-                     break;
-                }
-                std::lock_guard<std::mutex> lock(com_wait_mtx);
-                return mrb_yield_argv(mrb, proc, 2, &(argv[0]));
-            }
-        }
-        return mrb_nil_value();
-    }
-    mrb_value smon_send(mrb_state * mrb, mrb_value self)
-    {
-        SerialMonitor * smon = static_cast<SerialMonitor *>(DATA_PTR(self)); if(nullptr != smon)
-        {
-            char *      msg   = nullptr;
-            mrb_int     timer = 0;
-            mrb_int     argc;
-            mrb_value * argv;
-            mrb_get_args(mrb, "*", &argv, &argc); switch(argc)
-            {
-            case 1:
-                if(MRB_TT_STRING == mrb_type(argv[0]))
-                {
-                    struct RString * str = mrb_str_ptr(argv[0]);
-                    msg = RSTR_PTR(str);
-                }
-                else
-                {
-                    const mrb_data_type * src_type = DATA_TYPE(argv[0]);
-                    if( src_type == &mrb_bedit_context_type )
-                    {
-                        BinaryControl * bin = static_cast<BinaryControl *>(DATA_PTR(argv[0]));
-                        smon->send(*bin, timer);
-                    }
-                }
-                break;
-            case 2:
-                if(MRB_TT_INTEGER == mrb_type(argv[1]))
-                {
-                    timer = mrb_integer(argv[1]);
-                    if(MRB_TT_STRING  == mrb_type(argv[0]))
-                    {
-                        struct RString * str = mrb_str_ptr(argv[0]);
-                        msg = RSTR_PTR(str);
-                    }
-                    else
-                    {
-                        const mrb_data_type * src_type = DATA_TYPE(argv[0]);
-                        if( src_type == &mrb_bedit_context_type )
-                        {
-                            BinaryControl * bin = static_cast<BinaryControl *>(DATA_PTR(argv[0]));
-                            smon->send(*bin, timer);
-                        }
-                    }
-                }
-                break;
-            default:
-                break;
-            }
-            if(nullptr != msg)
-            {
-                smon->send(msg, timer);
-            }
-        }
-        return self;
-    }
-    mrb_value smon_close(mrb_state * mrb, mrb_value self)
-    {
-        SerialMonitor * smon = static_cast<SerialMonitor *>(DATA_PTR(self));
-        if(nullptr != smon)
-        {
-            smon->close();
-            delete smon;
-            DATA_PTR(self) = nullptr;
-        }
-        return self;
-    }
-
-    mrb_value xlsx_init(mrb_state * mrb, mrb_value self)
-    {
-        static const struct mrb_data_type mrb_xlsx_context_type =
-        {
-            "mrb_open_xlsx_context", mrb_xlsx_context_free,
-        };
-        OpenXLSXCtrl * xlsx = new OpenXLSXCtrl();
-        mrb_data_init(self, xlsx, &mrb_xlsx_context_type);
-        return self;
-    }
-    mrb_value xlsx_create(mrb_state * mrb, mrb_value self)
-    {
-        mrb_value proc; mrb_int argc; mrb_value * argv;
-        mrb_get_args(mrb, "&*", &proc, &argv, &argc);
-        switch(argc)
-        {
-        case 1:
-            if( !mrb_nil_p(proc) )
-            {
-                OpenXLSXCtrl * xlsx = static_cast<OpenXLSXCtrl *>(DATA_PTR(self));
-                if(nullptr != xlsx)
-                {
-                    std::string fname( RSTR_PTR( mrb_str_ptr( argv[0] ) ) );
-                    xlsx->create(fname);
-                    xlsx->workbook();
-                    mrb_value ret = mrb_yield_argv(mrb, proc, 0, nullptr);
-                    xlsx->save();
-                    xlsx->close();
-                    return ret;
-                }
-            }
-            break;
-        default:
-            break;
-        }
-        return mrb_nil_value();
-    }
-    mrb_value xlsx_open(mrb_state * mrb, mrb_value self)
-    {
-        mrb_value proc; mrb_int argc; mrb_value * argv;
-        mrb_get_args(mrb, "&*", &proc, &argv, &argc);
-        if((1 == argc) && (!mrb_nil_p(proc)))
-        {
-            OpenXLSXCtrl * xlsx = static_cast<OpenXLSXCtrl *>(DATA_PTR(self));
-            if(nullptr != xlsx)
-            {
-                struct RString * s = mrb_str_ptr(argv[0]);
-                std::string fname(RSTR_PTR(s));
-                xlsx->open(fname);
-                xlsx->workbook();
-                mrb_value ret = mrb_yield_argv(mrb, proc, 0, nullptr);
-                xlsx->close();
-                return ret;
-            }
-        }
-        return mrb_nil_value();
-    }
-    mrb_value xlsx_worksheet(mrb_state * mrb, mrb_value self)
-    {
-        mrb_value proc; mrb_int argc; mrb_value * argv;
-        mrb_get_args(mrb, "&*", &proc, &argv, &argc);
-        if((1 == argc) && (!mrb_nil_p(proc)))
-        {
-            OpenXLSXCtrl * xlsx = static_cast<OpenXLSXCtrl *>(DATA_PTR(self));
-            if(nullptr != xlsx)
-            {
-                struct RString * sheet_name = mrb_str_ptr(argv[0]);
-                xlsx->worksheet(RSTR_PTR(sheet_name ));
-                return mrb_yield_argv(mrb, proc, 0, nullptr);
-            }
-        }
-        return mrb_nil_value();
-    }
-    mrb_value xlsx_work_sheet_names(mrb_state * mrb, mrb_value self)
-    {
-        mrb_int     argc;
-        mrb_value * argv;
-        mrb_value   proc = mrb_nil_value();
-        mrb_get_args(mrb, "&*", &proc, &argv, &argc);
-        if((0 == argc) && (!mrb_nil_p(proc)))
-        {
-            OpenXLSXCtrl * xlsx = static_cast<OpenXLSXCtrl *>(DATA_PTR(self));
-            if(nullptr != xlsx)
-            {
-                auto list = xlsx->getWorkSheetNames();
-                for( auto & name: list)
-                {
-                    mrb_value argv[1];
-                    argv[0] = mrb_str_new_cstr(mrb, name.c_str());
-                    auto ret = mrb_yield_argv(mrb, proc, 1, argv);
-                    if(mrb_type(ret) == MRB_TT_FALSE) { return ret; }
-                }
-            }
-        }
-        return mrb_nil_value();
-    }
-    mrb_value xlsx_set_sheet_name(mrb_state * mrb, mrb_value self)
-    {
-        char * sheet_name;
-        mrb_get_args(mrb, "z", &sheet_name);
-        OpenXLSXCtrl * xlsx = static_cast<OpenXLSXCtrl *>(DATA_PTR(self));
-        if(nullptr != xlsx )
-        {
-            xlsx->set_sheet_name(sheet_name);
-        }
-        return mrb_nil_value();
-    }
-    mrb_value xlsx_set_value(mrb_state * mrb, mrb_value self)
-    {
-        mrb_int argc;
-        mrb_value * argv;
-        mrb_get_args(mrb, "*", &argv, &argc);
-        if(2 == argc)
-        {
-            OpenXLSXCtrl * xlsx = static_cast<OpenXLSXCtrl *>(DATA_PTR(self));
-            if(nullptr != xlsx)
-            {
-                struct RString * cell_name = mrb_str_ptr(argv[0]);
-                char * cel = RSTR_PTR(cell_name);
-                switch( mrb_type( argv[1] ) )
-                {
-                case MRB_TT_INTEGER:
-                    {
-                        int value = static_cast<int>(mrb_integer(argv[1]));
-                        xlsx->set_cell_value(cel, value);
-                    }
-                    break;
-                case MRB_TT_FLOAT:
-                    {
-                        float value = static_cast<float>(mrb_float(argv[1]));
-                        xlsx->set_cell_value(cel, value);
-                    }
-                    break;
-                case MRB_TT_STRING:
-                    {
-                        struct RString * str_value = mrb_str_ptr(argv[1]);
-                        char * value = RSTR_PTR(str_value);
-                        xlsx->set_cell_value(cel, value);
-                    }
-                    break;
-                case MRB_TT_TRUE:   xlsx->set_cell_value(cel, 1); break;
-                case MRB_TT_FALSE:  xlsx->set_cell_value(cel, 0); break;
-                default:
-                    break;
-                }
-            }
-        }
-        return mrb_nil_value();
-    }
-    mrb_value xlsx_cell(mrb_state * mrb, mrb_value self)
-    {
-        char * cell_name;
-        mrb_get_args(mrb, "z", &cell_name);
-        OpenXLSXCtrl * xlsx = static_cast<OpenXLSXCtrl *>(DATA_PTR(self));
-        if(nullptr != xlsx )
-        {
-            int         val_int;
-            float       val_float;
-            std::string str;
-            auto type = xlsx->get_cell(cell_name, val_int, val_float, str);
-            switch(type)
-            {
-            case OpenXLSXCtrl::Boolean:
-                return mrb_bool_value(val_int != 0);
-            case OpenXLSXCtrl::Integer:
-                return mrb_int_value( mrb, val_int );
-            case OpenXLSXCtrl::Float:
-                return mrb_float_value( mrb, val_float );
-            case OpenXLSXCtrl::String:
-                return mrb_str_new_cstr( mrb, str.c_str() );
-            case OpenXLSXCtrl::Empty:
-            case OpenXLSXCtrl::Error:
-            default:
-                break;
-            }
-        }
-        return mrb_nil_value();
-    }
-    mrb_value xlsx_save(mrb_state * mrb, mrb_value self)
-    {
-        OpenXLSXCtrl * xlsx = static_cast<OpenXLSXCtrl *>(DATA_PTR(self));
-        if(nullptr != xlsx )
-        {
-            xlsx->save();
-        }
-        return self;
-    }
-
     mrb_value bedit_init(mrb_state * mrb, mrb_value self)
     {
+        std::lock_guard<std::mutex> lock(mtx);
         BinaryControl * bedit = nullptr;
-        mrb_int argc;
-        mrb_value * argv;
+        mrb_int argc; mrb_value * argv;
         mrb_get_args(mrb, "*", &argv, &argc);
         switch(argc)
         {
@@ -1317,7 +998,7 @@ public:
             else if(  (MRB_TT_INTEGER == mrb_type(argv[0]))     // length
                     &&(MRB_TT_INTEGER == mrb_type(argv[1])))    // fill data
             {
-                bedit = new BinaryControl( static_cast<int>( mrb_integer( argv[0] ) ), mrb_integer(argv[1]) );
+                bedit = new BinaryControl(static_cast<int>(mrb_integer(argv[0])), mrb_integer(argv[1]));
             }
             else
             {
@@ -1341,6 +1022,116 @@ public:
         }
         if(nullptr == bedit) { bedit = new BinaryControl(); }
         mrb_data_init(self, bedit, &mrb_bedit_context_type);
+        push(bedit);
+        //mrb_garbage_collect(mrb);
+        return self;
+    }
+
+    mrb_value cppregexp_init(mrb_state * mrb, mrb_value self)
+    {
+        static const struct mrb_data_type mrb_cpp_regexp_context_type =
+        {
+            "mrb_cpp_regexp_context", mrb_regexp_context_free,
+        };
+        std::lock_guard<std::mutex> lock(mtx);
+        mrb_int argc; mrb_value * argv;
+        mrb_get_args(mrb, "*", &argv, &argc);
+        CppRegexp * regexp = nullptr;
+        std::list<std::string> arg;
+        mrb_value item;
+        switch(argc)
+        {
+        case 1:
+            switch(mrb_type(argv[0]))
+            {
+            case MRB_TT_STRING:
+                regexp = new CppRegexp( RSTR_PTR(mrb_str_ptr(argv[0])) );
+                break;
+            case MRB_TT_ARRAY:
+                while( !mrb_nil_p( item = mrb_ary_shift(mrb, argv[0])) )
+                {
+                    if(MRB_TT_STRING == mrb_type(item))
+                    {
+                        std::string str( RSTR_PTR(mrb_str_ptr(item)) );
+                        arg.push_back( str );
+                    }
+                }
+                regexp = new CppRegexp( arg );
+                break;
+            }
+            break;
+        default:
+            for(auto idx = 0; idx < argc; idx ++)
+            {
+                if(MRB_TT_STRING == mrb_type(argv[idx]))
+                {
+                    std::string str( RSTR_PTR(mrb_str_ptr(argv[idx])) );
+                    arg.push_back( str );
+                }
+                regexp = new CppRegexp( arg );
+            }
+            break;
+        }
+        if(nullptr == regexp) { regexp = new CppRegexp(); }
+        mrb_data_init(self, regexp, &mrb_cpp_regexp_context_type);
+        push(regexp);
+        //mrb_garbage_collect(mrb);
+        return self;
+    }
+
+    mrb_value thread_init(mrb_state * mrb, mrb_value self)
+    {
+        static const struct mrb_data_type mrb_thread_context_type =
+        {
+            "mrb_cpp_thread_context", mrb_thread_context_free,
+        };
+        std::lock_guard<std::mutex> lock(mtx);
+        mrb_value proc; mrb_int argc; mrb_value * argv;
+        mrb_get_args(mrb, "&*", &proc, &argv, &argc);
+        WorkerThread * th_ctrl = new WorkerThread();
+        mrb_data_init(self, th_ctrl, &mrb_thread_context_type);
+        //push(th_ctrl);
+        //mrb_garbage_collect(mrb);
+        return self;
+    }
+
+    mrb_value smon_init(mrb_state * mrb, mrb_value self)
+    {
+        static const struct mrb_data_type mrb_smon_context_type =
+        {
+            "mrb_smon_context", mrb_smon_context_free,
+        };
+        std::lock_guard<std::mutex> lock(mtx);
+        char * arg;
+        mrb_get_args(mrb, "z", &arg);
+        std::string boud("1200O1");
+        bool rts_ctrl = true;
+        if(opts.count("baud"))
+        {
+            boud = opts["baud"].as<std::string>();
+        }
+        if(opts.count("no-rts"))
+        {
+            rts_ctrl = false;
+        }
+        SerialMonitor * smon = new SerialMonitor(self, arg, timer, boud, rts_ctrl);
+        mrb_data_init(self, smon, &mrb_smon_context_type);
+        //push(smon);
+        //mrb_garbage_collect(mrb);
+        return self;
+    }
+
+    mrb_value xlsx_init(mrb_state * mrb, mrb_value self)
+    {
+        static const struct mrb_data_type mrb_xlsx_context_type =
+        {
+            "mrb_open_xlsx_context", mrb_xlsx_context_free,
+        };
+        std::lock_guard<std::mutex> lock(mtx);
+        OpenXLSXCtrl * xlsx = new OpenXLSXCtrl();
+        mrb_data_init(self, xlsx, &mrb_xlsx_context_type);
+        push(xlsx);
+        //mrb_garbage_collect(mrb);
         return self;
     }
 
@@ -1370,7 +1161,7 @@ public:
         if( nullptr != mrb )
         {
             /* Class Core */
-            struct RClass * core_class = mrb_define_class_under( mrb, mrb->kernel_module, "Core", mrb->object_class );
+            struct RClass * core_class = mrb_define_class(mrb, "Core", mrb->object_class);
             mrb_define_module_function(mrb, core_class, "to_hex",       mrb_core_to_hex,        MRB_ARGS_ARG( 2, 1 )    );
             mrb_define_module_function(mrb, core_class, "gets",         mrb_core_gets,          MRB_ARGS_ANY()          );
             mrb_define_module_function(mrb, core_class, "exists",       mrb_core_exists,        MRB_ARGS_ARG( 1, 1 )    );
@@ -1380,13 +1171,13 @@ public:
             mrb_define_module_function(mrb, core_class, "date",         mrb_core_date,          MRB_ARGS_ARG( 1, 1 )    );
 
             /* Class options */
-            struct RClass * opt_class = mrb_define_class_under( mrb, mrb->kernel_module, "Args", mrb->object_class );
+            struct RClass * opt_class = mrb_define_class(mrb, "Args", mrb->object_class);
             mrb_define_method( mrb, opt_class, "initialize",            mrb_opt_initialize,     MRB_ARGS_ANY()          );
             mrb_define_method( mrb, opt_class, "size",                  mrb_opt_size,           MRB_ARGS_NONE()         );
             mrb_define_method( mrb, opt_class, "[]",                    mrb_opt_get,            MRB_ARGS_ARG( 1, 1 )    );
 
             /* Class BinEdit */
-            struct RClass * bedit_class = mrb_define_class_under( mrb, mrb->kernel_module, "BinEdit", mrb->object_class );
+            struct RClass * bedit_class = mrb_define_class(mrb, "BinEdit", mrb->object_class);
             mrb_define_method( mrb, bedit_class, "initialize",      mrb_bedit_initialize,       MRB_ARGS_ANY()          );
             mrb_define_method( mrb, bedit_class, "length",          mrb_bedit_length,           MRB_ARGS_ARG( 1, 1 )    );
             mrb_define_method( mrb, bedit_class, "save",            mrb_bedit_save,             MRB_ARGS_ARG( 1, 1 )    );
@@ -1405,7 +1196,7 @@ public:
             mrb_define_method( mrb, bedit_class, "sum",             mrb_bedit_sum,              MRB_ARGS_ARG( 1, 1 )    );
 
             /* Class CppRegexp */
-            struct RClass * cppregexp_class = mrb_define_class_under( mrb, mrb->kernel_module, "CppRegexp", mrb->object_class );
+            struct RClass * cppregexp_class = mrb_define_class(mrb, "CppRegexp", mrb->object_class);
             mrb_define_module_function(mrb, cppregexp_class, "reg_match",    mrb_cppregexp_reg_match,       MRB_ARGS_ARG( 2, 1 )  );
             mrb_define_module_function(mrb, cppregexp_class, "reg_replace",  mrb_cppregexp_reg_replace,     MRB_ARGS_ARG( 3, 1 )  );
             mrb_define_module_function(mrb, cppregexp_class, "reg_split",    mrb_cppregexp_reg_split,       MRB_ARGS_ARG( 2, 1 )  );
@@ -1418,11 +1209,11 @@ public:
             mrb_define_method( mrb, cppregexp_class,    "split",        mrb_cppregexp_split,      MRB_ARGS_ARG( 1, 1 )  );
 
             /* Class Thread */
-            struct RClass * thread_class = mrb_define_class_under( mrb, mrb->kernel_module, "WorkerThread", mrb->object_class );
+            struct RClass * thread_class = mrb_define_class(mrb, "WorkerThread", mrb->object_class);
             mrb_define_const(  mrb, thread_class, "STOP",               mrb_fixnum_value(WorkerThread::Stop)            );
             mrb_define_const(  mrb, thread_class, "WAKEUP",             mrb_fixnum_value(WorkerThread::Wakeup)          );
             mrb_define_const(  mrb, thread_class, "RUN",                mrb_fixnum_value(WorkerThread::Run)             );
-            mrb_define_const(  mrb, thread_class, "WAIT_JOIN",          mrb_fixnum_value(WorkerThread::WaitJoin)        );
+            mrb_define_const(  mrb, thread_class, "WAIT_JOIN",          mrb_fixnum_value(WorkerThread::WaitStop)        );
             mrb_define_module_function( mrb, thread_class, "ms_sleep",  mrb_thread_ms_sleep,    MRB_ARGS_ARG( 1, 1 )    );
             mrb_define_method( mrb, thread_class, "initialize",         mrb_thread_initialize,  MRB_ARGS_ANY()          );
             mrb_define_method( mrb, thread_class, "state",              mrb_thread_state,       MRB_ARGS_ANY()          );
@@ -1434,7 +1225,7 @@ public:
             mrb_define_method( mrb, thread_class, "stop",               mrb_thread_stop,        MRB_ARGS_NONE()         );
 
             /* Class Smon */
-            struct RClass * smon_class = mrb_define_class_under( mrb, mrb->kernel_module, "Smon", mrb->object_class     );
+            struct RClass * smon_class = mrb_define_class(mrb, "Smon", mrb->object_class);
             mrb_define_const(  mrb, smon_class, "GAP",              mrb_fixnum_value(SerialMonitor::GAP)                );
             mrb_define_const(  mrb, smon_class, "TO1",              mrb_fixnum_value(SerialMonitor::TIME_OUT_1)         );
             mrb_define_const(  mrb, smon_class, "TO2",              mrb_fixnum_value(SerialMonitor::TIME_OUT_2)         );
@@ -1445,15 +1236,17 @@ public:
             mrb_define_module_function(mrb, smon_class, "comlist",  mrb_smon_comlist,       MRB_ARGS_ANY()              );
             mrb_define_module_function(mrb, smon_class, "pipelist", mrb_smon_pipelist,      MRB_ARGS_ANY()              );
             mrb_define_method( mrb, smon_class, "initialize",       mrb_smon_initialize,    MRB_ARGS_REQ( 2 )           );
-            mrb_define_method( mrb, smon_class, "wait",             mrb_smon_wait,          MRB_ARGS_ARG( 2, 1 )        );
-            mrb_define_method( mrb, smon_class, "send",             mrb_smon_send,          MRB_ARGS_ARG( 2, 1 )        );
+            mrb_define_method( mrb, smon_class, "send",             mrb_smon_send,          MRB_ARGS_ANY()              );
+            mrb_define_method( mrb, smon_class, "read",             mrb_smon_read,          MRB_ARGS_ANY()              );
+            mrb_define_method( mrb, smon_class, "read_wait",        mrb_smon_read_wait,     MRB_ARGS_ANY()              );
+            mrb_define_method( mrb, smon_class, "wait",             mrb_smon_wait,          MRB_ARGS_ANY()              );
             mrb_define_method( mrb, smon_class, "close",            mrb_smon_close,         MRB_ARGS_NONE()             );
 
             /* Class OpenXLSX */
-            struct RClass * xlsx_class = mrb_define_class_under( mrb, mrb->kernel_module, "OpenXLSX", mrb->object_class );
-            mrb_define_method( mrb, xlsx_class, "initialize",       mrb_xlsx_initialize,        MRB_ARGS_REQ( 2 )       );
-            mrb_define_method( mrb, xlsx_class, "create",           mrb_xlsx_create,            MRB_ARGS_ARG( 1, 1 )    );
-            mrb_define_method( mrb, xlsx_class, "open",             mrb_xlsx_open,              MRB_ARGS_ARG( 1, 1 )    );
+            struct RClass * xlsx_class = mrb_define_class(mrb, "OpenXLSX", mrb->object_class);
+            mrb_define_method( mrb, xlsx_class, "initialize",       mrb_xlsx_initialize,        MRB_ARGS_NONE()         );
+            mrb_define_method( mrb, xlsx_class, "create",           mrb_xlsx_create,            MRB_ARGS_ANY()          );
+            mrb_define_method( mrb, xlsx_class, "open",             mrb_xlsx_open,              MRB_ARGS_ANY()          );
             mrb_define_method( mrb, xlsx_class, "sheet",            mrb_xlsx_worksheet,         MRB_ARGS_ARG( 1, 1 )    );
             mrb_define_method( mrb, xlsx_class, "sheet_names",      mrb_xlsx_sheet_names,       MRB_ARGS_NONE()         );
             mrb_define_method( mrb, xlsx_class, "setSheetName",     mrb_xlsx_set_seet_name,     MRB_ARGS_ARG( 1, 1 )    );
@@ -1493,10 +1286,7 @@ public:
     }
 };
 Application * Application::obj = nullptr;
-Application * Application::getObject(void)
-{
-    return Application::obj;
-}
+Application * Application::getObject(void) { return Application::obj; }
 
 mrb_value mrb_core_to_hex(mrb_state* mrb, mrb_value self)
 {
@@ -1675,29 +1465,51 @@ mrb_value mrb_core_date(mrb_state* mrb, mrb_value self)
 
 mrb_value mrb_opt_initialize(mrb_state * mrb, mrb_value self)
 {
-    auto result = (Application::getObject())->opt_init(mrb, self);
-    mrb_garbage_collect(mrb);
-    return result;
+    Application * obj = Application::getObject();
+    if(nullptr != obj)
+    {
+        auto result = obj->opt_init(mrb, self);
+        //mrb_garbage_collect(mrb);
+        return result;
+    }
+    return self;
 }
+
 mrb_value mrb_opt_size(mrb_state * mrb, mrb_value self)
 {
-    auto result = (Application::getObject())->opt_size(mrb, self);
-    mrb_garbage_collect(mrb);
-    return result;
+    Application * obj = Application::getObject();
+    if(nullptr != obj)
+    {
+        auto result = obj->opt_size(mrb, self);
+        //mrb_garbage_collect(mrb);
+        return result;
+    }
+    return mrb_nil_value();
 }
+
 mrb_value mrb_opt_get(mrb_state * mrb, mrb_value self)
 {
-    auto result = (Application::getObject())->opt_get(mrb, self);
-    mrb_garbage_collect(mrb);
-    return result;
+    Application * obj = Application::getObject();
+    if(nullptr != obj)
+    {
+        auto result = obj->opt_get(mrb, self);
+        //mrb_garbage_collect(mrb);
+        return result;
+    }
+    return mrb_nil_value();
 }
 
 mrb_value mrb_bedit_initialize(mrb_state * mrb, mrb_value self)
 {
-    auto result = (Application::getObject())->bedit_init(mrb, self);
-    mrb_garbage_collect(mrb);
-    return result;
+    Application * obj = Application::getObject();
+    if(nullptr != obj)
+    {
+        auto result = obj->bedit_init(mrb, self);
+        return result;
+    }
+    return mrb_nil_value();
 }
+
 mrb_value mrb_bedit_save(mrb_state * mrb, mrb_value self)
 {
     BinaryControl * bedit = static_cast<BinaryControl *>(DATA_PTR(self));
@@ -1736,7 +1548,7 @@ mrb_value mrb_bedit_length(mrb_state * mrb, mrb_value self)
 {
     BinaryControl * bedit = static_cast<BinaryControl *>(DATA_PTR(self));
     if(nullptr != bedit) { return mrb_int_value(mrb, bedit->size()); }
-    return mrb_nil_value();
+    return mrb_int_value(mrb, 0);
 }
 mrb_value mrb_bedit_write(mrb_state * mrb, mrb_value self)
 {
@@ -2131,9 +1943,13 @@ static mrb_value mrb_cppregexp_reg_split(mrb_state* mrb, mrb_value self)
 }
 mrb_value mrb_cppregexp_initialize(mrb_state * mrb, mrb_value self)
 {
-    auto result = (Application::getObject())->cppregexp_init(mrb, self);
-    mrb_garbage_collect(mrb);
-    return result;
+    Application * obj = Application::getObject();
+    if(nullptr != obj)
+    {
+        auto result = obj->cppregexp_init(mrb, self);
+        return result;
+    }
+    return mrb_nil_value();
 }
 mrb_value mrb_cppregexp_length(mrb_state * mrb, mrb_value self)
 {
@@ -2317,7 +2133,7 @@ mrb_value mrb_cppregexp_select(mrb_state * mrb, mrb_value self)
         case 1:
             if(MRB_TT_STRING == mrb_type(argv[0]))
             {
-                return mrb_int_value( mrb, reg->select( RSTR_PTR( mrb_str_ptr( argv[0] ) ) ) );
+                return mrb_int_value(mrb, reg->select( RSTR_PTR(mrb_str_ptr(argv[0])) ));
             }
             break;
         default:
@@ -2354,7 +2170,17 @@ mrb_value mrb_cppregexp_split(mrb_state * mrb, mrb_value self)
     return mrb_nil_value();
 }
 
-mrb_value mrb_thread_initialize(mrb_state * mrb, mrb_value self)    { auto result = (Application::getObject())->thread_init(mrb, self);                             return result; }
+mrb_value mrb_thread_initialize(mrb_state * mrb, mrb_value self)
+{
+    Application * obj = Application::getObject();
+    if(nullptr != obj)
+    {
+        auto result = obj->thread_init(mrb, self);
+        return result;
+    }
+    return mrb_nil_value();
+}
+
 mrb_value mrb_thread_state(mrb_state * mrb, mrb_value self)
 {
     WorkerThread * th_ctrl = static_cast<WorkerThread *>(DATA_PTR(self));
@@ -2371,7 +2197,7 @@ mrb_value mrb_thread_wait(mrb_state * mrb, mrb_value self)
 {
     WorkerThread * th_ctrl = static_cast<WorkerThread *>(DATA_PTR(self));
     if(nullptr != th_ctrl) { th_ctrl->wait(mrb); }
-    mrb_garbage_collect(mrb);
+    //mrb_garbage_collect(mrb);
     return mrb_nil_value();
 }
 mrb_value mrb_thread_notify(mrb_state * mrb, mrb_value self)
@@ -2590,20 +2416,325 @@ static mrb_value mrb_smon_pipelist(mrb_state* mrb, mrb_value self)
     }
     return arry ;
 }
-mrb_value mrb_smon_initialize(mrb_state * mrb, mrb_value self)      { auto result = (Application::getObject())->smon_init(mrb, self);                               return result; }
-mrb_value mrb_smon_send(mrb_state * mrb, mrb_value self)            { auto result = (Application::getObject())->smon_send(mrb, self);                               return result; }
-mrb_value mrb_smon_wait(mrb_state * mrb, mrb_value self)            { auto result = (Application::getObject())->smon_wait(mrb, self);    mrb_garbage_collect(mrb);  return result; }
-mrb_value mrb_smon_close(mrb_state * mrb, mrb_value self)           { auto result = (Application::getObject())->smon_close(mrb, self);   mrb_garbage_collect(mrb);  return result; }
+mrb_value mrb_smon_initialize(mrb_state * mrb, mrb_value self)
+{
+    Application * obj = Application::getObject();
+    if(nullptr != obj)
+    {
+        auto result = obj->smon_init(mrb, self);
+        return result;
+    }
+    return mrb_nil_value();
+}
 
-mrb_value mrb_xlsx_initialize(mrb_state * mrb, mrb_value self)      { auto result = (Application::getObject())->xlsx_init(mrb, self);                               return result; }
-mrb_value mrb_xlsx_create(mrb_state * mrb, mrb_value self)          { auto result = (Application::getObject())->xlsx_create(mrb, self);  mrb_garbage_collect(mrb);  return result; }
-mrb_value mrb_xlsx_open(mrb_state * mrb, mrb_value self)            { auto result = (Application::getObject())->xlsx_open(mrb, self);    mrb_garbage_collect(mrb);  return result; }
-mrb_value mrb_xlsx_worksheet(mrb_state * mrb, mrb_value self)       { auto result = (Application::getObject())->xlsx_worksheet(mrb, self);                          return result; }
-mrb_value mrb_xlsx_sheet_names(mrb_state * mrb, mrb_value self)     { auto result = (Application::getObject())->xlsx_work_sheet_names(mrb, self);                   return result; }
-mrb_value mrb_xlsx_set_seet_name(mrb_state * mrb, mrb_value self)   { auto result = (Application::getObject())->xlsx_set_sheet_name(mrb, self);                     return result; }
-mrb_value mrb_xlsx_set_value(mrb_state * mrb, mrb_value self)       { auto result = (Application::getObject())->xlsx_set_value(mrb, self);                          return result; }
-mrb_value mrb_xlsx_cell(mrb_state * mrb, mrb_value self)            { auto result = (Application::getObject())->xlsx_cell(mrb, self);                               return result; }
-mrb_value mrb_xlsx_save(mrb_state * mrb, mrb_value self)            { auto result = (Application::getObject())->xlsx_save(mrb, self);                               return result; }
+mrb_value mrb_smon_send(mrb_state * mrb, mrb_value self)
+{
+    SerialMonitor * smon = static_cast<SerialMonitor *>(DATA_PTR(self));
+    if(nullptr != smon)
+    {
+        char *  msg   = nullptr;
+        mrb_int timer = 0;
+        mrb_int argc; mrb_value * argv;
+        mrb_get_args(mrb, "*", &argv, &argc);
+        if(0 < argc)
+        {
+            if( (1 < argc) && (MRB_TT_INTEGER == mrb_type(argv[1])) )
+            {
+                timer = mrb_integer(argv[1]);
+            }
+            if(MRB_TT_STRING == mrb_type(argv[0]))
+            {
+                std::string data( RSTR_PTR(mrb_str_ptr( argv[0] ) ) );
+                BinaryControl bin(data);
+                smon->send(bin, timer);
+            }
+            else
+            {
+                BinaryControl * bin = get_bedit_ptr( argv[0] );
+                if(nullptr != bin)
+                {
+                    smon->send(*bin, timer);
+                }
+            }
+        }
+    }
+    return self;
+}
+
+mrb_value mrb_smon_read(mrb_state * mrb, mrb_value self)
+{
+    SerialMonitor * smon = static_cast<SerialMonitor *>(DATA_PTR(self));
+    if(nullptr != smon)
+    {
+        mrb_int argc; mrb_value * argv;
+        mrb_get_args(mrb, "*", &argv, &argc);
+        if(1==argc)
+        {
+            BinaryControl * bin = get_bedit_ptr( argv[0] );
+            if(nullptr != bin)
+            {
+                auto state = smon->read(bin);
+                return mrb_fixnum_value(state);
+            }
+        }
+    }
+    return mrb_nil_value();
+}
+
+mrb_value mrb_smon_read_wait(mrb_state * mrb, mrb_value self)
+{
+    SerialMonitor * smon = static_cast<SerialMonitor *>(DATA_PTR(self));
+    if(nullptr != smon)
+    {
+        mrb_int argc; mrb_value * argv;
+        mrb_get_args(mrb, "*", &argv, &argc);
+        if(1==argc)
+        {
+            BinaryControl * bin = get_bedit_ptr( argv[0] );
+            if(nullptr != bin)
+            {
+                auto state = smon->read_wait(bin);
+                return mrb_fixnum_value(state);
+            }
+        }
+    }
+    return mrb_nil_value();
+}
+
+mrb_value mrb_smon_wait(mrb_state * mrb, mrb_value self)
+{
+    SerialMonitor * smon = static_cast<SerialMonitor *>(DATA_PTR(self));
+    if(nullptr != smon)
+    {
+        mrb_value proc = mrb_nil_value();
+        mrb_get_args(mrb, "&", &proc);
+        if (!mrb_nil_p(proc))
+        {
+            std::string data;
+            auto state = smon->read_wait(data);
+            mrb_value argv[2];
+            argv[0] = mrb_fixnum_value(state);
+            switch(state)
+            {
+            case SerialMonitor::CACHE_FULL:
+            case SerialMonitor::GAP:
+                argv[1] = mrb_str_new_cstr(mrb, data.c_str());
+                break;
+            default:
+                argv[1] = mrb_str_new_cstr(mrb, "");
+                 break;
+            }
+            return mrb_yield_argv(mrb, proc, 2, &(argv[0]));
+        }
+    }
+    return mrb_nil_value();
+}
+mrb_value mrb_smon_close(mrb_state * mrb, mrb_value self)
+{
+    SerialMonitor * smon = static_cast<SerialMonitor *>(DATA_PTR(self));
+    if(nullptr != smon)
+    {
+        smon->close();
+        delete smon;
+        DATA_PTR(self) = nullptr;
+    }
+    //mrb_garbage_collect(mrb);
+    return self;
+}
+
+mrb_value mrb_xlsx_initialize(mrb_state * mrb, mrb_value self)
+{
+    Application * obj = Application::getObject();
+    if(nullptr != obj)
+    {
+        auto result = obj->xlsx_init(mrb, self);
+        return result;
+    }
+    return mrb_nil_value();
+}
+mrb_value mrb_xlsx_create(mrb_state * mrb, mrb_value self)
+{
+    mrb_value proc; mrb_int argc; mrb_value * argv;
+    mrb_get_args(mrb, "&*", &proc, &argv, &argc);
+    switch(argc)
+    {
+    case 1:
+        if( !mrb_nil_p(proc) )
+        {
+            OpenXLSXCtrl * xlsx = static_cast<OpenXLSXCtrl *>(DATA_PTR(self));
+            if(nullptr != xlsx)
+            {
+                std::string fname( RSTR_PTR( mrb_str_ptr( argv[0] ) ) );
+                xlsx->create(fname);
+                xlsx->workbook();
+                mrb_value result = mrb_yield_argv(mrb, proc, 0, nullptr);
+                xlsx->save();
+                xlsx->close();
+                //mrb_garbage_collect(mrb);
+                return result;
+            }
+        }
+        break;
+    default:
+        break;
+    }
+    //mrb_garbage_collect(mrb);
+    return mrb_nil_value();
+}
+mrb_value mrb_xlsx_open(mrb_state * mrb, mrb_value self)
+{
+    mrb_value proc; mrb_int argc; mrb_value * argv;
+    mrb_get_args(mrb, "&*", &proc, &argv, &argc);
+    if((1 == argc) && (!mrb_nil_p(proc)))
+    {
+        OpenXLSXCtrl * xlsx = static_cast<OpenXLSXCtrl *>(DATA_PTR(self));
+        if(nullptr != xlsx)
+        {
+            struct RString * s = mrb_str_ptr(argv[0]);
+            std::string fname(RSTR_PTR(s));
+            xlsx->open(fname);
+            xlsx->workbook();
+            mrb_value ret = mrb_yield_argv(mrb, proc, 0, nullptr);
+            xlsx->close();
+            //mrb_garbage_collect(mrb);
+            return ret;
+        }
+    }
+    //mrb_garbage_collect(mrb);
+    return mrb_nil_value();
+}
+mrb_value mrb_xlsx_worksheet(mrb_state * mrb, mrb_value self)
+{
+    OpenXLSXCtrl * xlsx = static_cast<OpenXLSXCtrl *>(DATA_PTR(self));
+    if(nullptr != xlsx)
+    {
+        mrb_value proc; mrb_int argc; mrb_value * argv;
+        mrb_get_args(mrb, "&*", &proc, &argv, &argc);
+        if((1 == argc) && (MRB_TT_STRING == mrb_type(argv[0])) && (!mrb_nil_p(proc)))
+        {
+            std::string sheet_name( RSTR_PTR(mrb_str_ptr(argv[0])) );
+            xlsx->worksheet(sheet_name);
+            return mrb_yield_argv(mrb, proc, 0, nullptr);
+        }
+    }
+    return mrb_nil_value();
+}
+mrb_value mrb_xlsx_sheet_names(mrb_state * mrb, mrb_value self)
+{
+    OpenXLSXCtrl * xlsx = static_cast<OpenXLSXCtrl *>(DATA_PTR(self));
+    if(nullptr != xlsx)
+    {
+        mrb_value proc; mrb_int argc; mrb_value * argv;
+        mrb_get_args(mrb, "&*", &proc, &argv, &argc);
+        if((0 == argc) && (!mrb_nil_p(proc)))
+        {
+            auto list = xlsx->getWorkSheetNames();
+            for( auto & name: list)
+            {
+                mrb_value argv[1];
+                argv[0] = mrb_str_new_cstr(mrb, name.c_str());
+                auto ret = mrb_yield_argv(mrb, proc, 1, argv);
+                if(mrb_type(ret) == MRB_TT_FALSE) { return ret; }
+            }
+        }
+    }
+    return mrb_nil_value();
+}
+mrb_value mrb_xlsx_set_seet_name(mrb_state * mrb, mrb_value self)
+{
+    OpenXLSXCtrl * xlsx = static_cast<OpenXLSXCtrl *>(DATA_PTR(self));
+    if(nullptr != xlsx )
+    {
+        mrb_int argc; mrb_value * argv;
+        mrb_get_args(mrb, "*", &argv, &argc);
+        if( (1 == argc) && (MRB_TT_STRING == mrb_type(argv[0])) )
+        {
+            std::string sheet_name( RSTR_PTR(mrb_str_ptr(argv[0])) );
+            xlsx->set_sheet_name(sheet_name);
+        }
+    }
+    return mrb_nil_value();
+}
+mrb_value mrb_xlsx_set_value(mrb_state * mrb, mrb_value self)
+{
+    OpenXLSXCtrl * xlsx = static_cast<OpenXLSXCtrl *>(DATA_PTR(self));
+    if(nullptr != xlsx)
+    {
+        mrb_int argc; mrb_value * argv;
+        mrb_get_args(mrb, "*", &argv, &argc);
+        if( (2 == argc) && (MRB_TT_STRING == mrb_type(argv[0])) )
+        {
+            std::string cel( RSTR_PTR(mrb_str_ptr(argv[0])) );
+            switch( mrb_type( argv[1] ) )
+            {
+            case MRB_TT_INTEGER:
+                {
+                    int value = static_cast<int>(mrb_integer(argv[1]));
+                    xlsx->set_cell_value(cel, value);
+                }
+                break;
+            case MRB_TT_FLOAT:
+                {
+                    float value = static_cast<float>(mrb_float(argv[1]));
+                    xlsx->set_cell_value(cel, value);
+                }
+                break;
+            case MRB_TT_STRING:
+                {
+                    struct RString * str_value = mrb_str_ptr(argv[1]);
+                    char * value = RSTR_PTR(str_value);
+                    xlsx->set_cell_value(cel, value);
+                }
+                break;
+            case MRB_TT_TRUE:   xlsx->set_cell_value(cel, 1); break;
+            case MRB_TT_FALSE:  xlsx->set_cell_value(cel, 0); break;
+            default:
+                break;
+            }
+        }
+    }
+    return mrb_nil_value();
+}
+mrb_value mrb_xlsx_cell(mrb_state * mrb, mrb_value self)
+{
+    OpenXLSXCtrl * xlsx = static_cast<OpenXLSXCtrl *>(DATA_PTR(self));
+    if(nullptr != xlsx )
+    {
+        mrb_int argc; mrb_value * argv;
+        mrb_get_args(mrb, "*", &argv, &argc);
+        if( (1 == argc) && (MRB_TT_STRING == mrb_type(argv[0])) )
+        {
+            std::string cell_name( RSTR_PTR(mrb_str_ptr(argv[0])) );
+            int val_int; float val_float; std::string str;
+            auto type = xlsx->get_cell(cell_name, val_int, val_float, str);
+            switch(type)
+            {
+            case OpenXLSXCtrl::Boolean:
+                return mrb_bool_value(val_int != 0);
+            case OpenXLSXCtrl::Integer:
+                return mrb_int_value( mrb, val_int );
+            case OpenXLSXCtrl::Float:
+                return mrb_float_value( mrb, val_float );
+            case OpenXLSXCtrl::String:
+                return mrb_str_new_cstr( mrb, str.c_str() );
+            case OpenXLSXCtrl::Empty:
+            case OpenXLSXCtrl::Error:
+            default:
+                break;
+            }
+        }
+        else
+        {
+        }
+    }
+    return mrb_nil_value();
+}
+mrb_value mrb_xlsx_save(mrb_state * mrb, mrb_value self)
+{
+    OpenXLSXCtrl * xlsx = static_cast<OpenXLSXCtrl *>(DATA_PTR(self));
+    if(nullptr != xlsx ) { xlsx->save(); }
+    return self;
+}
 
 void mrb_bedit_context_free(mrb_state * mrb, void * ptr)
 {
@@ -2652,6 +2783,46 @@ void mrb_xlsx_context_free(mrb_state * mrb, void * ptr)
 }
 
 /* -------- << class BinaryControl >>-------- */
+BinaryControl::BinaryControl(std::string & data)
+  : length(0), compress_size(0), pos(0), data(nullptr)
+{
+    auto reg_file = std::regex("^file:");
+    auto reg_comp = std::regex("^compress:");
+    auto reg_text = std::regex("^tx:");
+    if(std::regex_search(data, reg_file))
+    {   /* file */
+        auto fname= std::regex_replace(data, reg_file, "");
+        loadBinaryFile(fname);
+    }
+    else if(std::regex_search(data, reg_comp))
+    {   /* compress file */
+        auto fname= std::regex_replace(data, reg_comp, "");
+        loadBinaryFile(fname);
+        chg_compress();
+    }
+    else if(std::regex_search(data, reg_text))
+    {   /* text data */
+        data = std::regex_replace(data, reg_text, "");
+        alloc(data.size());
+        std::memcpy( this->data, data.c_str(), length);
+    }
+    else
+    {
+        data = std::regex_replace(data, std::regex("[^0-9a-fA-F]"), "");
+        alloc(data.size()/2);
+        length = this->write(0, static_cast<mrb_int>(length), data);
+    }
+}
+
+BinaryControl::~BinaryControl(void)
+{
+    if(nullptr!=data)
+    {
+        std::free(data);
+    }
+    length = compress_size = pos = 0;
+    data = nullptr;
+}
 
 void BinaryControl::chg_compress(void)
 {
@@ -3208,6 +3379,106 @@ unsigned char BinaryControl::xsum(void)
     return sum;
 }
 
+/* -------- << class CppRegexp >>-------- */
+CppRegexp::~CppRegexp(void)
+{
+}
+bool CppRegexp::match(const std::string & str)
+{
+    for(auto & reg : regs)
+    {
+        if( std::regex_search(str, reg) )
+        {
+            return true;
+        }
+    }
+    return false;
+}
+std::list<std::string> CppRegexp::match(std::list<std::string> & text)
+{
+    std::list<std::string> result;
+    for(auto & str : text)
+    {
+        if( match( str ) )
+        {
+            result.push_back( str );
+        }
+    }
+    return result;
+}
+std::list<std::string> CppRegexp::grep(std::list<std::string> & text)
+{
+    std::list<std::string> result;
+    if(0 < regs.size())
+    {
+        for(auto & str : text)
+        {
+            bool match = true;
+            for(auto & reg : regs)
+            {
+                if( !std::regex_search(str, reg) )
+                {
+                    match = false;
+                    break;
+                }
+            }
+            if( match )
+            {
+                result.push_back( str );
+            }
+        }
+    }
+    return result;
+}
+void CppRegexp::replace(std::list<std::string> & text, const char * rep)
+{
+    if( rep != nullptr )
+    {
+        for(auto & str : text)
+        {
+            for(auto & reg : regs)
+            {
+                str = std::regex_replace(str, reg, rep);
+            }
+        }
+    }
+}
+unsigned int CppRegexp::select(const char * str)
+{
+    if(0 < regs.size())
+    {
+        unsigned int idx = 0;
+        for(auto & reg : regs)
+        {
+            if( std::regex_search(str, reg) )
+            {
+                break;
+            }
+            idx ++;
+        }
+        return idx;
+    }
+    return 1;
+}
+std::list<std::string> CppRegexp::split(std::string & org)
+{
+    std::list<std::string> result;
+    result.push_back( org );
+    for(auto & reg : regs)
+    {
+        std::list<std::string> temp;
+        for(auto str : result)
+        {
+            for(auto & item : str_split(str, reg))
+            {
+                temp.push_back(item);
+            }
+        }
+        result.clear();
+        result = temp;
+    }
+    return result;
+}
 
 
 extern "C"

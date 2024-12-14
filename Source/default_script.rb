@@ -3,6 +3,14 @@
 tick = Core.tick()
 opts = Args.new()
 if 0 < opts.size() then
+  fmt = "%s:"; arg_sz = 0
+  (opts.size()).times do |idx|
+    arg = String.new(opts[idx])
+    if arg_sz < arg.length then
+      arg_sz = arg.length
+      fmt = '%-' + sprintf("%d", arg.length) + 's:'
+    end
+  end
   th_prn = WorkerThread.new
   objs = Array.new
   (opts.size()).times do |idx|
@@ -14,36 +22,37 @@ if 0 < opts.size() then
       msg = ''
       loop = true
       while loop do
-        smon.wait do |state, rcv_msg|
-          case state
-          when Smon::CACHE_FULL then
-          when Smon::GAP then
-            th_prn.synchronize do
-              tick += Core.tick() % 100000000000
-              if 0 < rcv_msg.length then
-                printf("%d:%s: %10d[ms]: %s\n", idx, arg, tick, rcv_msg)
-              else
-                printf("%d:%s: %10d[ms]: GAP\n", idx, arg, tick)
-              end
+        bin = BinEdit.new
+        state = smon.read_wait(bin)
+        case state
+        when Smon::CACHE_FULL then
+        when Smon::GAP then
+          th_prn.synchronize do
+            tick += Core.tick() % 100000000000
+            if 0 < bin.length then
+              rcv_msg = bin.dump()
+              printf("%d:%s %10d[ms]: %s\n", idx, sprintf(fmt, arg), tick, rcv_msg)
+            else
+              printf("%d:%s %10d[ms]: GAP\n", idx, sprintf(fmt, arg), tick)
             end
-          when Smon::TO1 then
-            th_prn.synchronize do
-              tick += Core.tick() % 100000000000
-              printf("%d:%s: %10d[ms]: TO%d\n", idx, arg, tick, state)
-            end
-          when Smon::TO2 then
-            th_prn.synchronize do
-              tick += Core.tick() % 100000000000
-              printf("%d:%s: %10d[ms]: TO%d\n", idx, arg, tick, state)
-            end
-          when Smon::TO3 then
-            th_prn.synchronize do
-              tick += Core.tick() % 100000000000
-              printf("%d:%s: %10d[ms]: TO%d\n", idx, arg, tick, state)
-            end
-          else
-            loop = false
           end
+        when Smon::TO1 then
+          th_prn.synchronize do
+            tick += Core.tick() % 100000000000
+            printf("%d:%s %10d[ms]: TO%d\n", idx, sprintf(fmt, arg), tick, state)
+          end
+        when Smon::TO2 then
+          th_prn.synchronize do
+            tick += Core.tick() % 100000000000
+            printf("%d:%s %10d[ms]: TO%d\n", idx, sprintf(fmt, arg), tick, state)
+          end
+        when Smon::TO3 then
+          th_prn.synchronize do
+            tick += Core.tick() % 100000000000
+            printf("%d:%s %10d[ms]: TO%d\n", idx, sprintf(fmt, arg), tick, state)
+          end
+        else
+          loop = false
         end
       end
       th_ctrl.stop()
@@ -79,7 +88,7 @@ if 0 < opts.size() then
         smon.send(data, 0)
         th_prn.synchronize do
           tick += Core.tick() % 100000000000
-          printf("%d:%s: %10d[ms]: Send: %s\n", idx, arg, tick, data)
+          printf("%d:%s %10d[ms]: Send: %s\n", idx, sprintf(fmt, arg), tick, data)
         end
       end
     else
@@ -87,10 +96,14 @@ if 0 < opts.size() then
     end
   end
   loop_time = false
-#  objs.each do |items|
-#    ( smon, th_ctrl, idx, arg ) = items
-#    smon.close()
-#  end
+  objs.each do |items|
+    ( smon, th_ctrl, idx, arg ) = items
+    #smon.close()
+  end
+  objs.each do |items|
+    ( smon, th_ctrl, idx, arg ) = items
+    #th_ctrl.join()
+  end
 else
   print "smon [options] comXX comXX ...", "\n"
   print "see of help)\n"

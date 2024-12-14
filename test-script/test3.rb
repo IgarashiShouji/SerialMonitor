@@ -4,40 +4,39 @@ class Tester
     @name = _name
     @com = Smon.new(@name)
     @th = WorkerThread.new
+    @reg = CppRegexp.new('^01', '^11', '^22')
+    @data = ['11223344', '220011', '44556677']
   end
   def run(to_com)
-    reg = CppRegexp.new('^01', '^11', '^22')
-    data = ['11223344', '220011', '44556677']
     @th.run do
-      @com.wait do |state, rcv_msg|
-        case state
-        when Smon::CACHE_FULL then
-        when Smon::GAP then
-          if(0 < rcv_msg.length) then
-            printf("%-20s: %s\n", @name, rcv_msg)
-            idx = reg.select(rcv_msg)
-            if idx < data.length then
-              to_com.send(data[idx]+rcv_msg)
-            end
+      bin = BinEdit.new
+      state = @com.read_wait(bin)
+      case state
+      when Smon::CACHE_FULL then
+      when Smon::GAP then
+        if(0 < bin.length) then
+          rcv_msg = bin.dump()
+          idx = @reg.select(rcv_msg)
+          printf("%-20s: %d/%d: %s\n", @name, idx, @data.length, rcv_msg)
+          if idx < @data.length then
+            send_data = @data[idx]
+            send_data = sprintf("%s %s", @data[idx], rcv_msg)
+            printf("%-20s: %d: send: %s\n", @name, idx, send_data)
+            to_com.send(send_data )
           end
-        when Smon::TO1 then
-          printf("%-20s: TO1\n", @name);
-        when Smon::TO2 then
-          printf("%-20s: TO2\n", @name);
-        when Smon::TO3 then
-          printf("%-20s: TO3\n", @name);
-          #if @idx < 3 then
-            #to_com.send('01020304')
-            #@idx += 1
-          #else
-            @th.stop()
-          #end
-        when Smon::CLOSE  then
-        when Smon::NONE then
-          th.stop()
-        else
-          th.stop()
         end
+      when Smon::TO1 then
+        printf("%-20s: TO1\n", @name);
+      when Smon::TO2 then
+        printf("%-20s: TO2\n", @name);
+      when Smon::TO3 then
+        printf("%-20s: TO3\n", @name);
+        @th.stop()
+      when Smon::CLOSE  then
+      when Smon::NONE then
+        th.stop()
+      else
+        th.stop()
       end
     end
   end

@@ -172,11 +172,11 @@ def test_cpp_regexp
   print '  abcdecg: ', reg.match('abcdecg') ? "ok" : "ng" , "\n"
   reg = CppRegexp.new( [ '[abc]', '[def]', '[xyz]' ] )
   printf("  reg.length(): %d\n", reg.length())
-  printf("  select:a -> %d\n", reg.select('a'))
-  printf("  select:e -> %d\n", reg.select('e'))
+  printf("  select:a -> %d: check %s\n", reg.select('a'), (0==reg.select('a') ? 'ok' : 'ng'))
+  printf("  select:e -> %d: check %s\n", reg.select('e'), (1==reg.select('e') ? 'ok' : 'ng'))
   reg = CppRegexp.new( '[abc]', '[def]', '[xyz]' )
-  printf("  select:z -> %d\n", reg.select('z'))
-  printf("  select:  -> %d\n", reg.select(' '))
+  printf("  select:z -> %d: check %s\n", reg.select('z'), (2==reg.select('z') ? 'ok' : 'ng'))
+  printf("  select:  -> %d: check %s\n", reg.select(' '), (3==reg.select(' ') ? 'ok' : 'ng'))
   reg = CppRegexp.new('1', '[bc]')
   print "  grep:  ", reg.grep(  [ '10:a', '11:b', '00:ig', '12:c', '13:d' ] ), "\n"
   print "  match: ", reg.match( [ '10:a', '11:b', '00:ig', '12:c', '13:d' ] ), "\n"
