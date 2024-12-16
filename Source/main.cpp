@@ -56,23 +56,6 @@
 /* -- static const & functions -- */
 static const char *  SoftwareRevision = "0.13.14";
 
-static unsigned char toValue(unsigned char data)
-{
-    unsigned char val=0xff;
-         if(('0' <= data) && (data<='9')) { val = data - '0';      }
-    else if(('a' <= data) && (data<='f')) { val = 10 + data - 'a'; }
-    else if(('A' <= data) && (data<='F')) { val = 10 + data - 'A'; }
-    else                                  { }
-    return val;
-}
-
-static auto str_split = [](std::string & src, std::regex & reg)
-{
-    std::list<std::string> result;
-    std::copy( std::sregex_token_iterator{src.begin(), src.end(), reg, -1}, std::sregex_token_iterator{}, std::back_inserter(result) );
-    return result;
-};
-
 class Object
 {
 protected:
@@ -126,7 +109,7 @@ public:
     unsigned char crc8(void);
     unsigned char xsum(void);
 };
-class  CppRegexp: public Object
+class CppRegexp: public Object
 {
 private:
     std::vector<std::regex> regs;
@@ -146,8 +129,110 @@ public:
     unsigned int select(const char * str);
     std::list<std::string> split(std::string & org);
 };
+class WorkerThread : public Object
+{
+public:
+    enum Status { Stop, Wakeup, Run, Wait, WaitStop };
+protected:
+    enum Status             state;
+    std::thread             th_ctrl;
+    std::mutex              mtx;
+    std::condition_variable cond;
+    mrb_state *             mrb;
+    mrb_value               proc;
+public:
+    inline WorkerThread(void);
+    virtual ~WorkerThread(void);
+    bool run(mrb_state * mrb, mrb_value self);
+    void run_context(size_t id);
+    void join(void);
+    inline enum Status get_state(void) const;
+    void wait(mrb_state * mrb);
+    inline void notify(void);
+    inline mrb_value notify(mrb_state * mrb, mrb_value & proc);
+    inline mrb_value sync(mrb_state * mrb, mrb_value & proc);
+    void stop(mrb_state * mrb);
+};
+class SerialMonitor : public Object, MyEntity::TimerHandler
+{
+public:
+    enum State { GAP = 0, TIME_OUT_1, TIME_OUT_2, TIME_OUT_3, CACHE_FULL, CLOSE, NONE };
+    struct ReciveInfo
+    {
+        enum State      state;
+        unsigned int    cnt;
+        unsigned char * buff;
+        unsigned char * prev;
+    };
+protected:
+    std::string                              arg;
+    std::vector<size_t>                      timer;
+    SerialControl *                          com;
+    MyEntity::OneShotTimerEventer<size_t> *  tevter;
+    unsigned int                             cache_size;
+    bool                                     rcv_enable;
+    ReciveInfo                               cache;
+    std::thread                              th_recive;
+    std::mutex                               mtx;
+    std::condition_variable                  cond;
+    std::list<ReciveInfo>                    rcv_cache;
+public:
+    SerialMonitor(mrb_value & self, const char * arg, std::vector<size_t> & timer_def, std::string boud, bool rts);
+    virtual ~SerialMonitor(void);
+    void close(void);
+    void send(BinaryControl & bin, unsigned int timer);
+    SerialMonitor::State read(BinaryControl & bin);
+    SerialMonitor::State read_wait(BinaryControl & bin);
+    void reciver(size_t id);
+    void handler(unsigned int idx);
+};
+
+class OpenXLSXCtrl : public Object
+{
+public:
+    enum Type { Empty, Boolean, Integer, Float, Error, String };
+    union Data { int vint; float vfloat; const char * str; };
+protected:
+    OpenXLSX::XLDocument  doc;
+    OpenXLSX::XLWorkbook  book;
+    OpenXLSX::XLWorksheet sheet;
+
+public:
+    inline OpenXLSXCtrl(void);
+    virtual ~OpenXLSXCtrl(void);
+//  void create(const std::string & fname)           { doc.create(fname, true);     }
+    inline void create(const std::string & fname);
+    inline void open(const std::string & fname);
+    inline void workbook(void);
+    inline std::vector<std::string> getWorkSheetNames(void);
+    void worksheet(std::string & sheet_name);
+    inline void set_sheet_name(std::string & sheet_name);
+    inline void set_cell_value(std::string & cell, int val);
+    inline void set_cell_value(std::string & cell, char * val);
+    inline void set_cell_value(std::string & cell, float val);
+    OpenXLSXCtrl::Type get_cell(std::string & cell, OpenXLSXCtrl::Data & val) const;
+    inline void save(void);
+    inline void close(void);
+};
 
 /* class inline methods */
+inline unsigned char toValue(unsigned char data)
+{
+    unsigned char val=0xff;
+         if(('0' <= data) && (data<='9')) { val = data - '0';      }
+    else if(('a' <= data) && (data<='f')) { val = 10 + data - 'a'; }
+    else if(('A' <= data) && (data<='F')) { val = 10 + data - 'A'; }
+    else                                  { }
+    return val;
+}
+
+inline auto str_split = [](std::string & src, std::regex & reg)
+{
+    std::list<std::string> result;
+    std::copy( std::sregex_token_iterator{src.begin(), src.end(), reg, -1}, std::sregex_token_iterator{}, std::back_inserter(result) );
+    return result;
+};
+
 inline Object::Object(void)
   : id(0), res(nullptr)
 {
@@ -269,6 +354,85 @@ inline unsigned int CppRegexp::length(void)
 {
     return regs.size();
 }
+inline WorkerThread::WorkerThread(void)
+  : state(Stop), mrb(nullptr)
+{
+}
+inline enum WorkerThread::Status WorkerThread::get_state(void) const
+{
+    return state;
+}
+inline void WorkerThread::notify(void)
+{
+    std::lock_guard<std::mutex> lock(mtx);
+    state = Run;
+    cond.notify_all();
+}
+inline mrb_value WorkerThread::notify(mrb_state * mrb, mrb_value & proc)
+{
+    std::lock_guard<std::mutex> lock(mtx);
+    auto result = mrb_yield_argv(mrb, proc, 0, NULL);
+    state = Run;
+    cond.notify_all();
+    return result;
+}
+inline mrb_value WorkerThread::sync(mrb_state * mrb, mrb_value & proc)
+{
+    std::lock_guard<std::mutex> lock(mtx);
+    auto result = mrb_yield_argv(mrb, proc, 0, NULL);
+    return result;
+}
+inline OpenXLSXCtrl::OpenXLSXCtrl(void)
+{
+}
+inline void OpenXLSXCtrl::create(const std::string & fname)
+{
+    doc.create(fname);
+}
+inline void OpenXLSXCtrl::open(const std::string & fname)
+{
+    doc.open(fname);
+}
+inline void OpenXLSXCtrl::workbook(void)
+{
+    book = doc.workbook();
+}
+inline std::vector<std::string> OpenXLSXCtrl::getWorkSheetNames(void)
+{
+    return book.worksheetNames();
+}
+inline void OpenXLSXCtrl::set_sheet_name(std::string & sheet_name)
+{
+    sheet.setName(sheet_name);
+}
+inline void OpenXLSXCtrl::set_cell_value(std::string & cell, int val)
+{
+    sheet.cell(OpenXLSX::XLCellReference(cell)).value() = val;
+}
+inline void OpenXLSXCtrl::set_cell_value(std::string & cell, char * val)
+{
+    sheet.cell(OpenXLSX::XLCellReference(cell)).value() = val;
+}
+inline void OpenXLSXCtrl::set_cell_value(std::string & cell, float val)
+{
+    DWord temp = { .value = val };
+    if((temp.uint32 & 0x7fffff) != 0x7fffff)
+    {
+        sheet.cell(OpenXLSX::XLCellReference(cell)).value() = val;
+    }
+    else
+    {
+        sheet.cell(OpenXLSX::XLCellReference(cell)).value() = "NaN";
+    }
+}
+inline void OpenXLSXCtrl::save(void)
+{
+    doc.save();
+}
+inline void OpenXLSXCtrl::close(void)
+{
+    doc.close();
+}
 
 /* mruby interfaces */
 /* class Core */
@@ -351,7 +515,6 @@ static mrb_value mrb_smon_comlist(mrb_state* mrb, mrb_value self);
 static mrb_value mrb_smon_pipelist(mrb_state* mrb, mrb_value self);
 static mrb_value mrb_smon_initialize(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_smon_send(mrb_state * mrb, mrb_value self);
-static mrb_value mrb_smon_wait(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_smon_read(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_smon_read_wait(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_smon_close(mrb_state * mrb, mrb_value self);
@@ -370,500 +533,7 @@ static mrb_value mrb_xlsx_save(mrb_state * mrb, mrb_value self);
 static void mrb_xlsx_context_free(mrb_state * mrb, void * ptr);
 
 
-/* class */
-class WorkerThread : public Object
-{
-public:
-    enum Status
-    {
-        Stop,
-        Wakeup,
-        Run,
-        Wait,
-        WaitStop
-    };
-protected:
-    enum Status             state;
-    std::thread             th_ctrl;
-    std::mutex              mtx;
-    std::condition_variable cond;
-    mrb_state *             mrb;
-    mrb_value               proc;
-public:
-    WorkerThread(void) : state(Stop), mrb(nullptr) { }
-    virtual ~WorkerThread(void)
-    {
-        std::lock_guard<std::mutex> lock(mtx);
-        if(nullptr != this->mrb)
-        {
-            mrb_close(this->mrb);
-            this->mrb = nullptr;
-        }
-    }
-    bool run(mrb_state * mrb, mrb_value self)
-    {
-        bool result = false;
-        std::unique_lock<std::mutex> lock(mtx);
-        if(nullptr == this->mrb)
-        {
-            mrb_get_args(mrb, "&", &proc);
-            if(!mrb_nil_p(proc))
-            {
-                result = true;
-                state = Wakeup;
-                std::thread temp(&WorkerThread::run_context, this, 0);
-                th_ctrl.swap(temp);
-                auto lamda = [this]
-                {
-                    if(state == Wakeup) { return false; }
-                    return true;
-                };
-                state = Wakeup;
-                cond.wait(lock, lamda);
-            }
-        }
-        lock.unlock();
-        return result;
-    }
-    void run_context(size_t id)
-    {
-        {
-            std::lock_guard<std::mutex> lock(mtx);
-            this->mrb = mrb_open();
-            if(nullptr != this->mrb)
-            {
-                state = Run;
-                cond.notify_all();
-            }
-        }
-        while(Run == state)
-        {
-            mrb_yield_argv(this->mrb, proc, 0, NULL);
-        }
-        std::lock_guard<std::mutex> lock(mtx);
-        if(nullptr != this->mrb)
-        {
-            mrb_close(this->mrb);
-            this->mrb = nullptr;
-        }
-        state = Stop;
-        cond.notify_all();
-        th_ctrl.detach();
-    }
-    void join(void)
-    {
-        auto lamda = [this]
-        {
-            if(state != Stop) { return false; }
-            return true;
-        };
-        std::unique_lock<std::mutex> lock(mtx);
-        cond.wait(lock, lamda);
-    }
-    enum Status get_state(void) const { return state; }
-    void wait(mrb_state * mrb)
-    {
-        auto lamda = [this, &mrb]
-        {
-            switch(state)
-            {
-            case Run:
-                return true;
-                break;
-            case WaitStop:
-                return true;
-                break;
-            case Stop:
-                return true;
-                break;
-            default:
-                break;
-            }
-            return false;
-        };
-        std::unique_lock<std::mutex> lock(mtx);
-        state = Wait;
-        cond.wait(lock, lamda);
-        lock.unlock();
-    }
-    void notify(void)
-    {
-        std::lock_guard<std::mutex> lock(mtx);
-        state = Run;
-        cond.notify_all();
-    }
-    mrb_value notify(mrb_state * mrb, mrb_value & proc)
-    {
-        std::lock_guard<std::mutex> lock(mtx);
-        auto result = mrb_yield_argv(mrb, proc, 0, NULL);
-        state = Run;
-        cond.notify_all();
-        return result;
-    }
-    mrb_value sync(mrb_state * mrb, mrb_value & proc)
-    {
-        std::lock_guard<std::mutex> lock(mtx);
-        auto result = mrb_yield_argv(mrb, proc, 0, NULL);
-        return result;
-    }
-    void stop(mrb_state * mrb)
-    {
-        std::lock_guard<std::mutex> lock(mtx);
-        switch(state)
-        {
-        case Wakeup:
-        case Run:
-        case Wait:
-            state = WaitStop;
-            break;
-        case WaitStop:
-            break;
-        case Stop:
-        default:
-            state = Stop;
-            break;
-        }
-        cond.notify_all();
-    }
-};
 
-class SerialMonitor : public Object, MyEntity::TimerHandler
-{
-public:
-    enum State
-    {
-        GAP = 0,
-        TIME_OUT_1,
-        TIME_OUT_2,
-        TIME_OUT_3,
-        CACHE_FULL,
-        CLOSE,
-        NONE
-    };
-    struct ReciveInfo
-    {
-        enum State      state;
-        unsigned int    cnt;
-        unsigned char * buff;
-        unsigned char * prev;
-    };
-protected:
-    std::string                              arg;
-    std::vector<size_t>                      timer;
-    SerialControl *                          com;
-    MyEntity::OneShotTimerEventer<size_t> *  tevter;
-    unsigned int                             cache_size;
-    bool                                     rcv_enable;
-    ReciveInfo                               cache;
-    std::thread                              th_recive;
-    std::mutex                               mtx;
-    std::condition_variable                  cond;
-    std::list<ReciveInfo>                    rcv_cache;
-public:
-    SerialMonitor(mrb_value & self, const char * arg_, std::vector<size_t> & timer_default, std::string def_boud, bool rts_ctrl)
-      : arg(arg_), timer(timer_default), com(nullptr), tevter(nullptr), cache_size(1024), rcv_enable(true)
-    {   /* str_split */
-        std::vector<std::string> args;
-        std::regex reg(",");
-        for( auto && item : str_split( arg, reg) )
-        {
-            args.push_back(item);
-        }
-        std::string name(args[0]);
-        std::string baud(def_boud);
-        SerialControl::Profile info;
-        SerialControl::hasBaudRate(baud, info);
-        if(1 < args.size())
-        {
-            for(auto idx = 1; idx < args.size(); idx ++)
-            {
-                auto & arg = args[idx];
-                if      ( std::regex_match(arg, std::regex("one")))        { info.stop = SerialControl::one; }
-                else if ( std::regex_match(arg, std::regex("ONE")))        { info.stop = SerialControl::one; }
-                else if ( std::regex_match(arg, std::regex("two")))        { info.stop = SerialControl::two; }
-                else if ( std::regex_match(arg, std::regex("TWO")))        { info.stop = SerialControl::two; }
-                else if ( std::regex_match(arg, std::regex("none")))       { info.parity = SerialControl::none; }
-                else if ( std::regex_match(arg, std::regex("NONE")))       { info.parity = SerialControl::none; }
-                else if ( std::regex_match(arg, std::regex("even")))       { info.parity = SerialControl::even; }
-                else if ( std::regex_match(arg, std::regex("EVEN")))       { info.parity = SerialControl::even; }
-                else if ( std::regex_match(arg, std::regex("odd")))        { info.parity = SerialControl::odd; }
-                else if ( std::regex_match(arg, std::regex("ODD")))        { info.parity = SerialControl::odd; }
-                else if ( std::regex_match(arg, std::regex("GAP=[0-9]+"))) { timer[0] = stoi(std::regex_replace(arg, std::regex("GAP=([0-9]+)"), "$1")); }
-                else if ( std::regex_match(arg, std::regex("TO1=[0-9]+"))) { timer[1] = stoi(std::regex_replace(arg, std::regex("TO1=([0-9]+)"), "$1")); }
-                else if ( std::regex_match(arg, std::regex("TO2=[0-9]+"))) { timer[2] = stoi(std::regex_replace(arg, std::regex("TO2=([0-9]+)"), "$1")); }
-                else if ( std::regex_match(arg, std::regex("TO3=[0-9]+"))) { timer[3] = stoi(std::regex_replace(arg, std::regex("TO3=([0-9]+)"), "$1")); }
-                else
-                {
-                    if( !SerialControl::hasBaudRate(arg, info) )
-                    {
-                        info.baud = stoi(arg);
-                    }
-                }
-            }
-        }
-        com = SerialControl::createObject(name.c_str(), info.baud, info.parity, info.stop, rts_ctrl);
-        cache.buff  = static_cast<unsigned char *>(std::malloc(cache_size));
-        cache.cnt   = 0;
-        cache.state = NONE;
-        std::thread temp(&SerialMonitor::recive, this, 0);
-        th_recive.swap(temp);
-    }
-    virtual ~SerialMonitor(void)
-    {
-        this->close();
-    }
-    void close(void)
-    {
-        std::unique_lock<std::mutex> lock(mtx);
-        rcv_enable = false;
-        if(nullptr != com)
-        {
-            try { com->close(); } catch(...) { }
-            auto lamda = [this]
-            {
-                if(cache.state == CLOSE)
-                {
-                    return true;
-                }
-                return false;
-            };
-            cond.wait(lock, lamda);
-            delete com;
-            com = nullptr;
-        }
-        if(nullptr != cache.buff)
-        {
-            std::free(cache.buff);
-            cache.buff = nullptr;
-        }
-        cache.cnt   = 0;
-        for(auto & item : rcv_cache)
-        {
-            std::free(item.buff);
-            item.buff = nullptr;
-        }
-        rcv_cache.clear();
-    }
-    void send(BinaryControl & bin, unsigned int timer)
-    {
-        if( nullptr != com)
-        {
-            if(0 < bin.size())
-            {
-                try { com->send(bin.ptr(), bin.size()); } catch(...) { }
-                std::this_thread::sleep_for(std::chrono::milliseconds(timer));
-                if( nullptr != tevter)
-                {
-                    std::lock_guard<std::mutex> lock(mtx);
-                    tevter->restart();
-                }
-            }
-        }
-    }
-    SerialMonitor::State read(BinaryControl * bin)
-    {
-        ReciveInfo rcv_info = { NONE, 0, nullptr, nullptr };
-        std::lock_guard<std::mutex> lock(mtx);
-        if(0 < rcv_cache.size())
-        {
-            rcv_info = *(rcv_cache.begin());
-            rcv_cache.pop_front();
-            if(0 < rcv_info.cnt)
-            {
-                bin->attach(rcv_info.buff, rcv_info.cnt);
-            }
-        }
-        return rcv_info.state;
-    }
-    SerialMonitor::State read_wait(BinaryControl * bin)
-    {
-        ReciveInfo rcv_info = { NONE, 0, nullptr, nullptr };
-        auto lamda = [this, &rcv_info]
-        {
-            if(cache.state == CLOSE)
-            {
-                this->close();
-                return true;
-            }
-            if(0 < rcv_cache.size())
-            {
-                rcv_info = *(rcv_cache.begin());
-                rcv_cache.pop_front();
-                return true;
-            }
-            return false;
-        };
-        std::unique_lock<std::mutex> lock(mtx);
-        cond.wait(lock, lamda);
-        if(0 < rcv_info.cnt)
-        {
-            bin->attach(rcv_info.buff, rcv_info.cnt);
-        }
-        return rcv_info.state;
-    }
-    SerialMonitor::State read_wait(std::string & data)
-    {
-        ReciveInfo rcv_info = { NONE, 0, nullptr, nullptr };
-        auto lamda = [this, &rcv_info]
-        {
-            if(cache.state == CLOSE)
-            {
-                this->close();
-                return true;
-            }
-            if(0 < rcv_cache.size())
-            {
-                rcv_info = *(rcv_cache.begin());
-                rcv_cache.pop_front();
-                return true;
-            }
-            return false;
-        };
-        std::unique_lock<std::mutex> lock(mtx);
-        cond.wait(lock, lamda);
-        for(unsigned int idx = 0; idx < rcv_info.cnt; idx ++)
-        {
-            char temp[4] = { 0 };
-            sprintf(temp, "%02X", rcv_info.buff[idx]);
-            data += temp;
-        }
-        std::free(rcv_info.buff);
-        return rcv_info.state;
-    }
-    void recive(size_t id)
-    {
-        MyEntity::OneShotTimerEventer timeout_evter(timer, *this);
-        tevter = &timeout_evter;
-        while(rcv_enable)
-        {
-            if(nullptr == com) { break; }
-            unsigned char data;
-            size_t len;
-            try { len = com->read(&(data), 1); } catch(...) { break; }
-            if(0 == len) { break; }
-            std::lock_guard<std::mutex> lock(mtx);
-            if(rcv_enable)
-            {
-                 timeout_evter.restart();
-                 cache.buff[cache.cnt] = data;
-                 cache.cnt += len;
-                 if(cache_size <= cache.cnt)
-                 {
-                     cache.state = CACHE_FULL;
-                     rcv_cache.push_back(cache);
-                     cache.buff  = static_cast<unsigned char *>(std::malloc(cache_size));
-                     cache.cnt   = 0;
-                     cond.notify_all();
-                 }
-            }
-        }
-        std::lock_guard<std::mutex> lock(mtx);
-        rcv_enable = false;
-        cache.state = CLOSE;
-        cache.cnt   = 0;
-        rcv_cache.push_back(cache);
-        cache.buff  = static_cast<unsigned char *>(std::malloc(cache_size));
-        cache.cnt   = 0;
-        cond.notify_all();
-        th_recive.detach();
-    }
-    virtual void handler(unsigned int idx)
-    {
-        static const enum State evt_state[] = { GAP, TIME_OUT_1, TIME_OUT_2, TIME_OUT_3 };
-        std::lock_guard<std::mutex> lock(mtx);
-        if(CLOSE != cache.state)
-        {
-            if(idx < __ArrayCount(evt_state))
-            {
-                if( !com->rts_status() )
-                {
-                    cache.state = evt_state[idx];
-                    rcv_cache.push_back(cache);
-                    cache.buff = static_cast<unsigned char *>(std::malloc(cache_size));
-                    cache.cnt  = 0;
-                    cond.notify_all();
-                }
-            }
-        }
-    }
-};
-
-class OpenXLSXCtrl : public Object
-{
-public:
-    enum Type
-    {
-        Empty,
-        Boolean,
-        Integer,
-        Float,
-        Error,
-        String
-    };
-protected:
-    OpenXLSX::XLDocument  doc;
-    OpenXLSX::XLWorkbook  book;
-    OpenXLSX::XLWorksheet sheet;
-
-public:
-    OpenXLSXCtrl(void)          { }
-    virtual ~OpenXLSXCtrl(void) { }
-//  void create(const std::string & fname)           { doc.create(fname, true);     }
-    void create(const std::string & fname)           { doc.create(fname);           }
-    void open(const std::string & fname)             { doc.open(fname);             }
-    void workbook(void)                              { book = doc.workbook();       }
-    std::vector<std::string> getWorkSheetNames(void) { return book.worksheetNames(); }
-    void worksheet(std::string & sheet_name)
-    {
-        auto list = book.worksheetNames();
-        for(auto & name: list)
-        {
-            if( name == sheet_name )
-            {
-                sheet = book.worksheet(sheet_name);
-                return;
-            }
-        }
-        book.addWorksheet(sheet_name);
-        sheet = book.worksheet(sheet_name);
-    }
-    void set_sheet_name(std::string & sheet_name)            { sheet.setName(sheet_name);                                      }
-    void set_cell_value(std::string & cell_name, int val)    { sheet.cell(OpenXLSX::XLCellReference(cell_name)).value() = val; }
-    void set_cell_value(std::string & cell_name, char * val) { sheet.cell(OpenXLSX::XLCellReference(cell_name)).value() = val; }
-    void set_cell_value(std::string & cell_name, float val)
-    {
-        DWord temp = { .value = val };
-        if((temp.uint32 & 0x7fffff) != 0x7fffff) { sheet.cell(OpenXLSX::XLCellReference(cell_name)).value() = val; }
-        else                                     { sheet.cell(OpenXLSX::XLCellReference(cell_name)).value() = "NaN"; }
-    }
-    OpenXLSXCtrl::Type get_cell(std::string & cell_name, int & val_int, float & val_float, std::string & str) const
-    {
-        switch( (sheet.cell(OpenXLSX::XLCellReference(cell_name)).value()).type() )
-        {
-        case OpenXLSX::XLValueType::Empty:
-            return Empty;
-        case OpenXLSX::XLValueType::Boolean:
-            if( (sheet.cell(OpenXLSX::XLCellReference(cell_name)).value()).get<bool>() ) { val_int = 1; }
-            else                                                                         { val_int = 0; }
-            return Boolean;
-        case OpenXLSX::XLValueType::Integer:
-            val_int = static_cast<int>((sheet.cell(OpenXLSX::XLCellReference(cell_name)).value()).get<int64_t>());
-            return Integer;
-        case OpenXLSX::XLValueType::Float:
-            val_float = static_cast<float>((sheet.cell(OpenXLSX::XLCellReference(cell_name)).value()).get<double>());
-            return Float;
-        case OpenXLSX::XLValueType::String:
-            str = (sheet.cell(OpenXLSX::XLCellReference(cell_name)).value()).get<std::string>();
-            return String;
-        case OpenXLSX::XLValueType::Error:
-        default:
-            break;
-        }
-        return Error;
-    }
-    void save(void)  { doc.save();  }
-    void close(void) { doc.close(); }
-};
 
 class Application : public Object
 {
@@ -998,7 +668,9 @@ public:
             else if(  (MRB_TT_INTEGER == mrb_type(argv[0]))     // length
                     &&(MRB_TT_INTEGER == mrb_type(argv[1])))    // fill data
             {
-                bedit = new BinaryControl(static_cast<int>(mrb_integer(argv[0])), mrb_integer(argv[1]));
+                auto len  = static_cast<int>(mrb_integer(argv[0]));
+                auto data = mrb_integer(argv[1]);
+                bedit = new BinaryControl(len, data);
             }
             else
             {
@@ -1239,7 +911,6 @@ public:
             mrb_define_method( mrb, smon_class, "send",             mrb_smon_send,          MRB_ARGS_ANY()              );
             mrb_define_method( mrb, smon_class, "read",             mrb_smon_read,          MRB_ARGS_ANY()              );
             mrb_define_method( mrb, smon_class, "read_wait",        mrb_smon_read_wait,     MRB_ARGS_ANY()              );
-            mrb_define_method( mrb, smon_class, "wait",             mrb_smon_wait,          MRB_ARGS_ANY()              );
             mrb_define_method( mrb, smon_class, "close",            mrb_smon_close,         MRB_ARGS_NONE()             );
 
             /* Class OpenXLSX */
@@ -2473,7 +2144,7 @@ mrb_value mrb_smon_read(mrb_state * mrb, mrb_value self)
             BinaryControl * bin = get_bedit_ptr( argv[0] );
             if(nullptr != bin)
             {
-                auto state = smon->read(bin);
+                auto state = smon->read(*bin);
                 return mrb_fixnum_value(state);
             }
         }
@@ -2493,7 +2164,7 @@ mrb_value mrb_smon_read_wait(mrb_state * mrb, mrb_value self)
             BinaryControl * bin = get_bedit_ptr( argv[0] );
             if(nullptr != bin)
             {
-                auto state = smon->read_wait(bin);
+                auto state = smon->read_wait(*bin);
                 return mrb_fixnum_value(state);
             }
         }
@@ -2501,34 +2172,6 @@ mrb_value mrb_smon_read_wait(mrb_state * mrb, mrb_value self)
     return mrb_nil_value();
 }
 
-mrb_value mrb_smon_wait(mrb_state * mrb, mrb_value self)
-{
-    SerialMonitor * smon = static_cast<SerialMonitor *>(DATA_PTR(self));
-    if(nullptr != smon)
-    {
-        mrb_value proc = mrb_nil_value();
-        mrb_get_args(mrb, "&", &proc);
-        if (!mrb_nil_p(proc))
-        {
-            std::string data;
-            auto state = smon->read_wait(data);
-            mrb_value argv[2];
-            argv[0] = mrb_fixnum_value(state);
-            switch(state)
-            {
-            case SerialMonitor::CACHE_FULL:
-            case SerialMonitor::GAP:
-                argv[1] = mrb_str_new_cstr(mrb, data.c_str());
-                break;
-            default:
-                argv[1] = mrb_str_new_cstr(mrb, "");
-                 break;
-            }
-            return mrb_yield_argv(mrb, proc, 2, &(argv[0]));
-        }
-    }
-    return mrb_nil_value();
-}
 mrb_value mrb_smon_close(mrb_state * mrb, mrb_value self)
 {
     SerialMonitor * smon = static_cast<SerialMonitor *>(DATA_PTR(self));
@@ -2705,18 +2348,18 @@ mrb_value mrb_xlsx_cell(mrb_state * mrb, mrb_value self)
         if( (1 == argc) && (MRB_TT_STRING == mrb_type(argv[0])) )
         {
             std::string cell_name( RSTR_PTR(mrb_str_ptr(argv[0])) );
-            int val_int; float val_float; std::string str;
-            auto type = xlsx->get_cell(cell_name, val_int, val_float, str);
+            OpenXLSXCtrl::Data val;
+            auto type = xlsx->get_cell(cell_name, val);
             switch(type)
             {
             case OpenXLSXCtrl::Boolean:
-                return mrb_bool_value(val_int != 0);
+                return mrb_bool_value(val.vint != 0);
             case OpenXLSXCtrl::Integer:
-                return mrb_int_value( mrb, val_int );
+                return mrb_int_value( mrb, val.vint );
             case OpenXLSXCtrl::Float:
-                return mrb_float_value( mrb, val_float );
+                return mrb_float_value( mrb, val.vfloat );
             case OpenXLSXCtrl::String:
-                return mrb_str_new_cstr( mrb, str.c_str() );
+                return mrb_str_new_cstr( mrb, val.str );
             case OpenXLSXCtrl::Empty:
             case OpenXLSXCtrl::Error:
             default:
@@ -3478,6 +3121,364 @@ std::list<std::string> CppRegexp::split(std::string & org)
         result = temp;
     }
     return result;
+}
+
+/* -------- << class WorkerThread >>-------- */
+WorkerThread::~WorkerThread(void)
+{
+    std::lock_guard<std::mutex> lock(mtx);
+    if(nullptr != this->mrb)
+    {
+        mrb_close(this->mrb);
+        this->mrb = nullptr;
+    }
+}
+bool WorkerThread::run(mrb_state * mrb, mrb_value self)
+{
+    bool result = false;
+    std::unique_lock<std::mutex> lock(mtx);
+    if(nullptr == this->mrb)
+    {
+        mrb_get_args(mrb, "&", &proc);
+        if(!mrb_nil_p(proc))
+        {
+            result = true;
+            state = Wakeup;
+            std::thread temp(&WorkerThread::run_context, this, 0);
+            th_ctrl.swap(temp);
+            auto lamda = [this]
+            {
+                if(state == Wakeup) { return false; }
+                return true;
+            };
+            state = Wakeup;
+            cond.wait(lock, lamda);
+        }
+    }
+    lock.unlock();
+    return result;
+}
+void WorkerThread::run_context(size_t id)
+{
+    {
+        std::lock_guard<std::mutex> lock(mtx);
+        this->mrb = mrb_open();
+        if(nullptr != this->mrb)
+        {
+            state = Run;
+            cond.notify_all();
+        }
+    }
+    while(Run == state)
+    {
+        mrb_yield_argv(this->mrb, proc, 0, NULL);
+    }
+    std::lock_guard<std::mutex> lock(mtx);
+    if(nullptr != this->mrb)
+    {
+        mrb_close(this->mrb);
+        this->mrb = nullptr;
+    }
+    state = Stop;
+    cond.notify_all();
+    th_ctrl.detach();
+}
+void WorkerThread::join(void)
+{
+    auto lamda = [this]
+    {
+        if(state != Stop) { return false; }
+        return true;
+    };
+    std::unique_lock<std::mutex> lock(mtx);
+    cond.wait(lock, lamda);
+}
+void WorkerThread::wait(mrb_state * mrb)
+{
+    auto lamda = [this, &mrb]
+    {
+        switch(state)
+        {
+        case Run:
+            return true;
+            break;
+        case WaitStop:
+            return true;
+            break;
+        case Stop:
+            return true;
+            break;
+        default:
+            break;
+        }
+        return false;
+    };
+    std::unique_lock<std::mutex> lock(mtx);
+    state = Wait;
+    cond.wait(lock, lamda);
+    lock.unlock();
+}
+void WorkerThread::stop(mrb_state * mrb)
+{
+    std::lock_guard<std::mutex> lock(mtx);
+    switch(state)
+    {
+    case Wakeup:
+    case Run:
+    case Wait:
+        state = WaitStop;
+        break;
+    case WaitStop:
+        break;
+    case Stop:
+    default:
+        state = Stop;
+        break;
+    }
+    cond.notify_all();
+}
+
+/* -------- << class SerialMonitor >>-------- */
+SerialMonitor::SerialMonitor(mrb_value & self, const char * arg_, std::vector<size_t> & timer_default, std::string def_boud, bool rts_ctrl)
+  : arg(arg_), timer(timer_default), com(nullptr), tevter(nullptr), cache_size(1024), rcv_enable(true)
+{   /* str_split */
+    std::vector<std::string> args;
+    std::regex reg(",");
+    for( auto && item : str_split( arg, reg) )
+    {
+        args.push_back(item);
+    }
+    std::string name(args[0]);
+    std::string baud(def_boud);
+    SerialControl::Profile info;
+    SerialControl::hasBaudRate(baud, info);
+    if(1 < args.size())
+    {
+        for(auto idx = 1; idx < args.size(); idx ++)
+        {
+            auto & arg = args[idx];
+            if      ( std::regex_match(arg, std::regex("one")))        { info.stop = SerialControl::one; }
+            else if ( std::regex_match(arg, std::regex("ONE")))        { info.stop = SerialControl::one; }
+            else if ( std::regex_match(arg, std::regex("two")))        { info.stop = SerialControl::two; }
+            else if ( std::regex_match(arg, std::regex("TWO")))        { info.stop = SerialControl::two; }
+            else if ( std::regex_match(arg, std::regex("none")))       { info.parity = SerialControl::none; }
+            else if ( std::regex_match(arg, std::regex("NONE")))       { info.parity = SerialControl::none; }
+            else if ( std::regex_match(arg, std::regex("even")))       { info.parity = SerialControl::even; }
+            else if ( std::regex_match(arg, std::regex("EVEN")))       { info.parity = SerialControl::even; }
+            else if ( std::regex_match(arg, std::regex("odd")))        { info.parity = SerialControl::odd; }
+            else if ( std::regex_match(arg, std::regex("ODD")))        { info.parity = SerialControl::odd; }
+            else if ( std::regex_match(arg, std::regex("GAP=[0-9]+"))) { timer[0] = stoi(std::regex_replace(arg, std::regex("GAP=([0-9]+)"), "$1")); }
+            else if ( std::regex_match(arg, std::regex("TO1=[0-9]+"))) { timer[1] = stoi(std::regex_replace(arg, std::regex("TO1=([0-9]+)"), "$1")); }
+            else if ( std::regex_match(arg, std::regex("TO2=[0-9]+"))) { timer[2] = stoi(std::regex_replace(arg, std::regex("TO2=([0-9]+)"), "$1")); }
+            else if ( std::regex_match(arg, std::regex("TO3=[0-9]+"))) { timer[3] = stoi(std::regex_replace(arg, std::regex("TO3=([0-9]+)"), "$1")); }
+            else
+            {
+                if( !SerialControl::hasBaudRate(arg, info) )
+                {
+                    info.baud = stoi(arg);
+                }
+            }
+        }
+    }
+    com = SerialControl::createObject(name.c_str(), info.baud, info.parity, info.stop, rts_ctrl);
+    cache.buff  = static_cast<unsigned char *>(std::malloc(cache_size));
+    cache.cnt   = 0;
+    cache.state = NONE;
+    std::thread temp(&SerialMonitor::reciver, this, 0);
+    th_recive.swap(temp);
+}
+SerialMonitor::~SerialMonitor(void)
+{
+    this->close();
+}
+void SerialMonitor::close(void)
+{
+    std::unique_lock<std::mutex> lock(mtx);
+    rcv_enable = false;
+    if(nullptr != com)
+    {
+        try { com->close(); } catch(...) { }
+        auto lamda = [this]
+        {
+            if(cache.state == CLOSE)
+            {
+                return true;
+            }
+            return false;
+        };
+        cond.wait(lock, lamda);
+        delete com;
+        com = nullptr;
+    }
+    if(nullptr != cache.buff)
+    {
+        std::free(cache.buff);
+        cache.buff = nullptr;
+    }
+    cache.cnt   = 0;
+    for(auto & item : rcv_cache)
+    {
+        std::free(item.buff);
+        item.buff = nullptr;
+    }
+    rcv_cache.clear();
+}
+void SerialMonitor::send(BinaryControl & bin, unsigned int timer)
+{
+    if( nullptr != com)
+    {
+        if(0 < bin.size())
+        {
+            try { com->send(bin.ptr(), bin.size()); } catch(...) { }
+            std::this_thread::sleep_for(std::chrono::milliseconds(timer));
+            if( nullptr != tevter)
+            {
+                std::lock_guard<std::mutex> lock(mtx);
+                tevter->restart();
+            }
+        }
+    }
+}
+SerialMonitor::State SerialMonitor::read(BinaryControl & bin)
+{
+    ReciveInfo rcv_info = { NONE, 0, nullptr, nullptr };
+    std::lock_guard<std::mutex> lock(mtx);
+    if(0 < rcv_cache.size())
+    {
+        rcv_info = *(rcv_cache.begin());
+        rcv_cache.pop_front();
+        if(0 < rcv_info.cnt)
+        {
+            bin.attach(rcv_info.buff, rcv_info.cnt);
+        }
+    }
+    return rcv_info.state;
+}
+SerialMonitor::State SerialMonitor::read_wait(BinaryControl & bin)
+{
+    ReciveInfo rcv_info = { NONE, 0, nullptr, nullptr };
+    auto lamda = [this, &rcv_info]
+    {
+        if(cache.state == CLOSE)
+        {
+            this->close();
+            return true;
+        }
+        if(0 < rcv_cache.size())
+        {
+            rcv_info = *(rcv_cache.begin());
+            rcv_cache.pop_front();
+            return true;
+        }
+        return false;
+    };
+    std::unique_lock<std::mutex> lock(mtx);
+    cond.wait(lock, lamda);
+    if(0 < rcv_info.cnt)
+    {
+        bin.attach(rcv_info.buff, rcv_info.cnt);
+    }
+    return rcv_info.state;
+}
+void SerialMonitor::reciver(size_t id)
+{
+    MyEntity::OneShotTimerEventer timeout_evter(timer, *this);
+    tevter = &timeout_evter;
+    while(rcv_enable)
+    {
+        if(nullptr == com) { break; }
+        unsigned char data;
+        size_t len;
+        try { len = com->read(&(data), 1); } catch(...) { break; }
+        if(0 == len) { break; }
+        std::lock_guard<std::mutex> lock(mtx);
+        if(rcv_enable)
+        {
+             timeout_evter.restart();
+             cache.buff[cache.cnt] = data;
+             cache.cnt += len;
+             if(cache_size <= cache.cnt)
+             {
+                 cache.state = CACHE_FULL;
+                 rcv_cache.push_back(cache);
+                 cache.buff  = static_cast<unsigned char *>(std::malloc(cache_size));
+                 cache.cnt   = 0;
+                 cond.notify_all();
+             }
+        }
+    }
+    std::lock_guard<std::mutex> lock(mtx);
+    rcv_enable = false;
+    cache.state = CLOSE;
+    cache.cnt   = 0;
+    rcv_cache.push_back(cache);
+    cache.buff  = static_cast<unsigned char *>(std::malloc(cache_size));
+    cache.cnt   = 0;
+    cond.notify_all();
+    th_recive.detach();
+}
+void SerialMonitor::handler(unsigned int idx)
+{
+    static const enum State evt_state[] = { GAP, TIME_OUT_1, TIME_OUT_2, TIME_OUT_3 };
+    std::lock_guard<std::mutex> lock(mtx);
+    if(CLOSE != cache.state)
+    {
+        if(idx < __ArrayCount(evt_state))
+        {
+            if( !com->rts_status() )
+            {
+                cache.state = evt_state[idx];
+                rcv_cache.push_back(cache);
+                cache.buff = static_cast<unsigned char *>(std::malloc(cache_size));
+                cache.cnt  = 0;
+                cond.notify_all();
+            }
+        }
+    }
+}
+
+/* -------- << class OpenXLSXCtrl >>-------- */
+OpenXLSXCtrl::~OpenXLSXCtrl(void)
+{
+}
+void OpenXLSXCtrl::worksheet(std::string & sheet_name)
+{
+    auto list = book.worksheetNames();
+    for(auto & name: list)
+    {
+        if( name == sheet_name )
+        {
+            sheet = book.worksheet(sheet_name);
+            return;
+        }
+    }
+    book.addWorksheet(sheet_name);
+    sheet = book.worksheet(sheet_name);
+}
+OpenXLSXCtrl::Type OpenXLSXCtrl::get_cell(std::string & cell, OpenXLSXCtrl::Data & val) const
+{
+    switch( (sheet.cell(OpenXLSX::XLCellReference(cell)).value()).type() )
+    {
+    case OpenXLSX::XLValueType::Empty:
+        return Empty;
+    case OpenXLSX::XLValueType::Boolean:
+        if( (sheet.cell(OpenXLSX::XLCellReference(cell)).value()).get<bool>() ) { val.vint = 1; }
+        else                                                                    { val.vint = 0; }
+        return Boolean;
+    case OpenXLSX::XLValueType::Integer:
+        val.vint = static_cast<int>((sheet.cell(OpenXLSX::XLCellReference(cell)).value()).get<int64_t>());
+        return Integer;
+    case OpenXLSX::XLValueType::Float:
+        val.vfloat = static_cast<float>((sheet.cell(OpenXLSX::XLCellReference(cell)).value()).get<double>());
+        return Float;
+    case OpenXLSX::XLValueType::String:
+        val.str = ((sheet.cell(OpenXLSX::XLCellReference(cell)).value()).get<std::string>()).c_str();
+        return String;
+    case OpenXLSX::XLValueType::Error:
+    default:
+        break;
+    }
+    return Error;
 }
 
 

@@ -239,10 +239,10 @@ def test_thead
 end
 
 print "mruby test script 1\n"
-test_options()
-test_core()
-test_bin_edit()
-test_cpp_regexp()
-test_thead()
+test_options(); print "\n"
+test_core(); print "\n"
+test_bin_edit(); print "\n"
+test_cpp_regexp(); print "\n"
+test_thead(); print "\n"
 print "mruby test script 1 end\n"
 print "\n"

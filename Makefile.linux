@@ -8,7 +8,7 @@ CFLAGS=-g $(CFLAGS_COMMON) -I ./mruby/build/host/include -pipe -O3 -march=native
 LIBS=-L ./mruby/build/host/lib $(LIBS_COMMON) -lboost_program_options -lboost_filesystem -lpthread
 AR_OBJS=Objects/linux-api.o Objects/qrcodegen.o Objects/default_options.o Objects/default_script.o Objects/help.o
 MAIN_DEPS=MyUtilities/libUtilities.a mruby/build/host/lib/libmruby.a OpenXLSX/build/output/libOpenXLSX.a Objects/libSerialMonitor.a Objects
-CPPFLAGS=-std=c++20 $(CFLAGS) -I QR-Code-generator/cpp/
+CPPFLAGS=-std=c++17 $(CFLAGS) -I QR-Code-generator/cpp/
 
 all: $(Objects) $(TARGET)
 

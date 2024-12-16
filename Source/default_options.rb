@@ -163,38 +163,38 @@ class Core
           rdata = ''
           interval = 0
           loop = true
+          bin = BinEdit.new
           while loop do
-            smon.wait do |state, rcv|
-              now = Core.tick()
-              tick += now % 100000000000
-              case state
-              when Smon::CACHE_FULL then
-              when Smon::GAP then
-                prn.synchronize do
-                  if 0 < rcv.length then
-                    rdata += rcv
-                    interval += now
-                    printf(" -- RCV", tick)
-                  else
-                    printf("GAP", tick)
-                  end
+            state = smon.read_wait(bin)
+            now = Core.tick()
+            tick += now % 100000000000
+            case state
+            when Smon::CACHE_FULL then
+            when Smon::GAP then
+              prn.synchronize do
+                if 0 < bin.length then
+                  rdata += bin.dump()
+                  interval += now
+                  printf(" -- RCV", tick)
+                else
+                  printf("GAP", tick)
                 end
-              when Smon::TO1 then
-                prn.synchronize do
-                  printf(", TO%d", state)
-                end
-              when Smon::TO2 then
-                prn.synchronize do
-                  printf(", TO%d", state)
-                end
-              when Smon::TO3 then
-                prn.synchronize do
-                  printf(", TO%d", state)
-                end
-                loop = false
-              else
-                loop = false
               end
+            when Smon::TO1 then
+              prn.synchronize do
+                printf(", TO%d", state)
+              end
+            when Smon::TO2 then
+              prn.synchronize do
+                printf(", TO%d", state)
+              end
+            when Smon::TO3 then
+              prn.synchronize do
+                printf(", TO%d", state)
+              end
+              loop = false
+            else
+              loop = false
             end
           end
           prn.synchronize do
@@ -210,35 +210,36 @@ class Core
         th_rcv = WorkerThread.new
         th_rcv.run() do
           loop = true
+          bin = BinEdit.new
           while loop do
-            smon.wait do |state, rcv|
-              tick += Core.tick() % 100000000000
-              case state
-              when Smon::CACHE_FULL then
-              when Smon::GAP then
-                prn.synchronize do
-                  if 0 < rcv.length then
-                    printf("%s: %10d[ms]: %s\n", port, tick, rcv)
-                  else
-                    printf("%s: %10d[ms]: GAP\n", port, tick)
-                  end
+            state = smon.read_wait(bin)
+            tick += Core.tick() % 100000000000
+            case state
+            when Smon::CACHE_FULL then
+            when Smon::GAP then
+              prn.synchronize do
+                if 0 < bin.length then
+                  printf("%s: %10d[ms]: %s\n", port, tick, bin.dump())
+                  bin.resize(0)
+                else
+                  printf("%s: %10d[ms]: GAP\n", port, tick)
                 end
-              when Smon::TO1 then
-                prn.synchronize do
-                  printf("%s: %10d[ms]: TO%d\n", port, tick, state)
-                end
-              when Smon::TO2 then
-                prn.synchronize do
-                  printf("%s: %10d[ms]: TO%d\n", port, tick, state)
-                end
-              when Smon::TO3 then
-                prn.synchronize do
-                  printf("%s: %10d[ms]: TO%d\n", port, tick, state)
-                end
-              else
-                loop = false
-                th_rcv.stop()
               end
+            when Smon::TO1 then
+              prn.synchronize do
+                printf("%s: %10d[ms]: TO%d\n", port, tick, state)
+              end
+            when Smon::TO2 then
+              prn.synchronize do
+                printf("%s: %10d[ms]: TO%d\n", port, tick, state)
+              end
+            when Smon::TO3 then
+              prn.synchronize do
+                printf("%s: %10d[ms]: TO%d\n", port, tick, state)
+              end
+            else
+              loop = false
+              th_rcv.stop()
             end
           end
         end
@@ -414,43 +415,43 @@ class Smon
     if nil == cmd then
       cmd = SendWaitEventer.new
     end
-    #smon.send(send_msg, 0)
     smon.send(send_msg)
     msg = ''
     loop_enable = true
+    bin = BinEdit.new()
     while loop_enable
-      smon.wait do |state, rcv_msg|
-        if(0 < rcv_msg.length) then
-          msg += rcv_msg
-        end
-        case state
-        when Smon::CACHE_FULL then
-        when Smon::GAP then
-          regs.each do |reg|
-            if CppRegexp.reg_match(msg, reg) then
-              reply=msg
-              loop_enable = false
-              cmd.exec(send_msg, msg)
-              break
-            end
+      state = smon.read_wait(bin)
+      if(0 < bin.length) then
+        msg += bin.dump()
+        bin.resize(0)
+      end
+      case state
+      when Smon::CACHE_FULL then
+      when Smon::GAP then
+        regs.each do |reg|
+          if CppRegexp.reg_match(msg, reg) then
+            reply=msg
+            loop_enable = false
+            cmd.exec(send_msg, msg)
+            break
           end
-          if loop_enable then
-            cmd.gaptimer(send_msg)
-          end
-          msg = ''
-        when Smon::TO1 then
-          reply='TO1'
-          loop_enable = cmd.timeout1(send_msg)
-        when Smon::TO2 then
-          reply='TO2'
-          loop_enable = cmd.timeout2(send_msg)
-        when Smon::TO3 then
-          reply='TO3'
-          cmd.timeout3(send_msg)
-          loop_enable = false
-        else
-          loop_enable = false
         end
+        if loop_enable then
+          cmd.gaptimer(send_msg)
+        end
+        msg = ''
+      when Smon::TO1 then
+        reply='TO1'
+        loop_enable = cmd.timeout1(send_msg)
+      when Smon::TO2 then
+        reply='TO2'
+        loop_enable = cmd.timeout2(send_msg)
+      when Smon::TO3 then
+        reply='TO3'
+        cmd.timeout3(send_msg)
+        loop_enable = false
+      else
+        loop_enable = false
       end
     end
     return reply
@@ -461,42 +462,43 @@ class Smon
     end
     rcv_enable = true
     msg = ''
+    bin = BinEdit.new()
     while rcv_enable
-      smon.wait do |state, rcv_msg|
-        if(0 < rcv_msg.length) then
-          msg += rcv_msg
-        end
-        case state
-        when Smon::CACHE_FULL then
-        when Smon::GAP then
-          list.each do |arg|
-            ( reply, regs, cmd ) = arg
-            if nil == cmd then
-              cmd = def_cmd
-            end
-            regs.each do |reg|
-              if CppRegexp.reg_match(msg, reg) then
-                cmd.exec(smon, msg, reply)
-                rcv_enable = false
-                break
-              end
-            end
-            if !rcv_enable then
-              break;
+      state = smon.read_wait(bin)
+      if(0 < bin.length) then
+        msg += bin.dump()
+        bin.resize(0)
+      end
+      case state
+      when Smon::CACHE_FULL then
+      when Smon::GAP then
+        list.each do |arg|
+          ( reply, regs, cmd ) = arg
+          if nil == cmd then
+            cmd = def_cmd
+          end
+          regs.each do |reg|
+            if CppRegexp.reg_match(msg, reg) then
+              cmd.exec(smon, msg, reply)
+              rcv_enable = false
+              break
             end
           end
-          def_cmd.gaptimer(msg)
-          msg = ''
-        when Smon::TO1 then
-          def_cmd.timeout1(msg)
-        when Smon::TO2 then
-          def_cmd.timeout2(msg)
-        when Smon::TO3 then
-          def_cmd.timeout3(msg)
-          rcv_enable = false
-        else
-          rcv_enable = false
+          if !rcv_enable then
+            break;
+          end
         end
+        def_cmd.gaptimer(msg)
+        msg = ''
+      when Smon::TO1 then
+        def_cmd.timeout1(msg)
+      when Smon::TO2 then
+        def_cmd.timeout2(msg)
+      when Smon::TO3 then
+        def_cmd.timeout3(msg)
+        rcv_enable = false
+      else
+        rcv_enable = false
       end
     end
   end
