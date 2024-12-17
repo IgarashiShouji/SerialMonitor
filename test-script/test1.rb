@@ -1,9 +1,21 @@
 # test script for smon on mruby
 
+def test(proc)
+  proc.call("hello")
+end
+def mkProc()
+  msg="Message"
+  p = Proc.new do |str|
+    printf( "  %-10s check %s: %s, %s\n", 'Proc:', ('hello'==str ? 'ok' : 'ng'), msg, str);
+  end
+  return p
+end
 def test_base()
   print "test mruby\n"
   str = ""; IO.popen("ls test1.rb") { |pipe| pipe.each { |s| str=s.chop() } }
-  printf("  IO.popen check %s: %s\n", ('test1.rb'==str ? 'ok' : 'ng'), str)
+  printf("  %-10s check %s: %s\n", 'IO.popen', ('test1.rb'==str ? 'ok' : 'ng'), str)
+  test(mkProc())
+  printf("  %-10s check %s: %s\n", 'String =~', (str=~/test/ ? 'ok' : 'ng'), str)
   print "test mruby end\n"
 end
 
@@ -13,18 +25,20 @@ def test_options()
   printf("  program: %s\n", opt.prog)
   printf("  --mruby-script: %s\n", opt['mruby-script'])
   printf("  opt.size: %d\n", opt.size())
-  IO.popen(sprintf("%s -v", opt.prog)) do |pipe|
-    pipe.each { |s| print "  > ", s }
-  end
+  IO.popen(sprintf("%s -v", opt.prog)) { |pipe| pipe.each { |s| print "  > ", s } }
   cmd = sprintf("%s -m %s arg1 arg2", opt.prog, opt['mruby-script'])
   print "  ", cmd, "\n"
-  IO.popen(cmd) do |pipe|
-    pipe.each { |s| print "  > ", s }
-  end
+  IO.popen(cmd) { |pipe| pipe.each { |s| print "  > ", s } }
   cmd=sprintf("%s -f 0000E040", opt.prog); result=''; IO.popen(cmd) { |pipe| pipe.each { |s| result=s.chop() } }
   printf("  %s -> check %s: %s\n", cmd, ('7.000000: 0000E040'==result ? 'ok' : 'ng'), result)
   cmd=sprintf("%s -F 40E00000", opt.prog); result=''; IO.popen(cmd) { |pipe| pipe.each { |s| result=s.chop() } }
   printf("  %s -> check %s: %s\n", cmd, ('7.000000: 40E00000'==result ? 'ok' : 'ng'), result)
+  cmd=sprintf("%s --crc  010203040506070809", opt.prog); result=''; IO.popen(cmd) { |pipe| pipe.each { |s| result=s.chop() } }
+  printf("  %s -> check %s: %s\n", cmd, ('0EB2: 010203040506070809'==result ? 'ok' : 'ng'), result)
+  cmd=sprintf("%s --crc8 010203040506070809", opt.prog); result=''; IO.popen(cmd) { |pipe| pipe.each { |s| result=s.chop() } }
+  printf("  %s -> check %s: %s\n", cmd, ('98: 010203040506070809'==result ? 'ok' : 'ng'), result)
+  cmd=sprintf("%s --sum  010203040506070809", opt.prog); result=''; IO.popen(cmd) { |pipe| pipe.each { |s| result=s.chop() } }
+  printf("  %s -> check %s: %s\n", cmd, ('01: 010203040506070809'==result ? 'ok' : 'ng'), result)
   print "test Args end\n"
 end
 
@@ -263,11 +277,12 @@ if 0 < opt.size() then
 else
   print "mruby test script 1\n"
   test_base(); print "\n"
-  test_options(); print "\n"
-#test_core(); print "\n"
-#test_bin_edit(); print "\n"
-#test_cpp_regexp(); print "\n"
-#test_thead(); print "\n"
+#  test_options(); print "\n"
+
+#  test_core(); print "\n"
+#  test_bin_edit(); print "\n"
+#  test_cpp_regexp(); print "\n"
+#  test_thead(); print "\n"
   print "mruby test script 1 end\n"
   print "\n"
 end
