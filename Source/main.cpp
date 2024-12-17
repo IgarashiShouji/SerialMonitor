@@ -54,7 +54,7 @@
 #include <OpenXLSX.hpp>
 
 /* -- static const & functions -- */
-static const char *  SoftwareRevision = "0.13.14";
+static const char *  SoftwareRevision = "0.13.15";
 
 class Object
 {
@@ -191,7 +191,7 @@ class OpenXLSXCtrl : public Object
 {
 public:
     enum Type { Empty, Boolean, Integer, Float, Error, String };
-    union Data { int vint; float vfloat; const char * str; };
+    union Data { int vint; float vfloat; std::string * str; };
 protected:
     OpenXLSX::XLDocument  doc;
     OpenXLSX::XLWorkbook  book;
@@ -446,8 +446,9 @@ static mrb_value mrb_core_date(mrb_state* mrb, mrb_value self);
 
 /* class Options */
 static mrb_value mrb_opt_initialize(mrb_state * mrb, mrb_value self);
-static mrb_value mrb_opt_get(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_opt_size(mrb_state * mrb, mrb_value self);
+static mrb_value mrb_opt_get(mrb_state * mrb, mrb_value self);
+static mrb_value mrb_opt_prog(mrb_state * mrb, mrb_value self);
 
 /* class BinEdit */
 static mrb_value mrb_bedit_initialize(mrb_state * mrb, mrb_value self);
@@ -538,6 +539,7 @@ static void mrb_xlsx_context_free(mrb_state * mrb, void * ptr);
 class Application : public Object
 {
 protected:
+    std::string                             prog;
     static Application *                    obj;
     boost::program_options::variables_map & opts;
     std::vector<std::string> &              args;
@@ -548,8 +550,8 @@ protected:
     std::condition_variable                 cond;
 public:
     static Application * getObject(void);
-    Application( boost::program_options::variables_map & optmap, std::vector<std::string> & arg)
-      : opts(optmap), args(arg), timer(4), id(1)
+    Application(std::string & program, boost::program_options::variables_map & optmap, std::vector<std::string> & arg)
+      : prog(program), opts(optmap), args(arg), timer(4), id(1)
     {
         obj = this;
         timer[0] =   30;
@@ -621,6 +623,11 @@ public:
             break;
         }
         return mrb_nil_value();
+    }
+
+    mrb_value opt_prog(mrb_state * mrb, mrb_value self)
+    {
+        return mrb_str_new_cstr( mrb, prog.c_str() );
     }
 
     mrb_value bedit_init(mrb_state * mrb, mrb_value self)
@@ -847,6 +854,7 @@ public:
             mrb_define_method( mrb, opt_class, "initialize",            mrb_opt_initialize,     MRB_ARGS_ANY()          );
             mrb_define_method( mrb, opt_class, "size",                  mrb_opt_size,           MRB_ARGS_NONE()         );
             mrb_define_method( mrb, opt_class, "[]",                    mrb_opt_get,            MRB_ARGS_ARG( 1, 1 )    );
+            mrb_define_method( mrb, opt_class, "prog",                  mrb_opt_prog,           MRB_ARGS_NONE()         );
 
             /* Class BinEdit */
             struct RClass * bedit_class = mrb_define_class(mrb, "BinEdit", mrb->object_class);
@@ -1169,6 +1177,19 @@ mrb_value mrb_opt_get(mrb_state * mrb, mrb_value self)
     }
     return mrb_nil_value();
 }
+
+mrb_value mrb_opt_prog(mrb_state * mrb, mrb_value self)
+{
+    Application * obj = Application::getObject();
+    if(nullptr != obj)
+    {
+        auto result = obj->opt_prog(mrb, self);
+        //mrb_garbage_collect(mrb);
+        return result;
+    }
+    return mrb_nil_value();
+}
+
 
 mrb_value mrb_bedit_initialize(mrb_state * mrb, mrb_value self)
 {
@@ -2349,6 +2370,7 @@ mrb_value mrb_xlsx_cell(mrb_state * mrb, mrb_value self)
         {
             std::string cell_name( RSTR_PTR(mrb_str_ptr(argv[0])) );
             OpenXLSXCtrl::Data val;
+            std::string str; val.str = &str;
             auto type = xlsx->get_cell(cell_name, val);
             switch(type)
             {
@@ -2359,7 +2381,7 @@ mrb_value mrb_xlsx_cell(mrb_state * mrb, mrb_value self)
             case OpenXLSXCtrl::Float:
                 return mrb_float_value( mrb, val.vfloat );
             case OpenXLSXCtrl::String:
-                return mrb_str_new_cstr( mrb, val.str );
+                return mrb_str_new_cstr( mrb, str.c_str() );
             case OpenXLSXCtrl::Empty:
             case OpenXLSXCtrl::Error:
             default:
@@ -3472,7 +3494,7 @@ OpenXLSXCtrl::Type OpenXLSXCtrl::get_cell(std::string & cell, OpenXLSXCtrl::Data
         val.vfloat = static_cast<float>((sheet.cell(OpenXLSX::XLCellReference(cell)).value()).get<double>());
         return Float;
     case OpenXLSX::XLValueType::String:
-        val.str = ((sheet.cell(OpenXLSX::XLCellReference(cell)).value()).get<std::string>()).c_str();
+        *(val.str) = ((sheet.cell(OpenXLSX::XLCellReference(cell)).value()).get<std::string>());
         return String;
     case OpenXLSX::XLValueType::Error:
     default:
@@ -3550,7 +3572,8 @@ int main(int argc, char * argv[])
         {
             arg.push_back(str);
         }
-        Application app( argmap, arg );
+        std::string prog(argv[0]);
+        Application app(prog, argmap, arg);
         app.main();
     }
     catch(std::exception & exp) { std::cerr << "exeption: " << exp.what() << std::endl; }

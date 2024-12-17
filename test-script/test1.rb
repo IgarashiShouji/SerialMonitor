@@ -1,12 +1,31 @@
 # test script for smon on mruby
 
+def test_base()
+  print "test mruby\n"
+  str = ""; IO.popen("ls test1.rb") { |pipe| pipe.each { |s| str=s.chop() } }
+  printf("  IO.popen check %s: %s\n", ('test1.rb'==str ? 'ok' : 'ng'), str)
+  print "test mruby end\n"
+end
+
 def test_options()
+  print "test Args\n"
   opt = Args.new()
-  printf("--mruby-script: %s\n", opt['mruby-script'])
-  printf("opt.size: %d\n", opt.size())
-  (opt.size()).times do |idx|
-    printf("arg: %s\n", opt[idx]);
+  printf("  program: %s\n", opt.prog)
+  printf("  --mruby-script: %s\n", opt['mruby-script'])
+  printf("  opt.size: %d\n", opt.size())
+  IO.popen(sprintf("%s -v", opt.prog)) do |pipe|
+    pipe.each { |s| print "  > ", s }
   end
+  cmd = sprintf("%s -m %s arg1 arg2", opt.prog, opt['mruby-script'])
+  print "  ", cmd, "\n"
+  IO.popen(cmd) do |pipe|
+    pipe.each { |s| print "  > ", s }
+  end
+  cmd=sprintf("%s -f 0000E040", opt.prog); result=''; IO.popen(cmd) { |pipe| pipe.each { |s| result=s.chop() } }
+  printf("  %s -> check %s: %s\n", cmd, ('7.000000: 0000E040'==result ? 'ok' : 'ng'), result)
+  cmd=sprintf("%s -F 40E00000", opt.prog); result=''; IO.popen(cmd) { |pipe| pipe.each { |s| result=s.chop() } }
+  printf("  %s -> check %s: %s\n", cmd, ('7.000000: 40E00000'==result ? 'ok' : 'ng'), result)
+  print "test Args end\n"
 end
 
 def test_core()
@@ -238,11 +257,17 @@ def test_thead
   print "thead test end\n"
 end
 
-print "mruby test script 1\n"
-test_options(); print "\n"
-test_core(); print "\n"
-test_bin_edit(); print "\n"
-test_cpp_regexp(); print "\n"
-test_thead(); print "\n"
-print "mruby test script 1 end\n"
-print "\n"
+opt = Args.new()
+if 0 < opt.size() then
+  (opt.size()).times { |idx| printf("  arg: %s\n", opt[idx]); }
+else
+  print "mruby test script 1\n"
+  test_base(); print "\n"
+  test_options(); print "\n"
+#test_core(); print "\n"
+#test_bin_edit(); print "\n"
+#test_cpp_regexp(); print "\n"
+#test_thead(); print "\n"
+  print "mruby test script 1 end\n"
+  print "\n"
+end
