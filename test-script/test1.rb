@@ -46,12 +46,19 @@ def test_core()
   print "Core test\n"
   printf("  tick: %d\n", Core.tick(1))
   data = '010203040506070809'
+  printf("  file exists: %s\n", (Core.exists('test1.rb') ? 'ok' : 'ng'))
+  printf("  file exists: %s\n", (Core.exists('test1.rb', 'test2.rb', 'test3.rb') ? 'ok' : 'ng'))
+  printf("  file exists: %s\n", (Core.exists([ 'test1.rb', 'test2.rb', 'test3.rb' ]) ? 'ok' : 'ng'))
+  printf("  file exists: %s\n", (!Core.exists('test1.rb', 'test2', 'test3.rb') ? 'ok' : 'ng'))
   printf("  file timestamp: %s", Core.timestamp('test1.rb'))
-  printf("  tick: %d\n", Core.tick(1))
+  print  "  file timestamp: ", Core.timestamp('test1.rb', 'test2.rb', 'test3.rb'), "\n"
+  print  "  file timestamp: ", Core.timestamp( [ 'test1.rb', 'test2.rb', 'test3.rb' ] ), "\n"
+  printf("  tick: %d\n", Core.tick(0))
   #printf("  date UTC           : %s\n", Core.date('UTC'))
   #printf("  date Asia/Singapore: %s\n", Core.date('Asia/Singapore'))
   printf("  date Asia/Tokyo    : %s\n", Core.date('Asia/Tokyo'))
   printf("  date: %s\n", Core.date())
+  print Core.makeQR('Core.test')
   print "Core test end\n"
 end
 

@@ -1096,41 +1096,45 @@ mrb_value mrb_core_exists(mrb_state* mrb, mrb_value self)
             break;
         case MRB_TT_ARRAY:
             {
-                mrb_value arry = mrb_ary_new(mrb);
                 mrb_value item;
                 while( !mrb_nil_p( item = mrb_ary_shift(mrb, argv[0])) )
                 {
                     if(MRB_TT_STRING == mrb_type(item))
                     {
                         std::string fname( RSTR_PTR(mrb_str_ptr(item)) );
-                        mrb_ary_push(mrb, arry , mrb_bool_value(std::filesystem::exists(fname)));
+                        if( !std::filesystem::exists(fname))
+                        {
+                            return mrb_bool_value(false);
+                        }
                     }
                     else
                     {
-                        mrb_ary_push(mrb, arry, mrb_nil_value());
+                        return mrb_bool_value(false);
                     }
                 }
-                return arry;
+                return mrb_bool_value(true);
             }
             break;
         default:
             break;
         }
     }
-    mrb_value arry = mrb_ary_new(mrb);
     for(auto idx=0; idx < argc; idx++)
     {
         if(MRB_TT_STRING == mrb_type(argv[idx]))
         {
             std::string fname( RSTR_PTR(mrb_str_ptr(argv[idx])) );
-            mrb_ary_push(mrb, arry, mrb_bool_value(std::filesystem::exists(fname)));
+            if( !std::filesystem::exists(fname))
+            {
+                return mrb_bool_value(false);
+            }
         }
         else
         {
-            mrb_ary_push(mrb, arry, mrb_nil_value());
+            return mrb_bool_value(false);
         }
     }
-    return arry;
+    return mrb_bool_value(true);
 }
 
 mrb_value mrb_core_file_timestamp(mrb_state* mrb, mrb_value self)
@@ -1170,6 +1174,7 @@ mrb_value mrb_core_file_timestamp(mrb_state* mrb, mrb_value self)
                     }
 
                 }
+                return arry;
             }
             break;
         default:
