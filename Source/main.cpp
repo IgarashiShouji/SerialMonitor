@@ -435,22 +435,18 @@ inline void OpenXLSXCtrl::close(void)
 }
 
 /* mruby interfaces */
-/* class Core */
-static mrb_value mrb_core_to_hex(mrb_state* mrb, mrb_value self);
+static mrb_value mrb_core_tick(mrb_state* mrb, mrb_value self);
+static mrb_value mrb_core_date(mrb_state* mrb, mrb_value self);
 static mrb_value mrb_core_gets(mrb_state* mrb, mrb_value self);
 static mrb_value mrb_core_exists(mrb_state* mrb, mrb_value self);
 static mrb_value mrb_core_file_timestamp(mrb_state* mrb, mrb_value self);
 static mrb_value mrb_core_make_qr(mrb_state* mrb, mrb_value self);
-static mrb_value mrb_core_tick(mrb_state* mrb, mrb_value self);
-static mrb_value mrb_core_date(mrb_state* mrb, mrb_value self);
 
-/* class Options */
 static mrb_value mrb_opt_initialize(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_opt_size(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_opt_get(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_opt_prog(mrb_state * mrb, mrb_value self);
 
-/* class BinEdit */
 static mrb_value mrb_bedit_initialize(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_bedit_length(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_bedit_save(mrb_state * mrb, mrb_value self);
@@ -480,7 +476,6 @@ static BinaryControl * get_bedit_ptr(mrb_value & argv)
     return nullptr;
 }
 
-/* class CppRegexp */
 static mrb_value mrb_cppregexp_reg_match(mrb_state* mrb, mrb_value self);
 static mrb_value mrb_cppregexp_reg_replace(mrb_state* mrb, mrb_value self);
 static mrb_value mrb_cppregexp_reg_split(mrb_state* mrb, mrb_value self);
@@ -493,7 +488,6 @@ static mrb_value mrb_cppregexp_select(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_cppregexp_split(mrb_state * mrb, mrb_value self);
 static void mrb_regexp_context_free(mrb_state * mrb, void * ptr);
 
-/* class thread */
 static mrb_value mrb_thread_initialize(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_thread_state(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_thread_run(mrb_state * mrb, mrb_value self);
@@ -511,7 +505,6 @@ static mrb_value mrb_thread_ms_sleep(mrb_state * mrb, mrb_value self)
 }
 static void mrb_thread_context_free(mrb_state * mrb, void * ptr);
 
-/* class serialmonitor */
 static mrb_value mrb_smon_comlist(mrb_state* mrb, mrb_value self);
 static mrb_value mrb_smon_pipelist(mrb_state* mrb, mrb_value self);
 static mrb_value mrb_smon_initialize(mrb_state * mrb, mrb_value self);
@@ -521,7 +514,6 @@ static mrb_value mrb_smon_read_wait(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_smon_close(mrb_state * mrb, mrb_value self);
 static void mrb_smon_context_free(mrb_state * mrb, void * ptr);
 
-/* class OpenXLSX */
 static mrb_value mrb_xlsx_initialize(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_xlsx_create(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_xlsx_open(mrb_state * mrb, mrb_value self);
@@ -841,13 +833,12 @@ public:
         {
             /* Class Core */
             struct RClass * core_class = mrb_define_class(mrb, "Core", mrb->object_class);
-            mrb_define_module_function(mrb, core_class, "to_hex",       mrb_core_to_hex,        MRB_ARGS_ARG( 2, 1 )    );
-            mrb_define_module_function(mrb, core_class, "gets",         mrb_core_gets,          MRB_ARGS_ANY()          );
-            mrb_define_module_function(mrb, core_class, "exists",       mrb_core_exists,        MRB_ARGS_ARG( 1, 1 )    );
-            mrb_define_module_function(mrb, core_class, "timestamp",    mrb_core_file_timestamp,MRB_ARGS_ARG( 1, 1 )    );
-            mrb_define_module_function(mrb, core_class, "makeQR",       mrb_core_make_qr,       MRB_ARGS_ARG( 1, 1 )    );
-            mrb_define_module_function(mrb, core_class, "tick",         mrb_core_tick,          MRB_ARGS_ARG( 1, 1 )    );
-            mrb_define_module_function(mrb, core_class, "date",         mrb_core_date,          MRB_ARGS_ARG( 1, 1 )    );
+            mrb_define_module_function(mrb, core_class, "tick",         mrb_core_tick,          MRB_ARGS_ANY()     );
+            mrb_define_module_function(mrb, core_class, "date",         mrb_core_date,          MRB_ARGS_ANY()     );
+            mrb_define_module_function(mrb, core_class, "gets",         mrb_core_gets,          MRB_ARGS_NONE()    );
+            mrb_define_module_function(mrb, core_class, "exists",       mrb_core_exists,        MRB_ARGS_ARG(1, 1) );
+            mrb_define_module_function(mrb, core_class, "timestamp",    mrb_core_file_timestamp,MRB_ARGS_ARG(1, 1) );
+            mrb_define_module_function(mrb, core_class, "makeQR",       mrb_core_make_qr,       MRB_ARGS_ARG(1, 1) );
 
             /* Class options */
             struct RClass * opt_class = mrb_define_class(mrb, "Args", mrb->object_class);
@@ -967,60 +958,6 @@ public:
 Application * Application::obj = nullptr;
 Application * Application::getObject(void) { return Application::obj; }
 
-mrb_value mrb_core_to_hex(mrb_state* mrb, mrb_value self)
-{
-    union
-    {
-        float       f;
-        mrb_int     val;
-        uint8_t     data[4];
-        uint16_t    data16[2];
-        uint32_t    data32;
-    } num;
-    char str_data[8+1];
-    char * type_ptr;
-    mrb_get_args(mrb, "zi", &type_ptr, &num);
-    std::string type(type_ptr);
-    if(("int16" == type) || ("uint16" == type))
-    {
-        sprintf(str_data, "%04X", num.data16[0]);
-        return mrb_str_new_cstr( mrb, str_data );
-    }
-    if("float" == type)
-    {
-        mrb_float mrb_f;
-        mrb_get_args(mrb, "zf", &type_ptr, &mrb_f);
-        num.f = mrb_f;
-    }
-    sprintf(str_data, "%08X", num.data32);
-    return mrb_str_new_cstr( mrb, str_data );
-}
-mrb_value mrb_core_gets(mrb_state* mrb, mrb_value self)
-{
-    try
-    {
-        std::string str("");
-        std::getline(std::cin, str);
-        return mrb_str_new_cstr( mrb, str.c_str() );
-    } catch(std::exception & exp) { }
-    return mrb_nil_value();
-}
-mrb_value mrb_core_exists(mrb_state* mrb, mrb_value self)
-{
-    char * arg;
-    mrb_get_args(mrb, "z", &arg);
-    return mrb_bool_value(std::filesystem::exists(arg));
-}
-mrb_value mrb_core_file_timestamp(mrb_state* mrb, mrb_value self)
-{
-    char * arg;
-    mrb_get_args(mrb, "z", &arg);
-    boost::filesystem::path path(arg);
-    auto ftime = boost::filesystem::last_write_time(path);
-    std::ostringstream timestamp;
-    timestamp << ctime(&ftime);
-    return mrb_str_new_cstr( mrb, (timestamp.str()).c_str() );
-}
 static std::string makeQRsvg(const std::string & arg)
 {
     const char *text = arg.c_str();
@@ -1054,18 +991,7 @@ static std::string makeQRsvg(const std::string & arg)
     sb << "</svg>\n";
     return sb.str();
 }
-mrb_value mrb_core_make_qr(mrb_state* mrb, mrb_value self)
-{
-    char * mruby_arg;
-    mrb_get_args(mrb, "z", &mruby_arg);
-    std::string arg(mruby_arg);
-    if(0 < arg.size())
-    {
-        auto qr_code = makeQRsvg(arg);
-        return mrb_str_new_cstr(mrb, qr_code.c_str());
-    }
-    return mrb_nil_value();
-}
+
 mrb_value mrb_core_tick(mrb_state* mrb, mrb_value self)
 {
     static std::chrono::system_clock::time_point start = std::chrono::system_clock::now();
@@ -1102,6 +1028,7 @@ mrb_value mrb_core_tick(mrb_state* mrb, mrb_value self)
     auto tick = std::chrono::duration_cast<std::chrono::milliseconds>(now - temp).count();
     return mrb_int_value( mrb, tick);
 }
+
 mrb_value mrb_core_date(mrb_state* mrb, mrb_value self)
 {
     std::stringstream date;
@@ -1140,6 +1067,148 @@ mrb_value mrb_core_date(mrb_state* mrb, mrb_value self)
     date << ":" << std::setfill('0') << std::right << std::setw(2) << lt->tm_sec;
     date << "." << std::setfill('0') << std::right << std::setw(3) << (ms % 1000);
     return mrb_str_new_cstr(mrb, (date.str()).c_str());
+}
+
+mrb_value mrb_core_gets(mrb_state* mrb, mrb_value self)
+{
+    try
+    {
+        std::string str("");
+        std::getline(std::cin, str);
+        return mrb_str_new_cstr( mrb, str.c_str() );
+    } catch(std::exception & exp) { }
+    return mrb_nil_value();
+}
+
+mrb_value mrb_core_exists(mrb_state* mrb, mrb_value self)
+{
+    mrb_int argc; mrb_value * argv;
+    mrb_get_args(mrb, "*", &argv, &argc);
+    if(1==argc)
+    {
+        switch(mrb_type(argv[0]))
+        {
+        case MRB_TT_STRING:
+            {
+                std::string fname( RSTR_PTR(mrb_str_ptr(argv[0])) );
+                return mrb_bool_value( std::filesystem::exists(fname) );
+            }
+            break;
+        case MRB_TT_ARRAY:
+            {
+                mrb_value arry = mrb_ary_new(mrb);
+                mrb_value item;
+                while( !mrb_nil_p( item = mrb_ary_shift(mrb, argv[0])) )
+                {
+                    if(MRB_TT_STRING == mrb_type(item))
+                    {
+                        std::string fname( RSTR_PTR(mrb_str_ptr(item)) );
+                        mrb_ary_push(mrb, arry , mrb_bool_value(std::filesystem::exists(fname)));
+                    }
+                    else
+                    {
+                        mrb_ary_push(mrb, arry, mrb_nil_value());
+                    }
+                }
+                return arry;
+            }
+            break;
+        default:
+            break;
+        }
+    }
+    mrb_value arry = mrb_ary_new(mrb);
+    for(auto idx=0; idx < argc; idx++)
+    {
+        if(MRB_TT_STRING == mrb_type(argv[idx]))
+        {
+            std::string fname( RSTR_PTR(mrb_str_ptr(argv[idx])) );
+            mrb_ary_push(mrb, arry, mrb_bool_value(std::filesystem::exists(fname)));
+        }
+        else
+        {
+            mrb_ary_push(mrb, arry, mrb_nil_value());
+        }
+    }
+    return arry;
+}
+
+mrb_value mrb_core_file_timestamp(mrb_state* mrb, mrb_value self)
+{
+    mrb_int argc; mrb_value * argv;
+    mrb_get_args(mrb, "*", &argv, &argc);
+    if(1 == argc)
+    {
+        switch(mrb_type(argv[0]))
+        {
+        case MRB_TT_STRING:
+            {
+                std::string path( RSTR_PTR(mrb_str_ptr(argv[0])) );
+                auto ftime = boost::filesystem::last_write_time(path);
+                std::ostringstream timestamp;
+                timestamp << ctime(&ftime);
+                return mrb_str_new_cstr(mrb, (timestamp.str()).c_str());
+            }
+            break;
+        case MRB_TT_ARRAY:
+            {
+                mrb_value arry = mrb_ary_new(mrb);
+                mrb_value item;
+                while( !mrb_nil_p( item = mrb_ary_shift(mrb, argv[0])) )
+                {
+                    if(MRB_TT_STRING == mrb_type(item))
+                    {
+                        std::string path( RSTR_PTR(mrb_str_ptr(item)) );
+                        auto ftime = boost::filesystem::last_write_time(path);
+                        std::ostringstream timestamp;
+                        timestamp << ctime(&ftime);
+                        mrb_ary_push(mrb, arry, mrb_str_new_cstr(mrb, (timestamp.str()).c_str()));
+                    }
+                    else
+                    {
+                        mrb_ary_push(mrb, arry, mrb_nil_value());
+                    }
+
+                }
+            }
+            break;
+        default:
+            break;
+        }
+    }
+    mrb_value arry = mrb_ary_new(mrb);
+    for(auto idx=0; idx < argc; idx++)
+    {
+        if(MRB_TT_STRING == mrb_type(argv[idx]))
+        {
+            std::string path( RSTR_PTR(mrb_str_ptr(argv[idx])) );
+            auto ftime = boost::filesystem::last_write_time(path);
+            std::ostringstream timestamp;
+            timestamp << ctime(&ftime);
+            mrb_ary_push(mrb, arry, mrb_str_new_cstr(mrb, (timestamp.str()).c_str()));
+        }
+        else
+        {
+            mrb_ary_push(mrb, arry, mrb_nil_value());
+        }
+    }
+    return arry;
+}
+
+mrb_value mrb_core_make_qr(mrb_state* mrb, mrb_value self)
+{
+    mrb_int argc; mrb_value * argv;
+    mrb_get_args(mrb, "*", &argv, &argc);
+    if((1 == argc) && (MRB_TT_STRING == mrb_type(argv[0])))
+    {
+        std::string arg( RSTR_PTR(mrb_str_ptr(argv[0])) );
+        if(0 < arg.size())
+        {
+            auto qr_code = makeQRsvg(arg);
+            return mrb_str_new_cstr(mrb, qr_code.c_str());
+        }
+    }
+    return mrb_nil_value();
 }
 
 mrb_value mrb_opt_initialize(mrb_state * mrb, mrb_value self)

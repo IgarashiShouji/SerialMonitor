@@ -15,7 +15,7 @@ def test_base()
   str = ""; IO.popen("ls test1.rb") { |pipe| pipe.each { |s| str=s.chop() } }
   printf("  %-10s check %s: %s\n", 'IO.popen', ('test1.rb'==str ? 'ok' : 'ng'), str)
   test(mkProc())
-  printf("  %-10s check %s: %s\n", 'String =~', (str=~/test/ ? 'ok' : 'ng'), str)
+#  printf("  %-10s check %s: %s\n", 'String =~', (str=~/test/ ? 'ok' : 'ng'), str)
   print "test mruby end\n"
 end
 
@@ -277,12 +277,11 @@ if 0 < opt.size() then
 else
   print "mruby test script 1\n"
   test_base(); print "\n"
-#  test_options(); print "\n"
-
-#  test_core(); print "\n"
-#  test_bin_edit(); print "\n"
-#  test_cpp_regexp(); print "\n"
-#  test_thead(); print "\n"
+  test_options(); print "\n"
+  test_core(); print "\n"
+  test_bin_edit(); print "\n"
+  test_cpp_regexp(); print "\n"
+  test_thead(); print "\n"
   print "mruby test script 1 end\n"
   print "\n"
 end
