@@ -148,7 +148,7 @@ class Core
   def self.opt_send()
     print 'Date: ', Core.date(), "\n"
     tick = Core.tick()
-    opts = Args.new()
+    opts = Core.new()
     prn = WorkerThread.new
     if(0 < opts.size()) then
       port = opts[0]
@@ -276,7 +276,7 @@ class Core
   end
   def self.__CheckOptions()
     Core.tick()
-    opts = Args.new
+    opts = Core.new
     if nil == opts['mruby-script'] then
       if nil != opts['comlist'] then
         regs = Array.new
@@ -342,7 +342,7 @@ class Core
         exit 0
       end
       if nil != opts['read-bin-to-xlsx'] then
-        opts = Args.new()
+        opts = Core.new()
         if 2 == opts.size() then
           if (File.exist?(opts[0]) && File.exist?(opts[1])) then
             if opts[1] =~ /xls/ then

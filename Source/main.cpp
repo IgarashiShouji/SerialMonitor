@@ -833,19 +833,16 @@ public:
         {
             /* Class Core */
             struct RClass * core_class = mrb_define_class(mrb, "Core", mrb->object_class);
+            mrb_define_method( mrb, core_class, "initialize",            mrb_opt_initialize,     MRB_ARGS_ANY()          );
+            mrb_define_method( mrb, core_class, "size",                  mrb_opt_size,           MRB_ARGS_NONE()         );
+            mrb_define_method( mrb, core_class, "[]",                    mrb_opt_get,            MRB_ARGS_ARG( 1, 1 )    );
+            mrb_define_method( mrb, core_class, "prog",                  mrb_opt_prog,           MRB_ARGS_NONE()         );
             mrb_define_module_function(mrb, core_class, "tick",         mrb_core_tick,          MRB_ARGS_ANY()     );
             mrb_define_module_function(mrb, core_class, "date",         mrb_core_date,          MRB_ARGS_ANY()     );
             mrb_define_module_function(mrb, core_class, "gets",         mrb_core_gets,          MRB_ARGS_NONE()    );
             mrb_define_module_function(mrb, core_class, "exists",       mrb_core_exists,        MRB_ARGS_ARG(1, 1) );
             mrb_define_module_function(mrb, core_class, "timestamp",    mrb_core_file_timestamp,MRB_ARGS_ARG(1, 1) );
             mrb_define_module_function(mrb, core_class, "makeQR",       mrb_core_make_qr,       MRB_ARGS_ARG(1, 1) );
-
-            /* Class options */
-            struct RClass * opt_class = mrb_define_class(mrb, "Args", mrb->object_class);
-            mrb_define_method( mrb, opt_class, "initialize",            mrb_opt_initialize,     MRB_ARGS_ANY()          );
-            mrb_define_method( mrb, opt_class, "size",                  mrb_opt_size,           MRB_ARGS_NONE()         );
-            mrb_define_method( mrb, opt_class, "[]",                    mrb_opt_get,            MRB_ARGS_ARG( 1, 1 )    );
-            mrb_define_method( mrb, opt_class, "prog",                  mrb_opt_prog,           MRB_ARGS_NONE()         );
 
             /* Class BinEdit */
             struct RClass * bedit_class = mrb_define_class(mrb, "BinEdit", mrb->object_class);
@@ -1651,13 +1648,45 @@ static mrb_value mrb_cppregexp_reg_match(mrb_state* mrb, mrb_value self)
 {
     mrb_value proc; mrb_int argc; mrb_value * argv;
     mrb_get_args(mrb, "&*", &proc, &argv, &argc);
-    if(   (2 == argc)
-       && (mrb_type(argv[0]) == MRB_TT_STRING)
-       && (mrb_type(argv[1]) == MRB_TT_STRING) )
+    if((0 < argc) && (MRB_TT_STRING == mrb_type(argv[0])))
     {
-        char * str = RSTR_PTR(mrb_str_ptr(argv[0]));
-        char * reg = RSTR_PTR(mrb_str_ptr(argv[1]));
-        if( std::regex_search(str, std::regex(reg)) ) { return mrb_bool_value(true); }
+        std::string str( RSTR_PTR(mrb_str_ptr(argv[0])) );
+        for(auto idx = 1; idx < argc; idx ++)
+        {
+            switch( mrb_type(argv[idx]) )
+            {
+            case MRB_TT_STRING:
+                {
+                    std::regex reg( RSTR_PTR(mrb_str_ptr(argv[idx])) );
+                    if(std::regex_search(str, reg))
+                    {
+                        return mrb_bool_value(true);
+                    }
+                }
+                break;
+            case MRB_TT_ARRAY:
+                {
+                    bool result = true;
+                    mrb_value item;
+                    while( result && !mrb_nil_p( item = mrb_ary_shift(mrb, argv[idx])) )
+                    {
+                        if(MRB_TT_STRING == mrb_type(item))
+                        {
+                            std::regex reg( RSTR_PTR(mrb_str_ptr(item)) );
+                            if(std::regex_search(str, reg))
+                            {
+                                continue;
+                            }
+                        }
+                        result = false;
+                    }
+                    if(result) { return mrb_bool_value(true); }
+                }
+                break;
+            default:
+                break;
+            }
+        }
     }
     return mrb_bool_value(false);
 }

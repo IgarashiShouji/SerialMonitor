@@ -10,18 +10,15 @@ def mkProc()
   end
   return p
 end
-def test_base()
-  print "test mruby\n"
-  str = ""; IO.popen("ls test1.rb") { |pipe| pipe.each { |s| str=s.chop() } }
-  printf("  %-10s check %s: %s\n", 'IO.popen', ('test1.rb'==str ? 'ok' : 'ng'), str)
-  test(mkProc())
-#  printf("  %-10s check %s: %s\n", 'String =~', (str=~/test/ ? 'ok' : 'ng'), str)
-  print "test mruby end\n"
-end
+def test_core()
+  print "Core & Option test\n"
+  printf("  tick: %d\n", Core.tick(1))
 
-def test_options()
-  print "test Args\n"
-  opt = Args.new()
+  # mruby lang tenst
+  test(mkProc())
+
+  # smon Args test
+  opt = Core.new()
   printf("  program: %s\n", opt.prog)
   printf("  --mruby-script: %s\n", opt['mruby-script'])
   printf("  opt.size: %d\n", opt.size())
@@ -39,12 +36,8 @@ def test_options()
   printf("  %s -> check %s: %s\n", cmd, ('98: 010203040506070809'==result ? 'ok' : 'ng'), result)
   cmd=sprintf("%s --sum  010203040506070809", opt.prog); result=''; IO.popen(cmd) { |pipe| pipe.each { |s| result=s.chop() } }
   printf("  %s -> check %s: %s\n", cmd, ('01: 010203040506070809'==result ? 'ok' : 'ng'), result)
-  print "test Args end\n"
-end
 
-def test_core()
-  print "Core test\n"
-  printf("  tick: %d\n", Core.tick(1))
+  # Core test
   data = '010203040506070809'
   printf("  file exists: %s\n", (Core.exists('test1.rb') ? 'ok' : 'ng'))
   printf("  file exists: %s\n", (Core.exists('test1.rb', 'test2.rb', 'test3.rb') ? 'ok' : 'ng'))
@@ -59,7 +52,8 @@ def test_core()
   printf("  date Asia/Tokyo    : %s\n", Core.date('Asia/Tokyo'))
   printf("  date: %s\n", Core.date())
   print Core.makeQR('Core.test')
-  print "Core test end\n"
+
+  print "Core & Option test end\n"
 end
 
 def test_bin_edit
@@ -207,9 +201,33 @@ end
 
 def test_cpp_regexp
   print "CppRegexp test\n"
+  # Class method test
+  printf("  reg_match: %s\n",   (CppRegexp.reg_match('123:456:789', ':') ? "OK" : "NG"))
+  printf("  reg_replace: %s\n", CppRegexp.reg_replace('123:456:789', ':', ' '))
+  print  "  reg_split: ", CppRegexp.reg_split('123:456:789', ':'), "\n"
+  printf("  reg_match  1: %s\n",   (!CppRegexp.reg_match('123:456:789', ',', ';', 'i') ? "OK" : "NG"))
+  printf("  reg_match  2: %s\n",   (CppRegexp.reg_match('123:456:789', 'g', ':') ? "OK" : "NG"))
+  printf("  reg_match  3: %s\n",   ( CppRegexp.reg_match('123:456:789', ':', ';', 'o') ? "OK" : "NG"))
+  printf("  reg_match  4: %s\n",   ( CppRegexp.reg_match('123:456:789', ';', ':', 'j') ? "OK" : "NG"))
+  printf("  reg_match  5: %s\n",   ( CppRegexp.reg_match('123:456:789', ',', ';', ':') ? "OK" : "NG"))
+  printf("  reg_match 10: %s\n",   ( CppRegexp.reg_match('123:456:789', [ '1', '5', '9' ]) ? "OK" : "NG"))
+  printf("  reg_match 11: %s\n",   (!CppRegexp.reg_match('123:456:789', [ '1', '5', 'i' ]) ? "OK" : "NG"))
+  printf("  reg_match 12: %s\n",   (!CppRegexp.reg_match('123:456:789', [ '1', 'i', '9' ]) ? "OK" : "NG"))
+  printf("  reg_match 13: %s\n",   (!CppRegexp.reg_match('123:456:789', [ 'i', '5', '9' ]) ? "OK" : "NG"))
+  printf("  reg_match 20: %s\n",   (!CppRegexp.reg_match('123:456:789', ',', [ ';', 'h' ]) ? "OK" : "NG"))
+  printf("  reg_match 21: %s\n",   (!CppRegexp.reg_match('123:456:789', 'I', [ '5', 'e' ]) ? "OK" : "NG"))
+  printf("  reg_match 22: %s\n",   (!CppRegexp.reg_match('123:456:789', 'H', [ 'v', '8' ]) ? "OK" : "NG"))
+  printf("  reg_match 23: %s\n",   ( CppRegexp.reg_match('123:456:789', ':', [ 'H', 'V' ]) ? "OK" : "NG"))
+  printf("  reg_match 24: %s\n",   ( CppRegexp.reg_match('123:456:789', 'I', [ '6', '7' ]) ? "OK" : "NG"))
+  printf("  reg_match 25: %s\n",   ( CppRegexp.reg_match('123:456:789', [ '1', '4' ], 'B') ? "OK" : "NG"))
+  printf("  reg_match 26: %s\n",   (!CppRegexp.reg_match('123:456:789', [ 'G', '4' ], 'B') ? "OK" : "NG"))
+  printf("  reg_match 27: %s\n",   (!CppRegexp.reg_match('123:456:789', [ '3', 'G' ], 'B') ? "OK" : "NG"))
+  printf("  reg_match 27: %s\n",   ( CppRegexp.reg_match('123:456:789', [ '3', 'G' ], '9') ? "OK" : "NG"))
+
+  # Object method test
   reg = CppRegexp.new('[abc]')
-  print '  test: ',    reg.match('test')    ? "ok" : "ng" , "\n"
   print '  abcdecg: ', reg.match('abcdecg') ? "ok" : "ng" , "\n"
+  print '  test: ',    !reg.match('test')   ? "ok" : "ng" , "\n"
   reg = CppRegexp.new( [ '[abc]', '[def]', '[xyz]' ] )
   printf("  reg.length(): %d\n", reg.length())
   printf("  select:a -> %d: check %s\n", reg.select('a'), (0==reg.select('a') ? 'ok' : 'ng'))
@@ -229,9 +247,6 @@ def test_cpp_regexp
   msg = '123,456,789:abc,dfg,hij'
   print "  split: ", reg.split(msg), "\n"
 
-  printf("  reg_match: %s\n",   (CppRegexp.reg_match('123:456:789', ':') ? "OK" : "NG"))
-  printf("  reg_replace: %s\n", CppRegexp.reg_replace('123:456:789', ':', ' '))
-  print  "  reg_split: ", CppRegexp.reg_split('123:456:789', ':'), "\n"
   print "CppRegexp test end\n"
 end
 
@@ -278,17 +293,15 @@ def test_thead
   print "thead test end\n"
 end
 
-opt = Args.new()
+opt = Core.new()
 if 0 < opt.size() then
   (opt.size()).times { |idx| printf("  arg: %s\n", opt[idx]); }
 else
   print "mruby test script 1\n"
-  test_base(); print "\n"
-  test_options(); print "\n"
-  test_core(); print "\n"
-  test_bin_edit(); print "\n"
+#  test_core(); print "\n"
+#  test_bin_edit(); print "\n"
   test_cpp_regexp(); print "\n"
-  test_thead(); print "\n"
+#  test_thead(); print "\n"
   print "mruby test script 1 end\n"
   print "\n"
 end

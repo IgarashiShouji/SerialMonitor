@@ -1,7 +1,7 @@
 # default script
 
 tick = Core.tick()
-opts = Args.new()
+opts = Core.new()
 if 0 < opts.size() then
   fmt = "%s:"; arg_sz = 0
   (opts.size()).times do |idx|
