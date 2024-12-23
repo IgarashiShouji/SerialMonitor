@@ -135,11 +135,12 @@ public:
     enum Status { Stop, Wakeup, Run, Wait, WaitStop };
 protected:
     enum Status             state;
+    mrb_state *             mrb;
+    size_t                  loop_cnt;
+    mrb_value               proc;
     std::thread             th_ctrl;
     std::mutex              mtx;
     std::condition_variable cond;
-    mrb_state *             mrb;
-    mrb_value               proc;
 public:
     inline WorkerThread(void);
     virtual ~WorkerThread(void);
@@ -355,7 +356,7 @@ inline unsigned int CppRegexp::length(void)
     return regs.size();
 }
 inline WorkerThread::WorkerThread(void)
-  : state(Stop), mrb(nullptr)
+  : state(Stop), mrb(nullptr), loop_cnt(0)
 {
 }
 inline enum WorkerThread::Status WorkerThread::get_state(void) const
@@ -761,8 +762,7 @@ public:
         mrb_get_args(mrb, "&*", &proc, &argv, &argc);
         WorkerThread * th_ctrl = new WorkerThread();
         mrb_data_init(self, th_ctrl, &mrb_thread_context_type);
-        //push(th_ctrl);
-        //mrb_garbage_collect(mrb);
+        th_ctrl->run(mrb, self);
         return self;
     }
 
@@ -1997,7 +1997,7 @@ mrb_value mrb_thread_wait(mrb_state * mrb, mrb_value self)
 }
 mrb_value mrb_thread_notify(mrb_state * mrb, mrb_value self)
 {
-    mrb_value proc = mrb_nil_value();
+    mrb_value proc;
     mrb_get_args(mrb, "&", &proc);
     if (!mrb_nil_p(proc))
     {
@@ -2014,7 +2014,7 @@ mrb_value mrb_thread_notify(mrb_state * mrb, mrb_value self)
 }
 mrb_value mrb_thread_sync(mrb_state * mrb, mrb_value self)
 {
-    mrb_value proc = mrb_nil_value();
+    mrb_value proc;
     mrb_get_args(mrb, "&", &proc);
     if (!mrb_nil_p(proc))
     {
@@ -3264,9 +3264,15 @@ bool WorkerThread::run(mrb_state * mrb, mrb_value self)
     std::unique_lock<std::mutex> lock(mtx);
     if(nullptr == this->mrb)
     {
-        mrb_get_args(mrb, "&", &proc);
+        mrb_int argc; mrb_value * argv;
+        mrb_get_args(mrb, "&*", &proc, &argv, &argc);
         if(!mrb_nil_p(proc))
         {
+            this->loop_cnt = 0;
+            if((1==argc) && (MRB_TT_INTEGER == mrb_type(argv[0])))
+            {
+                loop_cnt = mrb_integer(argv[0]);
+            }
             result = true;
             state = Wakeup;
             std::thread temp(&WorkerThread::run_context, this, 0);
@@ -3278,29 +3284,37 @@ bool WorkerThread::run(mrb_state * mrb, mrb_value self)
             };
             state = Wakeup;
             cond.wait(lock, lamda);
+            result = true;
         }
     }
-    lock.unlock();
     return result;
 }
 void WorkerThread::run_context(size_t id)
 {
-    {
-        std::lock_guard<std::mutex> lock(mtx);
-        this->mrb = mrb_open();
-        if(nullptr != this->mrb)
-        {
-            state = Run;
-            cond.notify_all();
-        }
-    }
-    while(Run == state)
-    {
-        mrb_yield_argv(this->mrb, proc, 0, NULL);
-    }
-    std::lock_guard<std::mutex> lock(mtx);
+    std::unique_lock<std::mutex> lock(mtx);
+    this->mrb = mrb_open();
     if(nullptr != this->mrb)
     {
+        state = Run;
+        cond.notify_all();
+
+        size_t cnt = 0;
+        while((Run == state) &&((0==loop_cnt) || (cnt < loop_cnt)))
+        {
+            auto lamda = [this]
+            {
+                if(Run      == state) { return true; }
+                if(WaitStop == state) { return true; }
+                return false;
+            };
+            mrb_value argv[1];
+            argv[0] = mrb_int_value(mrb, cnt);
+            cond.wait(lock, lamda);
+            lock.unlock();
+            mrb_yield_argv(this->mrb, proc, 1, argv);
+            lock.lock();
+            cnt ++;
+        }
         mrb_close(this->mrb);
         this->mrb = nullptr;
     }
@@ -3312,8 +3326,8 @@ void WorkerThread::join(void)
 {
     auto lamda = [this]
     {
-        if(state != Stop) { return false; }
-        return true;
+        if(Stop == state) { return true; }
+        return false;
     };
     std::unique_lock<std::mutex> lock(mtx);
     cond.wait(lock, lamda);
@@ -3322,26 +3336,19 @@ void WorkerThread::wait(mrb_state * mrb)
 {
     auto lamda = [this, &mrb]
     {
-        switch(state)
-        {
-        case Run:
-            return true;
-            break;
-        case WaitStop:
-            return true;
-            break;
-        case Stop:
-            return true;
-            break;
-        default:
-            break;
-        }
+        if(Run      == state) { return true; }
+        if(WaitStop == state) { return true; }
+        if(Stop     == state) { return true; }
         return false;
     };
     std::unique_lock<std::mutex> lock(mtx);
     state = Wait;
     cond.wait(lock, lamda);
-    lock.unlock();
+    mrb_value proc; mrb_get_args(mrb, "&", &proc);
+    if(!mrb_nil_p(proc))
+    {
+        mrb_yield_argv(mrb, proc, 0, NULL);
+    }
 }
 void WorkerThread::stop(mrb_state * mrb)
 {

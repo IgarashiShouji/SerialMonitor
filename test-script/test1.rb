@@ -257,37 +257,59 @@ def test_thead
   th1 = WorkerThread.new
   th2 = WorkerThread.new
   th1.run do
-    print "  run thread 1\n"
-    th1.wait()
+    th.synchronize do
+      print "  run thread 1\n"
+    end
+    th1.wait() do
+      th.synchronize do
+        printf("  th1.list.length(%d)\n", list.length)
+      end
+    end
     th1.synchronize do
       th.synchronize do
         print "  list.pop: ", list.pop(), "\n"
       end
     end
     th1.stop()
-    print "  run thread 1 end\n"
+    th.synchronize do
+      print "  run thread 1 end\n"
+    end
   end
   th2.run do
-    print "  run thread\n"
-    th2.wait()
+    th.synchronize do
+      print "  run thread\n"
+    end
+    th2.wait() do
+      printf("  th2.list.length(%d)\n", list.length)
+    end
     th2.synchronize do
       th.synchronize do
         print "  list.pop: ", list.pop(), "\n"
       end
     end
     th2.stop()
-    print "  run thread end\n"
+    th.synchronize do
+      print "  run thread end\n"
+    end
   end
-  print "  notify \n"
+  th.synchronize do
+    print "  notify \n"
+  end
   th2.notify do
-    print "  push(2) + notiry\n"
+    th.synchronize do
+      print "  push(2) + notiry\n"
+    end
     list.push(2)
   end
   th1.notify do
-    print "  push(1) + notiry\n"
+    th.synchronize do
+      print "  push(1) + notiry\n"
+    end
     list.push(1)
   end
-  print "  thread join\n"
+  th.synchronize do
+    print "  thread join\n"
+  end
   th1.join
   th2.join
 
@@ -300,11 +322,19 @@ def test_thead
 
   th = WorkerThread.new
   th.run(2) do |cnt|
-    #print "  One Shot Thread 2\n"
-    printf("  %d: One Shot Thread\n", cnt);
+    printf("  %d: One Shot Thread\n", cnt)
   end
   th.join
 
+  th1 = WorkerThread.new (2) do |cnt|
+    printf("  %d: One Shot Thread (1)\n", cnt)
+    WorkerThread.ms_sleep(500);
+  end
+  th2 = WorkerThread.new (1) do |cnt|
+    printf("  %d: One Shot Thread (2)\n", cnt)
+  end
+  th1.join
+  th2.join
   print "thead test end\n"
 end
 
