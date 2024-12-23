@@ -1,76 +1,71 @@
 # default script
 
 tick = Core.tick()
-opts = Core.new()
-if 0 < opts.size() then
-  fmt = "%s:"; arg_sz = 0
-  (opts.size()).times do |idx|
-    arg = String.new(opts[idx])
-    if arg_sz < arg.length then
-      arg_sz = arg.length
-      fmt = '%-' + sprintf("%d", arg.length) + 's:'
-    end
-  end
-  th_prn = WorkerThread.new
+arg = Core.new()
+if 0 < arg.size() then
   objs = Array.new
-  (opts.size()).times do |idx|
-    th_ctrl = WorkerThread.new
-    smon    = Smon.new( opts[idx] )
-    objs.push( [ smon, th_ctrl, idx, opts[idx] ] )
-    arg = opts[idx]
-    th_ctrl.run() do
-      msg = ''
-      loop = true
+  fmt = "%s:"; arg_sz = 0
+  (arg.size()).times do |idx|
+    port = String.new(arg[idx])
+    smon = Smon.new(port)
+    if arg_sz < port.length then
+      arg_sz = port.length
+      fmt = '%-' + sprintf("%d", port.length) + 's:'
+    end
+    objs.push( [ smon, port ] )
+  end
+  loop = true
+  th = WorkerThread.new
+  (objs.length).times do |idx|
+    (smon, port) = objs[idx]
+    WorkerThread.new(1) do
       while loop do
         bin = BinEdit.new
         state = smon.read_wait(bin)
         case state
         when Smon::CACHE_FULL then
         when Smon::GAP then
-          th_prn.synchronize do
+          th.synchronize do
             tick += Core.tick() % 100000000000
             if 0 < bin.length then
               rcv_msg = bin.dump()
-              printf("%d:%s %10d[ms]: %s\n", idx, sprintf(fmt, arg), tick, rcv_msg)
+              printf("%d:%s %10d[ms]: %s\n", idx, sprintf(fmt, port), tick, rcv_msg)
             else
-              printf("%d:%s %10d[ms]: GAP\n", idx, sprintf(fmt, arg), tick)
+              printf("%d:%s %10d[ms]: GAP\n", idx, sprintf(fmt, port), tick)
             end
           end
         when Smon::TO1 then
-          th_prn.synchronize do
+          th.synchronize do
             tick += Core.tick() % 100000000000
-            printf("%d:%s %10d[ms]: TO%d\n", idx, sprintf(fmt, arg), tick, state)
+            printf("%d:%s %10d[ms]: TO%d\n", idx, sprintf(fmt, port), tick, state)
           end
         when Smon::TO2 then
-          th_prn.synchronize do
+          th.synchronize do
             tick += Core.tick() % 100000000000
-            printf("%d:%s %10d[ms]: TO%d\n", idx, sprintf(fmt, arg), tick, state)
+            printf("%d:%s %10d[ms]: TO%d\n", idx, sprintf(fmt, port), tick, state)
           end
         when Smon::TO3 then
-          th_prn.synchronize do
+          th.synchronize do
             tick += Core.tick() % 100000000000
-            printf("%d:%s %10d[ms]: TO%d\n", idx, sprintf(fmt, arg), tick, state)
+            printf("%d:%s %10d[ms]: TO%d\n", idx, sprintf(fmt, port), tick, state)
           end
         else
-          loop = false
         end
       end
-      th_ctrl.stop()
     end
   end
-  th_time = WorkerThread.new
-  loop_time = true
-  th_time.run() do
-    while loop_time do
-      th_prn.synchronize do
-        print "Date: ", Core.date(), "\n"
+  WorkerThread.new(1) do
+    cnt = 0
+    while loop do
+      if 0 == cnt then
+        th.synchronize do
+          print "%d:Date: ", cnt, Core.date(), "\n"
+        end
       end
-      300.times do |idx|
-        WorkerThread.ms_sleep(100)
-        if !loop then; break; end
-      end
+      WorkerThread.ms_sleep(100)
+      cnt += 1
+      cnt %= 500
     end
-    th_time.stop()
   end
   while true do
     str = Core.gets()
@@ -80,29 +75,25 @@ if 0 < opts.size() then
     if 0 < data.length then
       idx = 0
       if CppRegexp.reg_match(data, '^[0-9]+:') then
-        idx = (CppRegexp.reg_replace(data, ':.*$', '')).to_i
+        idx  = (CppRegexp.reg_replace(data, ':.*$', '')).to_i
         data = CppRegexp.reg_replace(data, '^[0-9]+:', '')
       end
       if idx < objs.length then
-        ( smon, th_ctrl, idx_, arg ) = objs[idx]
-        smon.send(data, 0)
-        th_prn.synchronize do
+        ( smon, port ) = objs[idx]
+        th.synchronize do
+          smon.send(data, 0)
           tick += Core.tick() % 100000000000
-          printf("%d:%s %10d[ms]: Send: %s\n", idx, sprintf(fmt, arg), tick, data)
+          printf("%d:%s %10d[ms]: Send: %s\n", idx, sprintf(fmt, port), tick, data)
         end
       end
     else
       break
     end
   end
-  loop_time = false
-  objs.each do |items|
-    ( smon, th_ctrl, idx, arg ) = items
-    #smon.close()
-  end
-  objs.each do |items|
-    ( smon, th_ctrl, idx, arg ) = items
-    #th_ctrl.join()
+  loop = false
+  (objs.length).times do |idx|
+    ( smon, port ) = objs[idx]
+    smon.close()
   end
 else
   print "smon [options] comXX comXX ...", "\n"

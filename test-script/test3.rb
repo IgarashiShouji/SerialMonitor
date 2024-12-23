@@ -49,13 +49,13 @@ class Tester
 end
 
 def test_smon()
-  opts = Args.new()
-  (opts.size()).times do |idx|
-    printf("opts[%d] = %s\n", idx, opts[idx])
+  arg = Core.new()
+  (arg.size()).times do |idx|
+    printf("arg[%d] = %s\n", idx, arg[idx])
   end
-  if 2 <= opts.size() then
-    t0 = Tester.new(opts[0])
-    t1 = Tester.new(opts[1])
+  if 2 <= arg.size() then
+    t0 = Tester.new(arg[0])
+    t1 = Tester.new(arg[1])
     t0.run(t1)
     t1.run(t0)
     t0.send('01020304')
