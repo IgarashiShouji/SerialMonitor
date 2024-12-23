@@ -290,6 +290,21 @@ def test_thead
   print "  thread join\n"
   th1.join
   th2.join
+
+  th = WorkerThread.new
+  th.run do
+    print "  One Shot Thread 1\n"
+    th.stop()
+  end
+  th.join
+
+  th = WorkerThread.new
+  th.run(2) do |cnt|
+    #print "  One Shot Thread 2\n"
+    printf("  %d: One Shot Thread\n", cnt);
+  end
+  th.join
+
   print "thead test end\n"
 end
 
@@ -298,10 +313,10 @@ if 0 < opt.size() then
   (opt.size()).times { |idx| printf("  arg: %s\n", opt[idx]); }
 else
   print "mruby test script 1\n"
-#  test_core(); print "\n"
-#  test_bin_edit(); print "\n"
+  test_core(); print "\n"
+  test_bin_edit(); print "\n"
   test_cpp_regexp(); print "\n"
-#  test_thead(); print "\n"
+  test_thead(); print "\n"
   print "mruby test script 1 end\n"
   print "\n"
 end
