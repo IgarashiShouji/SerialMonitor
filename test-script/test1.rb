@@ -280,7 +280,9 @@ def test_thead
       print "  run thread\n"
     end
     th2.wait() do
-      printf("  th2.list.length(%d)\n", list.length)
+      th.synchronize do
+        printf("  th2.list.length(%d)\n", list.length)
+      end
     end
     th2.synchronize do
       th.synchronize do
@@ -335,6 +337,35 @@ def test_thead
   end
   th1.join
   th2.join
+
+  th = WorkerThread.new(2) do |cnt|
+    printf("  %d: One Shot Thread\n", cnt)
+    printf("  %d: One Shot Thread End\n", cnt)
+  end
+  th.join
+
+  begin
+  th = WorkerThread.new
+  th1 = WorkerThread.new
+  th1.run(1) do |cnt|
+    printf("  %d: One Shot Thread Wait\n", cnt)
+    th.wait() do
+      printf("  %d: One Shot Thread Wait now\n", cnt)
+    end
+    printf("  %d: One Shot Thread Wait End\n", cnt)
+  end
+  th2 = WorkerThread.new
+  th2.run(1) do |cnt|
+    printf("  %d: One Shot Thread notify\n", cnt)
+    th.notify() do
+      printf("  %d: One Shot Thread notify now\n", cnt)
+    end
+    printf("  %d: One Shot Thread notify End\n", cnt)
+  end
+  th1.join
+  th2.join
+  end
+
   print "thead test end\n"
 end
 

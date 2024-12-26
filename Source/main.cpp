@@ -3344,7 +3344,7 @@ void WorkerThread::wait(mrb_state * mrb)
     std::unique_lock<std::mutex> lock(mtx);
     state = Wait;
     cond.wait(lock, lamda);
-    mrb_value proc; mrb_get_args(mrb, "&", &proc);
+    mrb_value proc; mrb_get_args(this->mrb, "&", &proc);
     if(!mrb_nil_p(proc))
     {
         mrb_yield_argv(mrb, proc, 0, NULL);
