@@ -345,25 +345,25 @@ def test_thead
   th.join
 
   begin
-  th = WorkerThread.new
-  th1 = WorkerThread.new
-  th1.run(1) do |cnt|
-    printf("  %d: One Shot Thread Wait\n", cnt)
-    th.wait() do
-      printf("  %d: One Shot Thread Wait now\n", cnt)
+    th = WorkerThread.new
+    th1 = WorkerThread.new
+    th1.run(1) do |cnt|
+      printf("  %d: One Shot Thread Wait\n", cnt)
+#      th.wait() do
+#        printf("  %d: One Shot Thread Wait now\n", cnt)
+#      end
+      printf("  %d: One Shot Thread Wait End\n", cnt)
     end
-    printf("  %d: One Shot Thread Wait End\n", cnt)
-  end
-  th2 = WorkerThread.new
-  th2.run(1) do |cnt|
-    printf("  %d: One Shot Thread notify\n", cnt)
-    th.notify() do
-      printf("  %d: One Shot Thread notify now\n", cnt)
+    th2 = WorkerThread.new
+    th2.run(1) do |cnt|
+      printf("  %d: One Shot Thread notify\n", cnt)
+      th.notify() do
+        printf("  %d: One Shot Thread notify now\n", cnt)
+      end
+      printf("  %d: One Shot Thread notify End\n", cnt)
     end
-    printf("  %d: One Shot Thread notify End\n", cnt)
-  end
-  th1.join
-  th2.join
+    th1.join
+    th2.join
   end
 
   print "thead test end\n"

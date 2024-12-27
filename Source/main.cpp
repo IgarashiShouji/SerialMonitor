@@ -54,8 +54,6 @@
 #include <OpenXLSX.hpp>
 
 /* -- static const & functions -- */
-static const char *  SoftwareRevision = "0.13.15";
-
 class Object
 {
 protected:
@@ -82,6 +80,7 @@ public:
     inline BinaryControl(size_t size_);
     inline BinaryControl(size_t size_, unsigned char data);
     BinaryControl(std::string & data);
+    BinaryControl(std::list<BinaryControl *> & list_bin);
     virtual ~BinaryControl(void);
     inline unsigned char * ptr(void);
     inline size_t size(void) const;
@@ -267,6 +266,21 @@ inline BinaryControl::BinaryControl(BinaryControl & src)
 {
     clone(0, src.length, src);
 }
+inline BinaryControl::BinaryControl(std::list<BinaryControl *> & list_bin)
+  : length(0), compress_size(0), pos(0), data(nullptr)
+{
+    for(auto & bin : list_bin)
+    {
+        length += bin->size();
+    }
+    alloc(length);
+    size_t addr = 0;
+    for(auto & bin : list_bin)
+    {
+        std::memcpy(&(data[addr]), &(bin->data[0]), bin->length);
+        addr += bin->length;
+    }
+}
 inline BinaryControl::BinaryControl(size_t size_)
   : length(0), compress_size(0), pos(0), data(nullptr)
 {
@@ -442,20 +456,19 @@ static mrb_value mrb_core_gets(mrb_state* mrb, mrb_value self);
 static mrb_value mrb_core_exists(mrb_state* mrb, mrb_value self);
 static mrb_value mrb_core_file_timestamp(mrb_state* mrb, mrb_value self);
 static mrb_value mrb_core_make_qr(mrb_state* mrb, mrb_value self);
-
-static mrb_value mrb_opt_initialize(mrb_state * mrb, mrb_value self);
-static mrb_value mrb_opt_size(mrb_state * mrb, mrb_value self);
-static mrb_value mrb_opt_get(mrb_state * mrb, mrb_value self);
-static mrb_value mrb_opt_prog(mrb_state * mrb, mrb_value self);
+static mrb_value mrb_core_initialize(mrb_state * mrb, mrb_value self);
+static mrb_value mrb_core_opt_size(mrb_state * mrb, mrb_value self);
+static mrb_value mrb_core_opt_get(mrb_state * mrb, mrb_value self);
+static mrb_value mrb_core_prog(mrb_state * mrb, mrb_value self);
+static void mrb_core_context_free(mrb_state * mrb, void * ptr);
 
 static mrb_value mrb_bedit_initialize(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_bedit_length(mrb_state * mrb, mrb_value self);
-static mrb_value mrb_bedit_save(mrb_state * mrb, mrb_value self);
+static mrb_value mrb_bedit_dump(mrb_state * mrb, mrb_value self);
+static mrb_value mrb_bedit_write(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_bedit_memset(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_bedit_memcpy(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_bedit_memcmp(mrb_state * mrb, mrb_value self);
-static mrb_value mrb_bedit_write(mrb_state * mrb, mrb_value self);
-static mrb_value mrb_bedit_dump(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_bedit_get(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_bedit_set(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_bedit_pos(mrb_state * mrb, mrb_value self);
@@ -464,18 +477,9 @@ static mrb_value mrb_bedit_crc8(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_bedit_sum(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_bedit_compress(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_bedit_uncompress(mrb_state * mrb, mrb_value self);
+static mrb_value mrb_bedit_save(mrb_state * mrb, mrb_value self);
 static void mrb_bedit_context_free(mrb_state * mrb, void * ptr);
-static const struct mrb_data_type mrb_bedit_context_type = { "mrb_open_bedit_context", mrb_bedit_context_free, };
-static BinaryControl * get_bedit_ptr(mrb_value & argv)
-{
-    const mrb_data_type * src_type = DATA_TYPE(argv);
-    if( src_type == &mrb_bedit_context_type )
-    {
-        BinaryControl * bin_src = static_cast<BinaryControl *>(DATA_PTR(argv));
-        return bin_src;
-    }
-    return nullptr;
-}
+static BinaryControl * get_bedit_ptr(mrb_value & argv);
 
 static mrb_value mrb_cppregexp_reg_match(mrb_state* mrb, mrb_value self);
 static mrb_value mrb_cppregexp_reg_replace(mrb_state* mrb, mrb_value self);
@@ -497,13 +501,7 @@ static mrb_value mrb_thread_notify(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_thread_sync(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_thread_join(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_thread_stop(mrb_state * mrb, mrb_value self);
-static mrb_value mrb_thread_ms_sleep(mrb_state * mrb, mrb_value self)
-{
-    mrb_int tick;
-    mrb_get_args(mrb, "i", &tick);
-    std::this_thread::sleep_for(std::chrono::milliseconds(tick));
-    return mrb_nil_value();
-}
+static mrb_value mrb_thread_ms_sleep(mrb_state * mrb, mrb_value self);
 static void mrb_thread_context_free(mrb_state * mrb, void * ptr);
 
 static mrb_value mrb_smon_comlist(mrb_state* mrb, mrb_value self);
@@ -527,6 +525,32 @@ static mrb_value mrb_xlsx_save(mrb_state * mrb, mrb_value self);
 static void mrb_xlsx_context_free(mrb_state * mrb, void * ptr);
 
 
+
+static const char *  SoftwareRevision = "0.13.16";
+static const struct mrb_data_type mrb_core_context_type =
+{
+    "mrb_core_context",         mrb_core_context_free
+};
+static const struct mrb_data_type mrb_bedit_context_type =
+{
+    "mrb_bedit_context",        mrb_bedit_context_free
+};
+static const struct mrb_data_type mrb_cpp_regexp_context_type =
+{
+    "mrb_cpp_regexp_context",   mrb_regexp_context_free
+};
+static const struct mrb_data_type mrb_thread_context_type =
+{
+    "mrb_cpp_thread_context",   mrb_thread_context_free
+};
+static const struct mrb_data_type mrb_smon_context_type =
+{
+    "mrb_smon_context",         mrb_smon_context_free
+};
+static const struct mrb_data_type mrb_xlsx_context_type =
+{
+    "mrb_open_xlsx_context",    mrb_xlsx_context_free
+};
 
 
 class Application : public Object
@@ -575,17 +599,19 @@ public:
         }
     }
 
-    mrb_value opt_init(mrb_state * mrb, mrb_value self)
+    mrb_value core_init(mrb_state * mrb, mrb_value self)
     {
+        auto obj = Application::getObject();
+        mrb_data_init(self, obj, &mrb_core_context_type );
         return self;
     }
 
-    mrb_value opt_size(mrb_state * mrb, mrb_value self)
+    mrb_value core_opt_size(mrb_state * mrb, mrb_value self)
     {
         return mrb_int_value( mrb, args.size() );
     }
 
-    mrb_value opt_get(mrb_state * mrb, mrb_value self)
+    mrb_value core_opt_get(mrb_state * mrb, mrb_value self)
     {
         mrb_value y = mrb_get_arg1(mrb);
         switch( mrb_type( y ) )
@@ -618,7 +644,7 @@ public:
         return mrb_nil_value();
     }
 
-    mrb_value opt_prog(mrb_state * mrb, mrb_value self)
+    mrb_value core_prog(mrb_state * mrb, mrb_value self)
     {
         return mrb_str_new_cstr( mrb, prog.c_str() );
     }
@@ -629,6 +655,8 @@ public:
         BinaryControl * bedit = nullptr;
         mrb_int argc; mrb_value * argv;
         mrb_get_args(mrb, "*", &argv, &argc);
+        mrb_value item;
+        std::list<BinaryControl *> list_bin;
         switch(argc)
         {
         case 1:
@@ -650,6 +678,16 @@ public:
                     if(nullptr != bin_src) { bedit = new BinaryControl( *bin_src ); }
                 }
                 break;
+            case MRB_TT_ARRAY:
+                while( !mrb_nil_p( item = mrb_ary_shift(mrb, argv[0])) )
+                {
+                    if(MRB_TT_OBJECT == mrb_type(item))
+                    {
+                        BinaryControl * bin = get_bedit_ptr(item);
+                        list_bin.push_back( bin );
+                    }
+                }
+                bedit = new BinaryControl(list_bin);
             default:
                 break;
             }
@@ -701,10 +739,6 @@ public:
 
     mrb_value cppregexp_init(mrb_state * mrb, mrb_value self)
     {
-        static const struct mrb_data_type mrb_cpp_regexp_context_type =
-        {
-            "mrb_cpp_regexp_context", mrb_regexp_context_free,
-        };
         std::lock_guard<std::mutex> lock(mtx);
         mrb_int argc; mrb_value * argv;
         mrb_get_args(mrb, "*", &argv, &argc);
@@ -753,10 +787,6 @@ public:
 
     mrb_value thread_init(mrb_state * mrb, mrb_value self)
     {
-        static const struct mrb_data_type mrb_thread_context_type =
-        {
-            "mrb_cpp_thread_context", mrb_thread_context_free,
-        };
         std::lock_guard<std::mutex> lock(mtx);
         mrb_value proc; mrb_int argc; mrb_value * argv;
         mrb_get_args(mrb, "&*", &proc, &argv, &argc);
@@ -768,10 +798,6 @@ public:
 
     mrb_value smon_init(mrb_state * mrb, mrb_value self)
     {
-        static const struct mrb_data_type mrb_smon_context_type =
-        {
-            "mrb_smon_context", mrb_smon_context_free,
-        };
         std::lock_guard<std::mutex> lock(mtx);
         char * arg;
         mrb_get_args(mrb, "z", &arg);
@@ -794,10 +820,6 @@ public:
 
     mrb_value xlsx_init(mrb_state * mrb, mrb_value self)
     {
-        static const struct mrb_data_type mrb_xlsx_context_type =
-        {
-            "mrb_open_xlsx_context", mrb_xlsx_context_free,
-        };
         std::lock_guard<std::mutex> lock(mtx);
         OpenXLSXCtrl * xlsx = new OpenXLSXCtrl();
         mrb_data_init(self, xlsx, &mrb_xlsx_context_type);
@@ -833,64 +855,64 @@ public:
         {
             /* Class Core */
             struct RClass * core_class = mrb_define_class(mrb, "Core", mrb->object_class);
-            mrb_define_method( mrb, core_class, "initialize",            mrb_opt_initialize,     MRB_ARGS_ANY()          );
-            mrb_define_method( mrb, core_class, "size",                  mrb_opt_size,           MRB_ARGS_NONE()         );
-            mrb_define_method( mrb, core_class, "[]",                    mrb_opt_get,            MRB_ARGS_ARG( 1, 1 )    );
-            mrb_define_method( mrb, core_class, "prog",                  mrb_opt_prog,           MRB_ARGS_NONE()         );
-            mrb_define_module_function(mrb, core_class, "tick",         mrb_core_tick,          MRB_ARGS_ANY()     );
-            mrb_define_module_function(mrb, core_class, "date",         mrb_core_date,          MRB_ARGS_ANY()     );
-            mrb_define_module_function(mrb, core_class, "gets",         mrb_core_gets,          MRB_ARGS_NONE()    );
-            mrb_define_module_function(mrb, core_class, "exists",       mrb_core_exists,        MRB_ARGS_ARG(1, 1) );
-            mrb_define_module_function(mrb, core_class, "timestamp",    mrb_core_file_timestamp,MRB_ARGS_ARG(1, 1) );
-            mrb_define_module_function(mrb, core_class, "makeQR",       mrb_core_make_qr,       MRB_ARGS_ARG(1, 1) );
+            mrb_define_module_function(mrb, core_class, "tick",      mrb_core_tick,          MRB_ARGS_ANY()     );
+            mrb_define_module_function(mrb, core_class, "date",      mrb_core_date,          MRB_ARGS_ANY()     );
+            mrb_define_module_function(mrb, core_class, "gets",      mrb_core_gets,          MRB_ARGS_NONE()    );
+            mrb_define_module_function(mrb, core_class, "exists",    mrb_core_exists,        MRB_ARGS_ARG(1, 1) );
+            mrb_define_module_function(mrb, core_class, "timestamp", mrb_core_file_timestamp,MRB_ARGS_ARG(1, 1) );
+            mrb_define_module_function(mrb, core_class, "makeQR",    mrb_core_make_qr,       MRB_ARGS_ARG(1, 1) );
+            mrb_define_method( mrb, core_class, "initialize",        mrb_core_initialize,    MRB_ARGS_NONE()    );
+            mrb_define_method( mrb, core_class, "size",              mrb_core_opt_size,      MRB_ARGS_NONE()    );
+            mrb_define_method( mrb, core_class, "[]",                mrb_core_opt_get,       MRB_ARGS_ARG(1, 1) );
+            mrb_define_method( mrb, core_class, "prog",              mrb_core_prog,          MRB_ARGS_NONE()    );
 
             /* Class BinEdit */
             struct RClass * bedit_class = mrb_define_class(mrb, "BinEdit", mrb->object_class);
-            mrb_define_method( mrb, bedit_class, "initialize",      mrb_bedit_initialize,       MRB_ARGS_ANY()          );
-            mrb_define_method( mrb, bedit_class, "length",          mrb_bedit_length,           MRB_ARGS_ARG( 1, 1 )    );
-            mrb_define_method( mrb, bedit_class, "save",            mrb_bedit_save,             MRB_ARGS_ARG( 1, 1 )    );
-            mrb_define_method( mrb, bedit_class, "compress",        mrb_bedit_compress,         MRB_ARGS_NONE()         );
-            mrb_define_method( mrb, bedit_class, "uncompress",      mrb_bedit_uncompress,       MRB_ARGS_NONE()         );
-            mrb_define_method( mrb, bedit_class, "memset",          mrb_bedit_memset,           MRB_ARGS_ARG( 3, 1 )    );
-            mrb_define_method( mrb, bedit_class, "memcpy",          mrb_bedit_memcpy,           MRB_ARGS_ARG( 3, 1 )    );
-            mrb_define_method( mrb, bedit_class, "memcmp",          mrb_bedit_memcmp,           MRB_ARGS_ARG( 3, 1 )    );
-            mrb_define_method( mrb, bedit_class, "write",           mrb_bedit_write,            MRB_ARGS_ARG( 2, 1 )    );
-            mrb_define_method( mrb, bedit_class, "dump",            mrb_bedit_dump,             MRB_ARGS_ARG( 2, 1 )    );
-            mrb_define_method( mrb, bedit_class, "get",             mrb_bedit_get,              MRB_ARGS_ARG( 2, 1 )    );
-            mrb_define_method( mrb, bedit_class, "set",             mrb_bedit_set,              MRB_ARGS_ARG( 3, 1 )    );
-            mrb_define_method( mrb, bedit_class, "pos",             mrb_bedit_pos,              MRB_ARGS_NONE()         );
-            mrb_define_method( mrb, bedit_class, "crc16",           mrb_bedit_crc16,            MRB_ARGS_ARG( 1, 1 )    );
-            mrb_define_method( mrb, bedit_class, "crc8",            mrb_bedit_crc8,             MRB_ARGS_ARG( 1, 1 )    );
-            mrb_define_method( mrb, bedit_class, "sum",             mrb_bedit_sum,              MRB_ARGS_ARG( 1, 1 )    );
+            mrb_define_method( mrb, bedit_class, "initialize", mrb_bedit_initialize, MRB_ARGS_ANY()     );
+            mrb_define_method( mrb, bedit_class, "length",     mrb_bedit_length,     MRB_ARGS_NONE()    );
+            mrb_define_method( mrb, bedit_class, "dump",       mrb_bedit_dump,       MRB_ARGS_ANY()     );
+            mrb_define_method( mrb, bedit_class, "write",      mrb_bedit_write,      MRB_ARGS_ANY()     );
+            mrb_define_method( mrb, bedit_class, "memset",     mrb_bedit_memset,     MRB_ARGS_ANY()     );
+            mrb_define_method( mrb, bedit_class, "memcpy",     mrb_bedit_memcpy,     MRB_ARGS_ANY()     );
+            mrb_define_method( mrb, bedit_class, "memcmp",     mrb_bedit_memcmp,     MRB_ARGS_ANY()     );
+            mrb_define_method( mrb, bedit_class, "get",        mrb_bedit_get,        MRB_ARGS_ANY()     );
+            mrb_define_method( mrb, bedit_class, "set",        mrb_bedit_set,        MRB_ARGS_ANY()     );
+            mrb_define_method( mrb, bedit_class, "pos",        mrb_bedit_pos,        MRB_ARGS_NONE()    );
+            mrb_define_method( mrb, bedit_class, "crc16",      mrb_bedit_crc16,      MRB_ARGS_ANY()     );
+            mrb_define_method( mrb, bedit_class, "crc8",       mrb_bedit_crc8,       MRB_ARGS_ANY()     );
+            mrb_define_method( mrb, bedit_class, "sum",        mrb_bedit_sum,        MRB_ARGS_ANY()     );
+            mrb_define_method( mrb, bedit_class, "compress",   mrb_bedit_compress,   MRB_ARGS_NONE()    );
+            mrb_define_method( mrb, bedit_class, "uncompress", mrb_bedit_uncompress, MRB_ARGS_NONE()    );
+            mrb_define_method( mrb, bedit_class, "save",       mrb_bedit_save,       MRB_ARGS_ARG(1, 1) );
 
             /* Class CppRegexp */
             struct RClass * cppregexp_class = mrb_define_class(mrb, "CppRegexp", mrb->object_class);
-            mrb_define_module_function(mrb, cppregexp_class, "reg_match",    mrb_cppregexp_reg_match,       MRB_ARGS_ARG( 2, 1 )  );
-            mrb_define_module_function(mrb, cppregexp_class, "reg_replace",  mrb_cppregexp_reg_replace,     MRB_ARGS_ARG( 3, 1 )  );
-            mrb_define_module_function(mrb, cppregexp_class, "reg_split",    mrb_cppregexp_reg_split,       MRB_ARGS_ARG( 2, 1 )  );
-            mrb_define_method( mrb, cppregexp_class,    "initialize",   mrb_cppregexp_initialize, MRB_ARGS_ANY()        );
-            mrb_define_method( mrb, cppregexp_class,    "length",       mrb_cppregexp_length,     MRB_ARGS_NONE()       );
-            mrb_define_method( mrb, cppregexp_class,    "match",        mrb_cppregexp_match,      MRB_ARGS_ANY()        );
-            mrb_define_method( mrb, cppregexp_class,    "grep",         mrb_cppregexp_grep,       MRB_ARGS_ANY()        );
-            mrb_define_method( mrb, cppregexp_class,    "replace",      mrb_cppregexp_replace,    MRB_ARGS_ANY()        );
-            mrb_define_method( mrb, cppregexp_class,    "select",       mrb_cppregexp_select,     MRB_ARGS_ANY()        );
-            mrb_define_method( mrb, cppregexp_class,    "split",        mrb_cppregexp_split,      MRB_ARGS_ARG( 1, 1 )  );
+            mrb_define_module_function(mrb, cppregexp_class, "reg_match",   mrb_cppregexp_reg_match,   MRB_ARGS_ARG(2, 1) );
+            mrb_define_module_function(mrb, cppregexp_class, "reg_replace", mrb_cppregexp_reg_replace, MRB_ARGS_ARG(3, 1) );
+            mrb_define_module_function(mrb, cppregexp_class, "reg_split",   mrb_cppregexp_reg_split,   MRB_ARGS_ARG(2, 1) );
+            mrb_define_method( mrb, cppregexp_class, "initialize", mrb_cppregexp_initialize, MRB_ARGS_ANY()     );
+            mrb_define_method( mrb, cppregexp_class, "length",     mrb_cppregexp_length,     MRB_ARGS_NONE()    );
+            mrb_define_method( mrb, cppregexp_class, "match",      mrb_cppregexp_match,      MRB_ARGS_ANY()     );
+            mrb_define_method( mrb, cppregexp_class, "grep",       mrb_cppregexp_grep,       MRB_ARGS_ANY()     );
+            mrb_define_method( mrb, cppregexp_class, "replace",    mrb_cppregexp_replace,    MRB_ARGS_ANY()     );
+            mrb_define_method( mrb, cppregexp_class, "select",     mrb_cppregexp_select,     MRB_ARGS_ARG(1, 1) );
+            mrb_define_method( mrb, cppregexp_class, "split",      mrb_cppregexp_split,      MRB_ARGS_ARG(1, 1) );
 
             /* Class Thread */
             struct RClass * thread_class = mrb_define_class(mrb, "WorkerThread", mrb->object_class);
-            mrb_define_const(  mrb, thread_class, "STOP",               mrb_fixnum_value(WorkerThread::Stop)            );
-            mrb_define_const(  mrb, thread_class, "WAKEUP",             mrb_fixnum_value(WorkerThread::Wakeup)          );
-            mrb_define_const(  mrb, thread_class, "RUN",                mrb_fixnum_value(WorkerThread::Run)             );
-            mrb_define_const(  mrb, thread_class, "WAIT_JOIN",          mrb_fixnum_value(WorkerThread::WaitStop)        );
-            mrb_define_module_function( mrb, thread_class, "ms_sleep",  mrb_thread_ms_sleep,    MRB_ARGS_ARG( 1, 1 )    );
-            mrb_define_method( mrb, thread_class, "initialize",         mrb_thread_initialize,  MRB_ARGS_ANY()          );
-            mrb_define_method( mrb, thread_class, "state",              mrb_thread_state,       MRB_ARGS_ANY()          );
-            mrb_define_method( mrb, thread_class, "run",                mrb_thread_run,         MRB_ARGS_ANY()          );
-            mrb_define_method( mrb, thread_class, "wait",               mrb_thread_wait,        MRB_ARGS_NONE()         );
-            mrb_define_method( mrb, thread_class, "notify",             mrb_thread_notify,      MRB_ARGS_NONE()         );
-            mrb_define_method( mrb, thread_class, "synchronize",        mrb_thread_sync,        MRB_ARGS_NONE()         );
-            mrb_define_method( mrb, thread_class, "join",               mrb_thread_join,        MRB_ARGS_ANY()          );
-            mrb_define_method( mrb, thread_class, "stop",               mrb_thread_stop,        MRB_ARGS_NONE()         );
+            mrb_define_const( mrb, thread_class, "STOP",      mrb_fixnum_value(WorkerThread::Stop)     );
+            mrb_define_const( mrb, thread_class, "WAKEUP",    mrb_fixnum_value(WorkerThread::Wakeup)   );
+            mrb_define_const( mrb, thread_class, "RUN",       mrb_fixnum_value(WorkerThread::Run)      );
+            mrb_define_const( mrb, thread_class, "WAIT_JOIN", mrb_fixnum_value(WorkerThread::WaitStop) );
+            mrb_define_module_function( mrb, thread_class, "ms_sleep", mrb_thread_ms_sleep, MRB_ARGS_ARG(1, 1) );
+            mrb_define_method( mrb, thread_class, "initialize",  mrb_thread_initialize, MRB_ARGS_ANY()  );
+            mrb_define_method( mrb, thread_class, "state",       mrb_thread_state,      MRB_ARGS_ANY()  );
+            mrb_define_method( mrb, thread_class, "run",         mrb_thread_run,        MRB_ARGS_ANY()  );
+            mrb_define_method( mrb, thread_class, "wait",        mrb_thread_wait,       MRB_ARGS_NONE() );
+            mrb_define_method( mrb, thread_class, "notify",      mrb_thread_notify,     MRB_ARGS_NONE() );
+            mrb_define_method( mrb, thread_class, "synchronize", mrb_thread_sync,       MRB_ARGS_NONE() );
+            mrb_define_method( mrb, thread_class, "join",        mrb_thread_join,       MRB_ARGS_ANY()  );
+            mrb_define_method( mrb, thread_class, "stop",        mrb_thread_stop,       MRB_ARGS_NONE() );
 
             /* Class Smon */
             struct RClass * smon_class = mrb_define_class(mrb, "Smon", mrb->object_class);
@@ -1213,54 +1235,57 @@ mrb_value mrb_core_make_qr(mrb_state* mrb, mrb_value self)
     return mrb_nil_value();
 }
 
-mrb_value mrb_opt_initialize(mrb_state * mrb, mrb_value self)
+mrb_value mrb_core_initialize(mrb_state * mrb, mrb_value self)
 {
     Application * obj = Application::getObject();
     if(nullptr != obj)
     {
-        auto result = obj->opt_init(mrb, self);
+        auto result = obj->core_init(mrb, self);
         //mrb_garbage_collect(mrb);
         return result;
     }
     return self;
 }
 
-mrb_value mrb_opt_size(mrb_state * mrb, mrb_value self)
+mrb_value mrb_core_opt_size(mrb_state * mrb, mrb_value self)
 {
     Application * obj = Application::getObject();
     if(nullptr != obj)
     {
-        auto result = obj->opt_size(mrb, self);
+        auto result = obj->core_opt_size(mrb, self);
         //mrb_garbage_collect(mrb);
         return result;
     }
     return mrb_nil_value();
 }
 
-mrb_value mrb_opt_get(mrb_state * mrb, mrb_value self)
+mrb_value mrb_core_opt_get(mrb_state * mrb, mrb_value self)
 {
     Application * obj = Application::getObject();
     if(nullptr != obj)
     {
-        auto result = obj->opt_get(mrb, self);
+        auto result = obj->core_opt_get(mrb, self);
         //mrb_garbage_collect(mrb);
         return result;
     }
     return mrb_nil_value();
 }
 
-mrb_value mrb_opt_prog(mrb_state * mrb, mrb_value self)
+mrb_value mrb_core_prog(mrb_state * mrb, mrb_value self)
 {
     Application * obj = Application::getObject();
     if(nullptr != obj)
     {
-        auto result = obj->opt_prog(mrb, self);
+        auto result = obj->core_prog(mrb, self);
         //mrb_garbage_collect(mrb);
         return result;
     }
     return mrb_nil_value();
 }
 
+static void mrb_core_context_free(mrb_state * mrb, void * ptr)
+{
+}
 
 mrb_value mrb_bedit_initialize(mrb_state * mrb, mrb_value self)
 {
@@ -1272,46 +1297,49 @@ mrb_value mrb_bedit_initialize(mrb_state * mrb, mrb_value self)
     }
     return mrb_nil_value();
 }
-
-mrb_value mrb_bedit_save(mrb_state * mrb, mrb_value self)
-{
-    BinaryControl * bedit = static_cast<BinaryControl *>(DATA_PTR(self));
-    if(nullptr != bedit)
-    {
-        mrb_int argc; mrb_value * argv; mrb_get_args(mrb, "*", &argv, &argc);
-        if( (1==argc) && (MRB_TT_STRING == mrb_type(argv[0])) )
-        {
-            std::string fname( RSTR_PTR( mrb_str_ptr( argv[0] ) ) );
-            bedit->saveBinaryFile(fname);
-        }
-    }
-    return self;
-}
-mrb_value mrb_bedit_compress(mrb_state * mrb, mrb_value self)
-{
-    BinaryControl * bedit = static_cast<BinaryControl *>(DATA_PTR(self));
-    if(nullptr != bedit)
-    {
-        auto size = bedit->compress();
-        return mrb_int_value(mrb, size);
-    }
-    return mrb_int_value(mrb, 0);
-}
-mrb_value mrb_bedit_uncompress(mrb_state * mrb, mrb_value self)
-{
-    BinaryControl * bedit = static_cast<BinaryControl *>(DATA_PTR(self));
-    if(nullptr != bedit)
-    {
-        auto size = bedit->uncompress();
-        return mrb_int_value(mrb, size);
-    }
-    return mrb_int_value(mrb, 0);
-}
 mrb_value mrb_bedit_length(mrb_state * mrb, mrb_value self)
 {
     BinaryControl * bedit = static_cast<BinaryControl *>(DATA_PTR(self));
     if(nullptr != bedit) { return mrb_int_value(mrb, bedit->size()); }
     return mrb_int_value(mrb, 0);
+}
+mrb_value mrb_bedit_dump(mrb_state * mrb, mrb_value self)
+{
+    BinaryControl * bedit = static_cast<BinaryControl *>(DATA_PTR(self));
+    if(nullptr != bedit)
+    {
+        mrb_int address = 0;
+        mrb_int size    = bedit->size();
+        mrb_int argc; mrb_value * argv; mrb_get_args(mrb, "*", &argv, &argc);
+        switch(argc)
+        {
+        case 1:
+            if( MRB_TT_INTEGER == mrb_type(argv[0]) )
+            {
+                size = mrb_integer(argv[0]);
+            }
+            break;
+        case 2:
+            if(   (MRB_TT_INTEGER == mrb_type(argv[0]))     // arg 1: address
+               && (MRB_TT_INTEGER == mrb_type(argv[0])) )   // arg 2: size
+            {
+                address = mrb_integer(argv[0]);
+                size    = mrb_integer(argv[1]);
+            }
+            break;
+        default:
+            break;
+        }
+        if(0 < size)
+        {
+            std::string output;
+            if( 0 < bedit->dump(address, size, output) )
+            {
+                return mrb_str_new_cstr(mrb, output.c_str());
+            }
+        }
+    }
+    return mrb_nil_value();
 }
 mrb_value mrb_bedit_write(mrb_state * mrb, mrb_value self)
 {
@@ -1479,41 +1507,6 @@ mrb_value mrb_bedit_memcmp(mrb_state * mrb, mrb_value self)
     }
     return mrb_int_value(mrb, -2);
 }
-mrb_value mrb_bedit_dump(mrb_state * mrb, mrb_value self)
-{
-    BinaryControl * bedit = static_cast<BinaryControl *>(DATA_PTR(self));
-    if(nullptr != bedit)
-    {
-        mrb_int address = 0;
-        mrb_int size    = bedit->size();
-        mrb_int argc; mrb_value * argv; mrb_get_args(mrb, "*", &argv, &argc);
-        switch(argc)
-        {
-        case 1:
-            if( MRB_TT_INTEGER == mrb_type(argv[0]) ) { size = mrb_integer(argv[0]); }
-            break;
-        case 2:
-            if(   (MRB_TT_INTEGER == mrb_type(argv[0]))     // arg 1: address
-               && (MRB_TT_INTEGER == mrb_type(argv[0])) )   // arg 2: size
-            {
-                address = mrb_integer(argv[0]);
-                size    = mrb_integer(argv[1]);
-            }
-            break;
-        default:
-            break;
-        }
-        if(0 < size)
-        {
-            std::string output;
-            if( 0 < bedit->dump(address, size, output) )
-            {
-                return mrb_str_new_cstr(mrb, output.c_str());
-            }
-        }
-    }
-    return mrb_nil_value();
-}
 mrb_value mrb_bedit_get(mrb_state * mrb, mrb_value self)
 {
     BinaryControl * bedit = static_cast<BinaryControl *>(DATA_PTR(self));
@@ -1643,6 +1636,40 @@ mrb_value mrb_bedit_sum(mrb_state * mrb, mrb_value self)
     }
     return mrb_nil_value();
 }
+mrb_value mrb_bedit_compress(mrb_state * mrb, mrb_value self)
+{
+    BinaryControl * bedit = static_cast<BinaryControl *>(DATA_PTR(self));
+    if(nullptr != bedit)
+    {
+        auto size = bedit->compress();
+        return mrb_int_value(mrb, size);
+    }
+    return mrb_int_value(mrb, 0);
+}
+mrb_value mrb_bedit_uncompress(mrb_state * mrb, mrb_value self)
+{
+    BinaryControl * bedit = static_cast<BinaryControl *>(DATA_PTR(self));
+    if(nullptr != bedit)
+    {
+        auto size = bedit->uncompress();
+        return mrb_int_value(mrb, size);
+    }
+    return mrb_int_value(mrb, 0);
+}
+mrb_value mrb_bedit_save(mrb_state * mrb, mrb_value self)
+{
+    BinaryControl * bedit = static_cast<BinaryControl *>(DATA_PTR(self));
+    if(nullptr != bedit)
+    {
+        mrb_int argc; mrb_value * argv; mrb_get_args(mrb, "*", &argv, &argc);
+        if( (1==argc) && (MRB_TT_STRING == mrb_type(argv[0])) )
+        {
+            std::string fname( RSTR_PTR( mrb_str_ptr( argv[0] ) ) );
+            bedit->saveBinaryFile(fname);
+        }
+    }
+    return self;
+}
 
 static mrb_value mrb_cppregexp_reg_match(mrb_state* mrb, mrb_value self)
 {
@@ -1692,31 +1719,120 @@ static mrb_value mrb_cppregexp_reg_match(mrb_state* mrb, mrb_value self)
 }
 static mrb_value mrb_cppregexp_reg_replace(mrb_state* mrb, mrb_value self)
 {
-    mrb_value proc; mrb_int argc; mrb_value * argv;
-    mrb_get_args(mrb, "&*", &proc, &argv, &argc);
+    mrb_int argc; mrb_value * argv;
+    mrb_get_args(mrb, "*", &argv, &argc);
     std::string result("");
-    switch(argc)
+    if(1 < argc)
     {
-    case 1:
-    case 2:
-        if(mrb_type(argv[0]) == MRB_TT_STRING)
+        switch(mrb_type(argv[0]))
         {
-            result = RSTR_PTR(mrb_str_ptr(argv[0]));
+        case MRB_TT_STRING:
+            {
+                std::string str(RSTR_PTR(mrb_str_ptr(argv[0])));
+                switch(mrb_type(argv[1]))
+                {
+                case MRB_TT_STRING:
+                    {
+                        std::regex reg(RSTR_PTR(mrb_str_ptr(argv[1])));
+                        if((3 == argc) && (MRB_TT_STRING == mrb_type(argv[2])))
+                        {
+                            std::string rep(RSTR_PTR(mrb_str_ptr(argv[2])));
+                            str = std::regex_replace(str, reg, rep);
+                        }
+                        return mrb_str_new_cstr(mrb, str.c_str());
+                    }
+                    break;
+                case MRB_TT_ARRAY:
+                    {
+                        for(auto idx=1; idx < argc; idx++)
+                        {
+                            if(MRB_TT_ARRAY == mrb_type(argv[idx]))
+                            {
+                                mrb_value arg1 = mrb_ary_shift(mrb, argv[idx]);
+                                mrb_value arg2 = mrb_ary_shift(mrb, argv[idx]);
+                                if(  (MRB_TT_STRING == mrb_type(arg1))
+                                   &&(MRB_TT_STRING == mrb_type(arg2)))
+                                {
+                                    std::regex  reg(RSTR_PTR(mrb_str_ptr(arg1)));
+                                    std::string rep(RSTR_PTR(mrb_str_ptr(arg2)));
+                                    str = std::regex_replace(str, reg, rep);
+                                }
+                            }
+                        }
+                        return mrb_str_new_cstr(mrb, str.c_str());
+                    }
+                    break;
+                }
+            }
+            break;
+        case MRB_TT_ARRAY:
+            {
+                auto arry = mrb_ary_new(mrb);
+                mrb_value item;
+                switch(mrb_type(argv[1]))
+                {
+                case MRB_TT_STRING:
+                    {
+                        std::regex reg(RSTR_PTR(mrb_str_ptr(argv[1])));
+                        if((3 == argc) && (MRB_TT_STRING == mrb_type(argv[2])))
+                        {
+                            std::string rep(RSTR_PTR(mrb_str_ptr(argv[2])));
+                            while( !mrb_nil_p( item = mrb_ary_shift(mrb, argv[0])) )
+                            {
+                                std::string str(RSTR_PTR(mrb_str_ptr(item)));
+                                if(MRB_TT_STRING == mrb_type(item))
+                                {
+                                    str = std::regex_replace(str, reg, rep);
+                                    mrb_ary_push(mrb, arry , mrb_str_new_cstr(mrb, str.c_str()));
+                                }
+                            }
+                        }
+                    }
+                    break;
+                case MRB_TT_ARRAY:
+                    while( !mrb_nil_p( item = mrb_ary_shift(mrb, argv[0])) )
+                    {
+                        if(MRB_TT_STRING == mrb_type(item))
+                        {
+                            std::string str(RSTR_PTR(mrb_str_ptr(item)));
+                            for(auto idx=1; idx < argc; idx++)
+                            {
+                                if(MRB_TT_ARRAY == mrb_type(argv[idx]))
+                                {
+                                    mrb_value arg1 = mrb_ary_shift(mrb, argv[idx]);
+                                    mrb_value arg2 = mrb_ary_shift(mrb, argv[idx]);
+                                    if(  (MRB_TT_STRING == mrb_type(arg1))
+                                       &&(MRB_TT_STRING == mrb_type(arg2)))
+                                    {
+                                        std::regex  reg(RSTR_PTR(mrb_str_ptr(arg1)));
+                                        std::string rep(RSTR_PTR(mrb_str_ptr(arg2)));
+                                        str = std::regex_replace(str, reg, rep);
+                                    }
+                                }
+                            }
+                            mrb_ary_push(mrb, arry , mrb_str_new_cstr(mrb, str.c_str()));
+                        }
+                    }
+                    break;
+                default:
+                    while( !mrb_nil_p( item = mrb_ary_shift(mrb, argv[0])) )
+                    {
+                        if(MRB_TT_STRING == mrb_type(item))
+                        {
+                            std::string str(RSTR_PTR(mrb_str_ptr(item)));
+                            mrb_ary_push(mrb, arry , mrb_str_new_cstr(mrb, str.c_str()));
+                        }
+                    }
+                    break;
+                }
+                return arry;
+            }
+            break;
+        default:
+            break;
         }
-        break;
-    case 3:
-        if(    (mrb_type(argv[0]) == MRB_TT_STRING)
-            && (mrb_type(argv[1]) == MRB_TT_STRING)
-            && (mrb_type(argv[2]) == MRB_TT_STRING) )
-        {
-            char * str = RSTR_PTR(mrb_str_ptr(argv[0]));
-            char * reg = RSTR_PTR(mrb_str_ptr(argv[1]));
-            char * rep = RSTR_PTR(mrb_str_ptr(argv[2]));
-            result = std::regex_replace(str, std::regex(reg), rep);
-        }
-        break;
     }
-    return mrb_str_new_cstr( mrb, result.c_str() );
+    return self;
 }
 static mrb_value mrb_cppregexp_reg_split(mrb_state* mrb, mrb_value self)
 {
@@ -1772,7 +1888,7 @@ mrb_value mrb_cppregexp_match(mrb_state * mrb, mrb_value self)
             switch(mrb_type(argv[0]))
             {
             case MRB_TT_STRING:
-                if(reg->match( RSTR_PTR( mrb_str_ptr( argv[0] ) ) ))
+                if( reg->match(RSTR_PTR(mrb_str_ptr(argv[0]))) )
                 {
                     return mrb_bool_value(true);
                 }
@@ -2038,6 +2154,13 @@ mrb_value mrb_thread_stop(mrb_state * mrb, mrb_value self)
 {
     WorkerThread * th_ctrl = static_cast<WorkerThread *>(DATA_PTR(self));
     if(nullptr != th_ctrl) { th_ctrl->stop(mrb); }
+    return mrb_nil_value();
+}
+static mrb_value mrb_thread_ms_sleep(mrb_state * mrb, mrb_value self)
+{
+    mrb_int tick;
+    mrb_get_args(mrb, "i", &tick);
+    std::this_thread::sleep_for(std::chrono::milliseconds(tick));
     return mrb_nil_value();
 }
 
@@ -2512,6 +2635,16 @@ void mrb_bedit_context_free(mrb_state * mrb, void * ptr)
         BinaryControl * bedit = static_cast<BinaryControl *>(ptr);
         delete bedit;
     }
+}
+static BinaryControl * get_bedit_ptr(mrb_value & argv)
+{
+    const mrb_data_type * src_type = DATA_TYPE(argv);
+    if( src_type == &mrb_bedit_context_type )
+    {
+        BinaryControl * bin_src = static_cast<BinaryControl *>(DATA_PTR(argv));
+        return bin_src;
+    }
+    return nullptr;
 }
 void mrb_regexp_context_free(mrb_state * mrb, void * ptr)
 {
