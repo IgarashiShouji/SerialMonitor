@@ -30,12 +30,14 @@ def test_core()
   printf("  %s -> check %s: %s\n", cmd, ('7.000000: 0000E040'==result ? 'ok' : 'ng'), result)
   cmd=sprintf("%s -F 40E00000", opt.prog); result=''; IO.popen(cmd) { |pipe| pipe.each { |s| result=s.chop() } }
   printf("  %s -> check %s: %s\n", cmd, ('7.000000: 40E00000'==result ? 'ok' : 'ng'), result)
-  cmd=sprintf("%s --crc  010203040506070809", opt.prog); result=''; IO.popen(cmd) { |pipe| pipe.each { |s| result=s.chop() } }
+  cmd=sprintf("%s --crc    010203040506070809 ", opt.prog); result=''; IO.popen(cmd) { |pipe| pipe.each { |s| result=s.chop() } }
   printf("  %s -> check %s: %s\n", cmd, ('0EB2: 010203040506070809'==result ? 'ok' : 'ng'), result)
-  cmd=sprintf("%s --crc8 010203040506070809", opt.prog); result=''; IO.popen(cmd) { |pipe| pipe.each { |s| result=s.chop() } }
+  cmd=sprintf("%s --crc8   010203040506070809 ", opt.prog); result=''; IO.popen(cmd) { |pipe| pipe.each { |s| result=s.chop() } }
   printf("  %s -> check %s: %s\n", cmd, ('98: 010203040506070809'==result ? 'ok' : 'ng'), result)
-  cmd=sprintf("%s --sum  010203040506070809", opt.prog); result=''; IO.popen(cmd) { |pipe| pipe.each { |s| result=s.chop() } }
+  cmd=sprintf("%s --sum    010203040506070809 ", opt.prog); result=''; IO.popen(cmd) { |pipe| pipe.each { |s| result=s.chop() } }
   printf("  %s -> check %s: %s\n", cmd, ('01: 010203040506070809'==result ? 'ok' : 'ng'), result)
+  cmd=sprintf("%s --sum '~:010203040506070809'", opt.prog); result=''; IO.popen(cmd) { |pipe| pipe.each { |s| result=s.chop() } }
+  printf("  %s -> check %s: %s\n", cmd, ('D3: 010203040506070809'==result ? 'ok' : 'ng'), result)
 
   # Core test
   data = '010203040506070809'

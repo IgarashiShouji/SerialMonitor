@@ -96,10 +96,5 @@ if 0 < arg.size() then
     smon.close()
   end
 else
-  print "smon [options] comXX comXX ...", "\n"
-  print "see of help)\n"
-  print "  smon --help\n"
-  print "ex)\n"
-  print "  smon -b 9600E1 -g 50 -t 100 --timer2 300 --timer3 500 com10 com11\n"
-  print "\n"
+  Core.bin_cmd_editor()
 end

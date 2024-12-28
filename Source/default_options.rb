@@ -274,7 +274,190 @@ class Core
       print "\n"
     end
   end
-  def self.__CheckOptions()
+  def self.bin_cmd_editor()
+    bin = BinEdit.new()
+    loop = true
+    offset = 0
+    list_cmd = Array.new
+    reg = CppRegexp.new( [ '^[ \t]*quit', '^[ \t]*echo', '^[ \t]*sum', '^[ \t]*xsum', '^[ \t]*[Cc][Rr][Cc]8', '^[ \t]*[Cc][Rr][Cc]16', '^[ \t]*[Cc][Rr][Cc]32', '^[ \t]*dump', '^[ \t]*offset', '^[ \t]*len', '^[ \t]*clear', '^[ \t]*save', '^[ \t]*load', '^[ \t]*#' ] )
+    cmd = Proc.new do |str|
+      # quit command
+      loop = false;
+    end
+    list_cmd.push(cmd)
+    cmd = Proc.new do |str|
+      # echo command
+      str = CppRegexp.reg_replace(str, '^[ \t]*echo[ \t]*', '')
+      print str, "\n"
+    end
+    list_cmd.push(cmd)
+    cmd = Proc.new do |str|
+      # sum command
+      str = CppRegexp.reg_replace(str, '^[ \t]*sum[ \t]*', '')
+      case str
+      when 'dump'
+        printf("%s%s\n", bin.dump, bin.sum)
+      when 'make'
+        bin = BinEdit.new([bin, bin.sum])
+      else
+        printf("%s: SUM(~+1)\n", bin.sum)
+      end
+    end
+    list_cmd.push(cmd)
+    cmd = Proc.new do |str|
+      # xsum command
+      str = CppRegexp.reg_replace(str, '^[ \t]*xsum[ \t]*', '')
+      case str
+      when 'dump'
+        printf("%s%s\n", bin.dump, bin.xsum)
+      when 'make'
+        bin = BinEdit.new([bin, bin.xsum])
+      else
+        printf("%s: SUM(xor)\n", bin.xsum)
+      end
+    end
+    list_cmd.push(cmd)
+    cmd = Proc.new do |str|
+      # crc8 command
+      str = CppRegexp.reg_replace(str, '^[ \t]*[Cc][Rr][Cc]8[ \t]*', '')
+      case str
+      when 'dump'
+        printf("%s%s\n", bin.dump, bin.crc8)
+      when 'make'
+        bin = BinEdit.new([bin, bin.crc8])
+      else
+        printf("%s: CRC8\n", bin.crc8)
+      end
+    end
+    list_cmd.push(cmd)
+    cmd = Proc.new do |str|
+      # crc16 command
+      str = CppRegexp.reg_replace(str, '^[ \t]*[Cc][Rr][Cc]16[ \t]*', '')
+      case str
+      when 'dump'
+        printf("%s%s\n", bin.dump, bin.crc16)
+      when 'make'
+        bin = BinEdit.new([bin, bin.crc16])
+      else
+        printf("%s: CRC16\n", bin.crc16)
+      end
+    end
+    list_cmd.push(cmd)
+    cmd = Proc.new do |str|
+      # crc32 command
+      str = CppRegexp.reg_replace(str, '^[ \t]*[Cc][Rr][Cc]32[ \t]*', '')
+      case str
+      when 'dump'
+        printf("%s%s\n", bin.dump, bin.crc32)
+      when 'make'
+        bin = BinEdit.new([bin, bin.crc32])
+      else
+        printf("%s: CRC32\n", bin.crc32)
+      end
+    end
+    list_cmd.push(cmd)
+    cmd = Proc.new do |str|
+      # dump command
+      def_dump = true;
+      str = CppRegexp.reg_replace(str, '^[ \t]*dump[ \t]*', '')
+      arg = CppRegexp.reg_split(str, '[ \t]+')
+      if 0 < arg.length then
+        crc = 'none'
+        crc = (1 < arg.length ? arg[1] : crc)
+        if CppRegexp.reg_match(arg[0], '[0-9,]+') then
+          nums = CppRegexp.reg_split(arg[0], ',')
+          num  = (1 < nums.length ? nums[1] : nums[0] ).to_i
+          addr = (1 < nums.length ? nums[0].to_i(16) : 0)
+          #num = arg[0].to_i
+          #addr = 0
+          len  = bin.length
+          sz = len - addr
+          sz = (num < sz ? num : sz)
+          while 0 < sz
+            sub = BinEdit.new(bin, addr, sz)
+            fmt = '%08X: %-' +  sprintf("%ds", num*2) + ' %s' + "\n"
+            case crc
+            when 'crc8'
+              printf(fmt, offset + addr, sub.dump, sub.crc8)
+            when 'crc16'
+              printf(fmt, offset + addr, sub.dump, sub.crc16)
+            when 'crc32'
+              printf(fmt, offset + addr, sub.dump, sub.crc32)
+            when 'sum'
+              printf(fmt, offset + addr, sub.dump, sub.sum)
+            when 'xsum'
+              printf(fmt, offset + addr, sub.dump, sub.xsum)
+            else
+              printf("%08X: %s\n", offset + addr, sub.dump)
+            end
+            addr += sz
+            sz = len - addr
+            sz = (num < sz ? num : sz)
+          end
+          def_dump = false;
+        end
+      end
+      if def_dump then
+        printf("dump: %s\n", bin.dump)
+      end
+    end
+    list_cmd.push(cmd)
+    cmd = Proc.new do |str|
+      # set offset command
+      str = CppRegexp.reg_replace(str, '^[ \t]*offset[ \t]*', '')
+      hex = CppRegexp.reg_replace(str, '[ \t]', '')
+      offset = (CppRegexp.reg_match(hex, '[0-9a-fA-F]+') ? hex.to_i(16) : offset)
+    end
+    list_cmd.push(cmd)
+    cmd = Proc.new do |str|
+      # len command
+      printf("length: %d\n", bin.length)
+    end
+    list_cmd.push(cmd)
+    cmd = Proc.new do |str|
+      # clear command
+      bin = BinEdit.new()
+    end
+    list_cmd.push(cmd)
+    cmd = Proc.new do |str|
+      # save command
+      fname = CppRegexp.reg_replace(str, '^[ \t]*save[ \t]*', '')
+      bin.save(fname)
+    end
+    list_cmd.push(cmd)
+    cmd = Proc.new do |str|
+      # load command
+      fname = CppRegexp.reg_replace(str, '^[ \t]*load[ \t]*', '')
+      bin = BinEdit.new(sprintf("file:%s", fname))
+    end
+    list_cmd.push(cmd)
+    cmd = Proc.new do |str|
+      # Comment line
+    end
+    list_cmd.push(cmd)
+    while loop
+      str = Core.gets()
+      if nil == str then
+        break
+      end
+      idx = reg.select(str)
+      if idx < list_cmd.length then
+        cmd = list_cmd[idx]
+        cmd.call(str)
+      else
+        if 0 < str.length then
+          str = CppRegexp.reg_replace(str, '^[0-9a-fA-f]+:', '')
+          str = CppRegexp.reg_replace(str, '0x([0-9a-fA-F])', '$1')
+          temp = BinEdit.new(str)
+          if 0 < temp.length then
+            #printf("in: %s\n", temp.dump)
+            bin = BinEdit.new( [ bin, temp ] )
+          end
+        end
+      end
+    end
+  end
+  def self.checkOptions()
     Core.tick()
     opts = Core.new
     if nil == opts['mruby-script'] then
@@ -302,6 +485,10 @@ class Core
         Core.opt_send()
         exit 0
       end
+      if nil != opts['bin-edit'] then
+        Core.bin_cmd_editor()
+        exit 0
+      end
       if nil != opts['crc'] then
         bin = BinEdit.new(opts['crc'])
         printf("%s: %s\n", bin.crc16(), opts['crc']);
@@ -313,8 +500,15 @@ class Core
         exit 0
       end
       if nil != opts['sum'] then
-        bin = BinEdit.new(opts['sum'])
-        printf("%s: %s\n", bin.sum(), opts['sum']);
+        str = opts['sum']
+        if CppRegexp.reg_match(str, '^~:') then
+          str = CppRegexp.reg_replace(str, '^~:', '')
+          bin = BinEdit.new(str)
+          printf("%s: %s\n", bin.sum, str);
+        else
+          bin = BinEdit.new(str)
+          printf("%s: %s\n", bin.xsum, str);
+        end
         exit 0
       end
       if nil != opts['FLOAT'] then
@@ -360,7 +554,7 @@ class Core
     Core.tick()
   end
 end
-Core.__CheckOptions()
+Core.checkOptions()
 
 class SendWaitEventer
   def initialize
