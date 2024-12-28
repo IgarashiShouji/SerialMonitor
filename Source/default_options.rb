@@ -368,8 +368,6 @@ class Core
           nums = CppRegexp.reg_split(arg[0], ',')
           num  = (1 < nums.length ? nums[1] : nums[0] ).to_i
           addr = (1 < nums.length ? nums[0].to_i(16) : 0)
-          #num = arg[0].to_i
-          #addr = 0
           len  = bin.length
           sz = len - addr
           sz = (num < sz ? num : sz)
@@ -446,13 +444,32 @@ class Core
         cmd.call(str)
       else
         if 0 < str.length then
-          str = CppRegexp.reg_replace(str, '^[0-9a-fA-f]+:', '')
-          str = CppRegexp.reg_replace(str, '0x([0-9a-fA-F])', '$1')
-          temp = BinEdit.new(str)
-          if 0 < temp.length then
-            #printf("in: %s\n", temp.dump)
-            bin = BinEdit.new( [ bin, temp ] )
+          temp = ''
+          if CppRegexp.reg_match(str, '^fmt:[^:]+:') then
+            list = CppRegexp.reg_split(str, ':')
+            fmt = list[1]
+            data = CppRegexp.reg_split(list[2], ',')
+            arg = Array.new
+            data.each_with_index do |val, idx|
+              ch = fmt[idx]
+              case ch
+              when 'f', 'F' then
+                arg.push(val.to_f)
+              when 'c', 'b', 's', 'w', 'i', 'd', 'S', 'W', 'I', 'D' then
+                arg.push(val.to_i)
+              when 'a', 'A' then
+              when 'h', 'H' then
+              else
+              end
+            end
+            temp = BinEdit.hexFromArray(fmt, arg)
+          else
+            str = CppRegexp.reg_replace(str, '^[0-9a-fA-f]+:', '')
+            str = CppRegexp.reg_replace(str, '0x([0-9a-fA-F])', '$1')
+            temp = BinEdit.new(str)
           end
+          #printf("in: %s\n", temp.dump)
+          bin = BinEdit.new( [ bin, temp ] )
         end
       end
     end

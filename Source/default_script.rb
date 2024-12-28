@@ -91,10 +91,10 @@ if 0 < arg.size() then
     end
   end
   loop = false
-  (objs.length).times do |idx|
-    ( smon, port ) = objs[idx]
-    smon.close()
-  end
+  #(objs.length).times do |idx|
+  #  ( smon, port ) = objs[idx]
+  #  smon.close()
+  #end
 else
   Core.bin_cmd_editor()
 end

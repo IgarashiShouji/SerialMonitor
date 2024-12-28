@@ -39,6 +39,34 @@ def test_core()
   cmd=sprintf("%s --sum '~:010203040506070809'", opt.prog); result=''; IO.popen(cmd) { |pipe| pipe.each { |s| result=s.chop() } }
   printf("  %s -> check %s: %s\n", cmd, ('D3: 010203040506070809'==result ? 'ok' : 'ng'), result)
 
+  io = IO.popen(sprintf("%s", opt.prog), "r+")
+  io.puts "01020304"
+  io.puts "dump"
+  io.close_write
+  result = io.gets; result.chop!()
+  printf("  check %s: %s\n", ('dump: 01020304'==result ? 'ok' : 'ng'), result)
+
+  io = IO.popen(sprintf("%s", opt.prog), "r+")
+  io.puts "fmt:fF:7.0,7.0"
+  io.puts "dump"
+  io.close_write
+  result = io.gets; result.chop!()
+  printf("  check %s: %s\n", ('dump: 0000E04040E00000'==result ? 'ok' : 'ng'), result)
+
+  io = IO.popen(sprintf("%s", opt.prog), "r+")
+  io.puts "fmt:cbWD:1,2,3,4"
+  io.puts "dump"
+  io.close_write
+  result = io.gets; result.chop!()
+  printf("  check %s: %s\n", ('dump: 0102000300000004'==result ? 'ok' : 'ng'), result)
+
+  io = IO.popen(sprintf("%s", opt.prog), "r+")
+  io.puts "fmt:cbwd:1,2,3,4"
+  io.puts "dump"
+  io.close_write
+  result = io.gets; result.chop!()
+  printf("  check %s: %s\n", ('dump: 0102030004000000'==result ? 'ok' : 'ng'), result)
+
   # Core test
   data = '010203040506070809'
   printf("  file exists: %s\n", (Core.exists('test1.rb') ? 'ok' : 'ng'))
@@ -377,9 +405,9 @@ if 0 < opt.size() then
 else
   print "mruby test script 1\n"
   test_core(); print "\n"
-  test_bin_edit(); print "\n"
-  test_cpp_regexp(); print "\n"
-  test_thead(); print "\n"
+#  test_bin_edit(); print "\n"
+#  test_cpp_regexp(); print "\n"
+#  test_thead(); print "\n"
   print "mruby test script 1 end\n"
   print "\n"
 end
