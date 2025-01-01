@@ -150,11 +150,11 @@ class Core
     tick = Core.tick()
     opts = Core.new()
     prn = WorkerThread.new
-    if(0 < opts.size()) then
+    if(0 < opts.length()) then
       port = opts[0]
       smon = Smon.new(port)
-      if(1 < opts.size()) then
-        (opts.size() - 1).times do |idx|
+      if(1 < opts.length()) then
+        (opts.length() - 1).times do |idx|
           data = opts[1+idx]
           data = CppRegexp.reg_replace(data, '[ _\-/@#(){}<>,\.]', '')
           smon.send(data, 0)
@@ -206,10 +206,10 @@ class Core
           end
         end
       else
+        loop = true
         reg = CppRegexp.new(['^[0-9a-fA-F _\-/@#(){}<>,\.]*$', '^tx:', '^quit'])
         th_rcv = WorkerThread.new
-        th_rcv.run() do
-          loop = true
+        th_rcv.run(1) do
           bin = BinEdit.new
           while loop do
             state = smon.read_wait(bin)
@@ -238,12 +238,10 @@ class Core
                 printf("%s: %10d[ms]: TO%d\n", port, tick, state)
               end
             else
-              loop = false
               th_rcv.stop()
             end
           end
         end
-        loop = true
         while loop do
           str = Core.gets()
           cmd_idx = reg.select(str)
@@ -279,18 +277,24 @@ class Core
     loop = true
     offset = 0
     list_cmd = Array.new
-    reg = CppRegexp.new( [ '^[ \t]*quit', '^[ \t]*echo', '^[ \t]*sum', '^[ \t]*xsum', '^[ \t]*[Cc][Rr][Cc]8', '^[ \t]*[Cc][Rr][Cc]16', '^[ \t]*[Cc][Rr][Cc]32', '^[ \t]*dump', '^[ \t]*offset', '^[ \t]*len', '^[ \t]*clear', '^[ \t]*save', '^[ \t]*load', '^[ \t]*#' ] )
+    list_reg = Array.new
+
+    list_reg.push('^[ \t]*quit\b')
     cmd = Proc.new do |str|
       # quit command
       loop = false;
     end
     list_cmd.push(cmd)
+
+    list_reg.push('^[ \t]*echo\b')
     cmd = Proc.new do |str|
       # echo command
       str = CppRegexp.reg_replace(str, '^[ \t]*echo[ \t]*', '')
       print str, "\n"
     end
     list_cmd.push(cmd)
+
+    list_reg.push('^[ \t]*sum\b')
     cmd = Proc.new do |str|
       # sum command
       str = CppRegexp.reg_replace(str, '^[ \t]*sum[ \t]*', '')
@@ -304,6 +308,8 @@ class Core
       end
     end
     list_cmd.push(cmd)
+
+    list_reg.push('^[ \t]*xsum\b')
     cmd = Proc.new do |str|
       # xsum command
       str = CppRegexp.reg_replace(str, '^[ \t]*xsum[ \t]*', '')
@@ -317,6 +323,8 @@ class Core
       end
     end
     list_cmd.push(cmd)
+
+    list_reg.push('^[ \t]*[Cc][Rr][Cc]8\b')
     cmd = Proc.new do |str|
       # crc8 command
       str = CppRegexp.reg_replace(str, '^[ \t]*[Cc][Rr][Cc]8[ \t]*', '')
@@ -330,6 +338,8 @@ class Core
       end
     end
     list_cmd.push(cmd)
+
+    list_reg.push('^[ \t]*[Cc][Rr][Cc]16\b')
     cmd = Proc.new do |str|
       # crc16 command
       str = CppRegexp.reg_replace(str, '^[ \t]*[Cc][Rr][Cc]16[ \t]*', '')
@@ -343,6 +353,8 @@ class Core
       end
     end
     list_cmd.push(cmd)
+
+    list_reg.push('^[ \t]*[Cc][Rr][Cc]32\b')
     cmd = Proc.new do |str|
       # crc32 command
       str = CppRegexp.reg_replace(str, '^[ \t]*[Cc][Rr][Cc]32[ \t]*', '')
@@ -356,6 +368,8 @@ class Core
       end
     end
     list_cmd.push(cmd)
+
+    list_reg.push('^[ \t]*dump\b')
     cmd = Proc.new do |str|
       # dump command
       def_dump = true;
@@ -400,6 +414,8 @@ class Core
       end
     end
     list_cmd.push(cmd)
+
+    list_reg.push('^[ \t]*offset\b')
     cmd = Proc.new do |str|
       # set offset command
       str = CppRegexp.reg_replace(str, '^[ \t]*offset[ \t]*', '')
@@ -407,32 +423,44 @@ class Core
       offset = (CppRegexp.reg_match(hex, '[0-9a-fA-F]+') ? hex.to_i(16) : offset)
     end
     list_cmd.push(cmd)
+
+    list_reg.push('^[ \t]*len\b')
     cmd = Proc.new do |str|
       # len command
       printf("length: %d\n", bin.length)
     end
     list_cmd.push(cmd)
+
+    list_reg.push('^[ \t]*clear\b')
     cmd = Proc.new do |str|
       # clear command
       bin = BinEdit.new()
     end
     list_cmd.push(cmd)
+
+    list_reg.push('^[ \t]*save\b')
     cmd = Proc.new do |str|
       # save command
       fname = CppRegexp.reg_replace(str, '^[ \t]*save[ \t]*', '')
       bin.save(fname)
     end
     list_cmd.push(cmd)
+
+    list_reg.push('^[ \t]*load\b')
     cmd = Proc.new do |str|
       # load command
       fname = CppRegexp.reg_replace(str, '^[ \t]*load[ \t]*', '')
       bin = BinEdit.new(sprintf("file:%s", fname))
     end
     list_cmd.push(cmd)
+
+    list_reg.push('^[ \t]*#')
     cmd = Proc.new do |str|
       # Comment line
     end
     list_cmd.push(cmd)
+
+    reg = CppRegexp.new(list_reg)
     while loop
       str = Core.gets()
       if nil == str then
@@ -480,7 +508,7 @@ class Core
     if nil == opts['mruby-script'] then
       if nil != opts['comlist'] then
         regs = Array.new
-        (opts.size()).times do |idx|
+        (opts.length()).times do |idx|
           regs.push(opts[idx])
         end
         (Smon.comlist(regs)).each do |name|
@@ -490,7 +518,7 @@ class Core
       end
       if nil != opts['pipelist'] then
         regs = Array.new
-        (opts.size()).times do |idx|
+        (opts.length()).times do |idx|
           regs.push(opts[idx])
         end
         (Smon.pipelist(regs)).each do |name|
@@ -554,7 +582,7 @@ class Core
       end
       if nil != opts['read-bin-to-xlsx'] then
         opts = Core.new()
-        if 2 == opts.size() then
+        if 2 == opts.length() then
           if (File.exist?(opts[0]) && File.exist?(opts[1])) then
             if opts[1] =~ /xls/ then
               BinEdit.readBinToXlsx(opts[0], opts[1])

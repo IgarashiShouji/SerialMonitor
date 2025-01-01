@@ -123,34 +123,3 @@ SerialControl * SerialControl::createObject(const string & name, unsigned int ba
     SerialControl * com = new SerialControlBoost(name.c_str(), baud, pt, st, rts);
     return com;
 }
-
-bool SerialControl::hasBaudRate(std::string & baud, Profile & info)
-{
-    static const char * list[] =
-    {
-        "115200E1", "115200E2", "115200N1", "115200N2", "115200O1", "115200O2",
-        "1200E1",   "1200E2",   "1200N1",   "1200N2",   "1200O1",   "1200O2",
-        "19200E1",  "19200E2",  "19200N1",  "19200N2",  "19200O1",  "19200O2",
-        "38400E1",  "38400E2",  "38400N1",  "38400N2",  "38400O1",  "38400O2",
-        "9600E1",   "9600E2",   "9600N1",   "9600N2",   "9600O1",   "9600O2"
-    };
-    enum {ListMax=(sizeof(list)/sizeof(list[0]))};
-    static const Profile prof[ListMax] =
-    {
-        { BR115200, even, one }, { BR115200, even, two }, { BR115200, none, one }, { BR115200, none, two }, { BR115200, odd,  one }, { BR115200, odd,  two },
-        { BR1200,   even, one }, { BR1200,   even, two }, { BR1200,   none, one }, { BR1200,   none, two }, { BR1200,   odd,  one }, { BR1200,   odd,  two },
-        { BR19200,  even, one }, { BR19200,  even, two }, { BR19200,  none, one }, { BR19200,  none, two }, { BR19200,  odd,  one }, { BR19200,  odd,  two },
-        { BR38400,  even, one }, { BR38400,  even, two }, { BR38400,  none, one }, { BR38400,  none, two }, { BR38400,  odd,  one }, { BR38400,  odd,  two },
-        { BR9600,   even, one }, { BR9600,   even, two }, { BR9600,   none, one }, { BR9600,   none, two }, { BR9600,   odd,  one }, { BR9600,   odd,  two }
-    };
-
-    ConstArray<const char *> arry(list, __ArrayCount(list));
-    ConstCString target(baud.c_str(), baud.size());
-    size_t idx = getIndexArray<const char *>(arry, target);
-    if(idx < __ArrayCount(list))
-    {
-        info = prof[idx];
-        return true;
-    }
-    return false;
-}

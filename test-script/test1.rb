@@ -405,9 +405,9 @@ if 0 < opt.size() then
 else
   print "mruby test script 1\n"
   test_core(); print "\n"
-#  test_bin_edit(); print "\n"
-#  test_cpp_regexp(); print "\n"
-#  test_thead(); print "\n"
+  test_bin_edit(); print "\n"
+  test_cpp_regexp(); print "\n"
+  test_thead(); print "\n"
   print "mruby test script 1 end\n"
   print "\n"
 end

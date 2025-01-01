@@ -179,7 +179,7 @@ protected:
     std::condition_variable                  cond;
     std::list<ReciveInfo>                    rcv_cache;
 public:
-    SerialMonitor(mrb_value & self, const char * arg, std::vector<size_t> & timer_def, std::string boud, bool rts);
+    SerialMonitor(mrb_value & self, const char * arg, std::vector<size_t> & timer_def);
     virtual ~SerialMonitor(void);
     void close(void);
     void send(BinaryControl & bin, unsigned int timer);
@@ -822,17 +822,7 @@ public:
         std::lock_guard<std::mutex> lock(mtx);
         char * arg;
         mrb_get_args(mrb, "z", &arg);
-        std::string boud("1200O1");
-        bool rts_ctrl = true;
-        if(opts.count("baud"))
-        {
-            boud = opts["baud"].as<std::string>();
-        }
-        if(opts.count("no-rts"))
-        {
-            rts_ctrl = false;
-        }
-        SerialMonitor * smon = new SerialMonitor(self, arg, timer, boud, rts_ctrl);
+        SerialMonitor * smon = new SerialMonitor(self, arg, timer);
         mrb_data_init(self, smon, &mrb_smon_context_type);
         //push(smon);
         //mrb_garbage_collect(mrb);
@@ -883,7 +873,7 @@ public:
             mrb_define_module_function(mrb, core_class, "timestamp", mrb_core_file_timestamp,MRB_ARGS_ARG(1, 1) );
             mrb_define_module_function(mrb, core_class, "makeQR",    mrb_core_make_qr,       MRB_ARGS_ARG(1, 1) );
             mrb_define_method( mrb, core_class, "initialize",        mrb_core_initialize,    MRB_ARGS_NONE()    );
-            mrb_define_method( mrb, core_class, "size",              mrb_core_opt_size,      MRB_ARGS_NONE()    );
+            mrb_define_method( mrb, core_class, "length",            mrb_core_opt_size,      MRB_ARGS_NONE()    );
             mrb_define_method( mrb, core_class, "[]",                mrb_core_opt_get,       MRB_ARGS_ARG(1, 1) );
             mrb_define_method( mrb, core_class, "prog",              mrb_core_prog,          MRB_ARGS_NONE()    );
 
@@ -3595,7 +3585,7 @@ void WorkerThread::stop(mrb_state * mrb)
 }
 
 /* -------- << class SerialMonitor >>-------- */
-SerialMonitor::SerialMonitor(mrb_value & self, const char * arg_, std::vector<size_t> & timer_default, std::string def_boud, bool rts_ctrl)
+SerialMonitor::SerialMonitor(mrb_value & self, const char * arg_, std::vector<size_t> & timer_default)
   : arg(arg_), timer(timer_default), com(nullptr), tevter(nullptr), cache_size(1024), rcv_enable(true)
 {   /* str_split */
     std::vector<std::string> args;
@@ -3605,33 +3595,42 @@ SerialMonitor::SerialMonitor(mrb_value & self, const char * arg_, std::vector<si
         args.push_back(item);
     }
     std::string name(args[0]);
-    std::string baud(def_boud);
-    SerialControl::Profile info;
-    SerialControl::hasBaudRate(baud, info);
+    SerialControl::Profile info = { 1200, SerialControl::odd, SerialControl::one };
+    bool rts_ctrl = true;
     if(1 < args.size())
     {
-        for(auto idx = 1; idx < args.size(); idx ++)
+        std::vector<std::regex> regs;
+        regs.push_back(std::regex("one",  std::regex::icase));
+        regs.push_back(std::regex("two",  std::regex::icase));
+        regs.push_back(std::regex("none", std::regex::icase));
+        regs.push_back(std::regex("even", std::regex::icase));
+        regs.push_back(std::regex("odd",  std::regex::icase));
+        regs.push_back(std::regex("GAP=[0-9]+", std::regex::icase));
+        regs.push_back(std::regex("TO1=[0-9]+", std::regex::icase));
+        regs.push_back(std::regex("TO2=[0-9]+", std::regex::icase));
+        regs.push_back(std::regex("TO3=[0-9]+", std::regex::icase));
+        regs.push_back(std::regex("rts",  std::regex::icase));
+        regs.push_back(std::regex("[0-9]+", std::regex::icase));
+        std::vector<std::function<void(std::string&)>> act;
+        act.push_back( [&](std::string & arg) { info.stop = SerialControl::one;    } );
+        act.push_back( [&](std::string & arg) { info.stop = SerialControl::two;    } );
+        act.push_back( [&](std::string & arg) { info.parity = SerialControl::none; } );
+        act.push_back( [&](std::string & arg) { info.parity = SerialControl::even; } );
+        act.push_back( [&](std::string & arg) { info.parity = SerialControl::odd;  } );
+        act.push_back( [&](std::string & arg) { timer[0] = stoi(std::regex_replace(arg, std::regex("GAP=([0-9]+)", std::regex::icase), "$1")); } );
+        act.push_back( [&](std::string & arg) { timer[1] = stoi(std::regex_replace(arg, std::regex("TO1=([0-9]+)", std::regex::icase), "$1")); } );
+        act.push_back( [&](std::string & arg) { timer[2] = stoi(std::regex_replace(arg, std::regex("TO2=([0-9]+)", std::regex::icase), "$1")); } );
+        act.push_back( [&](std::string & arg) { timer[3] = stoi(std::regex_replace(arg, std::regex("TO3=([0-9]+)", std::regex::icase), "$1")); } );
+        act.push_back( [&](std::string & arg) { rts_ctrl = (std::regex_match(arg, std::regex("rts=true", std::regex::icase)) ? true : false); } );
+        act.push_back( [&](std::string & arg) { info.baud = stoi(arg); } );
+        for(auto arg : args)
         {
-            auto & arg = args[idx];
-            if      ( std::regex_match(arg, std::regex("one")))        { info.stop = SerialControl::one; }
-            else if ( std::regex_match(arg, std::regex("ONE")))        { info.stop = SerialControl::one; }
-            else if ( std::regex_match(arg, std::regex("two")))        { info.stop = SerialControl::two; }
-            else if ( std::regex_match(arg, std::regex("TWO")))        { info.stop = SerialControl::two; }
-            else if ( std::regex_match(arg, std::regex("none")))       { info.parity = SerialControl::none; }
-            else if ( std::regex_match(arg, std::regex("NONE")))       { info.parity = SerialControl::none; }
-            else if ( std::regex_match(arg, std::regex("even")))       { info.parity = SerialControl::even; }
-            else if ( std::regex_match(arg, std::regex("EVEN")))       { info.parity = SerialControl::even; }
-            else if ( std::regex_match(arg, std::regex("odd")))        { info.parity = SerialControl::odd; }
-            else if ( std::regex_match(arg, std::regex("ODD")))        { info.parity = SerialControl::odd; }
-            else if ( std::regex_match(arg, std::regex("GAP=[0-9]+"))) { timer[0] = stoi(std::regex_replace(arg, std::regex("GAP=([0-9]+)"), "$1")); }
-            else if ( std::regex_match(arg, std::regex("TO1=[0-9]+"))) { timer[1] = stoi(std::regex_replace(arg, std::regex("TO1=([0-9]+)"), "$1")); }
-            else if ( std::regex_match(arg, std::regex("TO2=[0-9]+"))) { timer[2] = stoi(std::regex_replace(arg, std::regex("TO2=([0-9]+)"), "$1")); }
-            else if ( std::regex_match(arg, std::regex("TO3=[0-9]+"))) { timer[3] = stoi(std::regex_replace(arg, std::regex("TO3=([0-9]+)"), "$1")); }
-            else
+            for(size_t idx=0, max=regs.size(); idx < max; idx++)
             {
-                if( !SerialControl::hasBaudRate(arg, info) )
+                if(std::regex_match(arg, regs[idx]))
                 {
-                    info.baud = stoi(arg);
+                    (act[idx])(arg);
+                    break;
                 }
             }
         }
@@ -3851,12 +3850,10 @@ int main(int argc, char * argv[])
         desc.add_options()
             ("comlist",                                                         "print com port list"                             )
             ("pipelist",                                                        "print pipe name list"                            )
-            ("baud,b",          boost::program_options::value<std::string>(),   "baud rate      Default 1200O1 ex) -b 9600E1"     )
             ("gap,g",           boost::program_options::value<unsigned int>(),  "time out tick. Default   30 ( 30 [ms])"          )
             ("timer,t",         boost::program_options::value<unsigned int>(),  "time out tick. Default  300 (300 [ms])"          )
             ("timer2",          boost::program_options::value<unsigned int>(),  "time out tick. Default  500 (500 [ms])"          )
             ("timer3",          boost::program_options::value<unsigned int>(),  "time out tick. Default 1000 (  1 [s])"           )
-            ("no-rts",                                                          "no control RTS signal"                           )
             ("crc,c",           boost::program_options::value<std::string>(),   "calclate modbus RTU CRC"                         )
             ("crc8",            boost::program_options::value<std::string>(),   "calclate CRC8"                                   )
             ("sum,s",           boost::program_options::value<std::string>(),   "calclate checksum of XOR"                        )

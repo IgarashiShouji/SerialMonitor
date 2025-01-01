@@ -2,10 +2,10 @@
 
 tick = Core.tick()
 arg = Core.new()
-if 0 < arg.size() then
+if 0 < arg.length() then
   objs = Array.new
   fmt = "%s:"; arg_sz = 0
-  (arg.size()).times do |idx|
+  (arg.length()).times do |idx|
     port = String.new(arg[idx])
     smon = Smon.new(port)
     if arg_sz < port.length then
@@ -59,7 +59,7 @@ if 0 < arg.size() then
     while loop do
       if 0 == cnt then
         th.synchronize do
-          print "%d:Date: ", cnt, Core.date(), "\n"
+          printf("Date: %s\n", Core.date())
         end
       end
       WorkerThread.ms_sleep(100)
