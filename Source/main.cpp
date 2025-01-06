@@ -217,7 +217,7 @@ public:
     inline void close(void);
 };
 
-/* class inline methods */
+/* -- inline methods -- */
 inline unsigned char toValue(unsigned char data)
 {
     unsigned char val=0xff;
@@ -451,7 +451,8 @@ inline void OpenXLSXCtrl::close(void)
     doc.close();
 }
 
-/* mruby interfaces */
+
+/* -- protorypes for mruby interfaces -- */
 static mrb_value mrb_core_tick(mrb_state* mrb, mrb_value self);
 static mrb_value mrb_core_date(mrb_state* mrb, mrb_value self);
 static mrb_value mrb_core_gets(mrb_state* mrb, mrb_value self);
@@ -529,8 +530,8 @@ static mrb_value mrb_xlsx_save(mrb_state * mrb, mrb_value self);
 static void mrb_xlsx_context_free(mrb_state * mrb, void * ptr);
 
 
-
-static const char *  SoftwareRevision = "0.13.16";
+/* -- static tables -- */
+static const char *  SoftwareRevision = "0.13.17";
 static const struct mrb_data_type mrb_core_context_type =
 {
     "mrb_core_context",         mrb_core_context_free
@@ -557,6 +558,7 @@ static const struct mrb_data_type mrb_xlsx_context_type =
 };
 
 
+/* -- Application -- */
 class Application : public Object
 {
 protected:
@@ -990,6 +992,8 @@ public:
 Application * Application::obj = nullptr;
 Application * Application::getObject(void) { return Application::obj; }
 
+
+/* -- functions for mruby interface -- */
 static std::string makeQRsvg(const std::string & arg)
 {
     const char *text = arg.c_str();
@@ -3837,6 +3841,7 @@ OpenXLSXCtrl::Type OpenXLSXCtrl::get_cell(std::string & cell, OpenXLSXCtrl::Data
 }
 
 
+/* -------- << Program Main >>-------- */
 extern "C"
 {
 extern const char    help_msg[];

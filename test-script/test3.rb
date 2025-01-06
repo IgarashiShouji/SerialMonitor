@@ -50,10 +50,10 @@ end
 
 def test_smon()
   arg = Core.new()
-  (arg.size()).times do |idx|
+  (arg.length()).times do |idx|
     printf("arg[%d] = %s\n", idx, arg[idx])
   end
-  if 2 <= arg.size() then
+  if 2 <= arg.length() then
     t0 = Tester.new(arg[0])
     t1 = Tester.new(arg[1])
     t0.run(t1)

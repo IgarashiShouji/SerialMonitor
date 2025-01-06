@@ -21,7 +21,7 @@ def test_core()
   opt = Core.new()
   printf("  program: %s\n", opt.prog)
   printf("  --mruby-script: %s\n", opt['mruby-script'])
-  printf("  opt.size: %d\n", opt.size())
+  printf("  opt.length: %d\n", opt.length())
   IO.popen(sprintf("%s -v", opt.prog)) { |pipe| pipe.each { |s| print "  > ", s } }
   cmd = sprintf("%s -m %s arg1 arg2", opt.prog, opt['mruby-script'])
   print "  ", cmd, "\n"
@@ -374,34 +374,34 @@ def test_thead
   end
   th.join
 
-  begin
-    th = WorkerThread.new
-    th1 = WorkerThread.new
-    th1.run(1) do |cnt|
-      printf("  %d: One Shot Thread Wait\n", cnt)
-#      th.wait() do
-#        printf("  %d: One Shot Thread Wait now\n", cnt)
-#      end
-      printf("  %d: One Shot Thread Wait End\n", cnt)
-    end
-    th2 = WorkerThread.new
-    th2.run(1) do |cnt|
-      printf("  %d: One Shot Thread notify\n", cnt)
-      th.notify() do
-        printf("  %d: One Shot Thread notify now\n", cnt)
-      end
-      printf("  %d: One Shot Thread notify End\n", cnt)
-    end
-    th1.join
-    th2.join
-  end
+#   begin
+#     th = WorkerThread.new
+#     th1 = WorkerThread.new
+#     th1.run(1) do |cnt|
+#       printf("  %d: One Shot Thread Wait\n", cnt)
+# #      th.wait() do
+# #        printf("  %d: One Shot Thread Wait now\n", cnt)
+# #      end
+#       printf("  %d: One Shot Thread Wait End\n", cnt)
+#     end
+#     th2 = WorkerThread.new
+#     th2.run(1) do |cnt|
+#       printf("  %d: One Shot Thread notify\n", cnt)
+#       th.notify() do
+#         printf("  %d: One Shot Thread notify now\n", cnt)
+#       end
+#       printf("  %d: One Shot Thread notify End\n", cnt)
+#     end
+#     th1.join
+#     th2.join
+#   end
 
   print "thead test end\n"
 end
 
 opt = Core.new()
-if 0 < opt.size() then
-  (opt.size()).times { |idx| printf("  arg: %s\n", opt[idx]); }
+if 0 < opt.length() then
+  (opt.length()).times { |idx| printf("  arg: %s\n", opt[idx]); }
 else
   print "mruby test script 1\n"
   test_core(); print "\n"
