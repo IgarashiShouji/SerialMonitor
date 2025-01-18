@@ -145,7 +145,7 @@ protected:
 public:
     inline WorkerThread(void);
     virtual ~WorkerThread(void);
-    bool run(mrb_state * mrb, mrb_value self);
+    bool start(mrb_state * mrb, mrb_value self);
     void run_context(size_t id);
     void join(void);
     inline enum Status get_state(void) const;
@@ -500,7 +500,7 @@ static void mrb_regexp_context_free(mrb_state * mrb, void * ptr);
 
 static mrb_value mrb_thread_initialize(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_thread_state(mrb_state * mrb, mrb_value self);
-static mrb_value mrb_thread_run(mrb_state * mrb, mrb_value self);
+static mrb_value mrb_thread_start(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_thread_wait(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_thread_notify(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_thread_sync(mrb_state * mrb, mrb_value self);
@@ -531,7 +531,7 @@ static void mrb_xlsx_context_free(mrb_state * mrb, void * ptr);
 
 
 /* -- static tables -- */
-static const char *  SoftwareRevision = "0.13.17";
+static const char *  SoftwareRevision = "0.14.01";
 static const struct mrb_data_type mrb_core_context_type =
 {
     "mrb_core_context",         mrb_core_context_free
@@ -815,7 +815,7 @@ public:
         mrb_get_args(mrb, "&*", &proc, &argv, &argc);
         WorkerThread * th_ctrl = new WorkerThread();
         mrb_data_init(self, th_ctrl, &mrb_thread_context_type);
-        th_ctrl->run(mrb, self);
+        th_ctrl->start(mrb, self);
         return self;
     }
 
@@ -922,7 +922,7 @@ public:
             mrb_define_module_function( mrb, thread_class, "ms_sleep", mrb_thread_ms_sleep, MRB_ARGS_ARG(1, 1) );
             mrb_define_method( mrb, thread_class, "initialize",  mrb_thread_initialize, MRB_ARGS_ANY()  );
             mrb_define_method( mrb, thread_class, "state",       mrb_thread_state,      MRB_ARGS_ANY()  );
-            mrb_define_method( mrb, thread_class, "run",         mrb_thread_run,        MRB_ARGS_ANY()  );
+            mrb_define_method( mrb, thread_class, "start",       mrb_thread_start,      MRB_ARGS_ANY()  );
             mrb_define_method( mrb, thread_class, "wait",        mrb_thread_wait,       MRB_ARGS_NONE() );
             mrb_define_method( mrb, thread_class, "notify",      mrb_thread_notify,     MRB_ARGS_NONE() );
             mrb_define_method( mrb, thread_class, "synchronize", mrb_thread_sync,       MRB_ARGS_NONE() );
@@ -2142,10 +2142,10 @@ mrb_value mrb_thread_state(mrb_state * mrb, mrb_value self)
     if(nullptr != th_ctrl) { return mrb_fixnum_value(th_ctrl->get_state()); }
     return mrb_nil_value();
 }
-mrb_value mrb_thread_run(mrb_state * mrb, mrb_value self)
+mrb_value mrb_thread_start(mrb_state * mrb, mrb_value self)
 {
     WorkerThread * th_ctrl = static_cast<WorkerThread *>(DATA_PTR(self));
-    if(nullptr != th_ctrl ) { th_ctrl->run(mrb, self); }
+    if(nullptr != th_ctrl ) { th_ctrl->start(mrb, self); }
     return mrb_nil_value();
 }
 mrb_value mrb_thread_wait(mrb_state * mrb, mrb_value self)
@@ -3476,7 +3476,7 @@ WorkerThread::~WorkerThread(void)
         this->mrb = nullptr;
     }
 }
-bool WorkerThread::run(mrb_state * mrb, mrb_value self)
+bool WorkerThread::start(mrb_state * mrb, mrb_value self)
 {
     bool result = false;
     std::unique_lock<std::mutex> lock(mtx);

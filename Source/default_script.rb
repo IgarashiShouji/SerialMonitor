@@ -1,35 +1,38 @@
 # default script
 
-tick = Core.tick()
-arg = Core.new()
-if 0 < arg.length() then
-  objs = Array.new
-  fmt = "%s:"; arg_sz = 0
-  (arg.length()).times do |idx|
-    port = String.new(arg[idx])
-    smon = Smon.new(port)
-    if arg_sz < port.length then
-      arg_sz = port.length
-      fmt = '%-' + sprintf("%d", port.length) + 's:'
-    end
-    objs.push( [ smon, port ] )
+list_port = Core.args()
+if 0 < args.length then
+  tick = Core.tick(); arg_sz = 0
+  list_port.each do |port|
+    arg_sz = (arg_sz < port.length ? arg_sz : port.length)
   end
-  loop = true
-  th = WorkerThread.new
-  (objs.length).times do |idx|
-    (smon, port) = objs[idx]
-    WorkerThread.new(1) do
+  fmt = '%-' + sprintf("%d", arg_sz) + 's:'
+  Smon.open(list_port) do |smon|
+    loop = true
+    bin = BinEdit.new(1024)
+    th = WorkerThread.run(1) do
+      cnt = 500
       while loop do
-        bin = BinEdit.new
-        state = smon.read_wait(bin)
+        (500).times do |idx|
+          workerthread.ms_sleep(100)
+          if !loop then; break; end
+        end
+        th.synchronize do
+          printf("%s\n", core.date())
+        end
+      end
+    end
+    while loop do
+      str = Core.gets(smon) do |state, idx|
+        port = list_port[idx]
         case state
         when Smon::CACHE_FULL then
         when Smon::GAP then
           th.synchronize do
             tick += Core.tick() % 100000000000
+            smon.read(bin)
             if 0 < bin.length then
-              rcv_msg = bin.dump()
-              printf("%d:%s %10d[ms]: %s\n", idx, sprintf(fmt, port), tick, rcv_msg)
+              printf("%d:%s %10d[ms]: %s\n", idx, sprintf(fmt, port), tick, bin.dump())
             else
               printf("%d:%s %10d[ms]: GAP\n", idx, sprintf(fmt, port), tick)
             end
@@ -52,49 +55,28 @@ if 0 < arg.length() then
         else
         end
       end
-    end
-  end
-  WorkerThread.new(1) do
-    cnt = 0
-    while loop do
-      if 0 == cnt then
-        th.synchronize do
-          printf("Date: %s\n", Core.date())
+      if nil == str     then; loop = false; break; end
+      if 'quit' == str  then; loop = false; break; end
+      data = str
+      if 0 < data.length then
+        idx = 0
+        if CppRegexp.reg_match(data, '^[0-9]+:') then
+          idx  = (CppRegexp.reg_replace(data, ':.*$', '')).to_i
+          data = CppRegexp.reg_replace(data, '^[0-9]+:', '')
         end
-      end
-      WorkerThread.ms_sleep(100)
-      cnt += 1
-      cnt %= 500
-    end
-  end
-  while true do
-    str = Core.gets()
-    if nil == str     then; break; end
-    if 'quit' == str  then; break; end
-    data = str
-    if 0 < data.length then
-      idx = 0
-      if CppRegexp.reg_match(data, '^[0-9]+:') then
-        idx  = (CppRegexp.reg_replace(data, ':.*$', '')).to_i
-        data = CppRegexp.reg_replace(data, '^[0-9]+:', '')
-      end
-      if idx < objs.length then
-        ( smon, port ) = objs[idx]
-        th.synchronize do
-          smon.send(data, 0)
-          tick += Core.tick() % 100000000000
-          printf("%d:%s %10d[ms]: Send: %s\n", idx, sprintf(fmt, port), tick, data)
+        if idx < list_port.length then
+          th.synchronize do
+            smon.send(data, idx)
+            tick += Core.tick() % 100000000000
+            printf("%d:%s %10d[ms]: Send: %s\n", idx, sprintf(fmt, port), tick, data)
+          end
         end
+      else
+        break
       end
-    else
-      break
     end
+    loop = false
   end
-  loop = false
-  #(objs.length).times do |idx|
-  #  ( smon, port ) = objs[idx]
-  #  smon.close()
-  #end
 else
   Core.bin_cmd_editor()
 end
