@@ -1,7 +1,7 @@
 # default script
 
 list_port = Core.args()
-if 0 < args.length then
+if 0 < list_port.length then
   tick = Core.tick(); arg_sz = 0
   list_port.each do |port|
     arg_sz = (arg_sz < port.length ? arg_sz : port.length)
@@ -66,7 +66,7 @@ if 0 < args.length then
         end
         if idx < list_port.length then
           th.synchronize do
-            smon.send(data, idx)
+            smon.send(idx, data)
             tick += Core.tick() % 100000000000
             printf("%d:%s %10d[ms]: Send: %s\n", idx, sprintf(fmt, port), tick, data)
           end

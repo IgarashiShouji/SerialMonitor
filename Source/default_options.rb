@@ -172,18 +172,18 @@ class CppRegexp
 end
 
 class Smon
-  def open(ports)
+  def self.open(ports)
     smon = Smon.new(ports)
-    yield()
+    yield(smon)
     smon.close()
   end
 end
 
 class WorkerThread
-  def run(count)
-    th = WorkerThread
+  def self.run(count)
+    th = WorkerThread.new
     th.start(count) do
-      yield()
+      yield(th)
     end
     return th;
   end
@@ -339,130 +339,106 @@ end
 
 class Core
   def self.opt_send()
-    print 'Date: ', Core.date(), "\n"
     tick = Core.tick()
-    opts = Core.new()
-    prn = WorkerThread.new
-    if(0 < opts.length()) then
-      port = opts[0]
-      smon = Smon.new(port)
-      if(1 < opts.length()) then
-        (opts.length() - 1).times do |idx|
-          data = opts[1+idx]
-          data = CppRegexp.reg_replace(data, '[ _\-/@#(){}<>,\.]', '')
-          smon.send(data, 0)
+    args = Core.args()
+    case args.length
+    when 0 then
+      print "smon -1 comxx data1 data2 ...", "\n"
+      print "ex)\n"
+      print "  ./smon.exe -1 com11,9600,odd,one,GAP=80,TO1=100,TO2=200,TO3=500 tx:1234 11223344 01020304 99887766 12345678\n"
+      print "  ./smon -1 /dev/pts/1 'tx:smon -1 /dev/ttyUSB0 1234' '01 02_030405...060-70809' 00112233445566778899\n"
+      print "\n"
+    when 1 then
+      port = args[0]
+      printf("Date: %s\n", Core.date())
+      Smon.open(port) do |smon|
+        loop = true
+        smon.timer(Smon::CTIMER, (20*1000))
+        bin = BinEdit.new
+        while loop do
+          now = Core.tick()
+          str = Core.gets(smon, bin) do |idx, state|
+            tick += now % 100000000000
+            case state
+            when Smon::OTIMER then
+            when Smon::CTIMER then
+              printf("Date: %s\n", Core.date())
+            when Smon::CACHE_FULL then
+            when Smon::GAP then
+              if 0 < bin.length then
+                printf("%s %10d[ms]: %s\n", port, tick, bin.dump())
+              else
+                printf("%s %10d[ms]: GAP\n", port, tick)
+              end
+            when Smon::TO1, Smon::TO2, Smon::TO3 then
+              printf("%s %10d[ms]: TO%d\n", port, tick, state)
+            else
+            end
+          end
+          case str
+          when 'quit' then
+            loop = false;
+          else
+            data = str
+            if 0 < data.length then
+              smon.send(data)
+              tick += Core.tick() % 100000000000
+              printf("%s %10d[ms]: Send: %s\n", port, tick, data)
+            end
+          end
+        end
+      end
+    else
+      port = args.shift()
+      Smon.open(port) do |smon|
+        printf("Date: %s\n", Core.date())
+        smon.timer(Smon::CTIMER, (20*1000))
+        args.each do |data|
+          is_date = false;
+          is_send=true;
+          smon.send(data)
           tick += Core.tick() % 100000000000
           printf("%10d[ms]: Send: %s -- ", tick, data)
-          rdata = ''
           interval = 0
           loop = true
+          rdata = ''
           bin = BinEdit.new
           while loop do
             state = smon.read_wait(bin)
             now = Core.tick()
             tick += now % 100000000000
             case state
+            when Smon::OTIMER then
+            when Smon::CTIMER then
+              is_date = true;
             when Smon::CACHE_FULL then
             when Smon::GAP then
-              prn.synchronize do
-                if 0 < bin.length then
-                  rdata += bin.dump()
-                  interval += now
-                  printf(" -- RCV", tick)
-                else
-                  printf("GAP", tick)
-                end
+              if 0 < bin.length then
+                rdata += bin.dump()
+                interval += now
+                printf(" Rcv ")
+              else
+                printf("GAP", tick)
               end
-            when Smon::TO1 then
-              prn.synchronize do
-                printf(", TO%d", state)
-              end
-            when Smon::TO2 then
-              prn.synchronize do
-                printf(", TO%d", state)
-              end
+            when Smon::TO1, Smon::TO2 then
+              printf(", TO%d", state)
             when Smon::TO3 then
-              prn.synchronize do
-                printf(", TO%d", state)
-              end
+              printf(", TO%d", state)
               loop = false
             else
               loop = false
             end
           end
-          prn.synchronize do
-            if 0 < rdata.length then
-              printf(": (%d[ms]) --> %s\n", interval, rdata)
-            else
-              print " ... No Recived\n"
-            end
-          end
-        end
-      else
-        loop = true
-        reg = CppRegexp.new(['^[0-9a-fA-F _\-/@#(){}<>,\.]*$', '^tx:', '^quit'])
-        th_rcv = WorkerThread.new
-        th_rcv.run(1) do
-          bin = BinEdit.new
-          while loop do
-            state = smon.read_wait(bin)
-            tick += Core.tick() % 100000000000
-            case state
-            when Smon::CACHE_FULL then
-            when Smon::GAP then
-              prn.synchronize do
-                if 0 < bin.length then
-                  printf("%s: %10d[ms]: %s\n", port, tick, bin.dump())
-                  bin.resize(0)
-                else
-                  printf("%s: %10d[ms]: GAP\n", port, tick)
-                end
-              end
-            when Smon::TO1 then
-              prn.synchronize do
-                printf("%s: %10d[ms]: TO%d\n", port, tick, state)
-              end
-            when Smon::TO2 then
-              prn.synchronize do
-                printf("%s: %10d[ms]: TO%d\n", port, tick, state)
-              end
-            when Smon::TO3 then
-              prn.synchronize do
-                printf("%s: %10d[ms]: TO%d\n", port, tick, state)
-              end
-            else
-              th_rcv.stop()
-            end
-          end
-        end
-        while loop do
-          str = Core.gets()
-          cmd_idx = reg.select(str)
-          case cmd_idx
-          when 0
-            data = CppRegexp.reg_replace(str, '[ _\-/@#(){}<>,\.]', '')
-            if 0 < data.length then
-              smon.send(data, 0)
-              tick += Core.tick() % 100000000000
-              prn.synchronize do
-                printf("%s: %10d[ms]: Send: %s\n", port, tick, data)
-              end
-            end
-          when 1
-          when 2
-            loop = false;
-            break;
+          if 0 < rdata.length then
+            printf(": (%d[ms]) --> %s\n", interval, rdata)
           else
+            print " ... No Recived\n"
+          end
+          if is_date then
+              printf("Date: %s\n", Core.date())
           end
         end
       end
-      smon.close()
-    else
-      print "smon [options] comxx data1 data2 ...", "\n"
-      print "ex)\n"
-      print "  ./smon.exe -1 com11,9600,odd,one,GAP=80,TO1=100,TO2=200,TO3=500 009912 9988 001123 00889987 9988 6787 9944 2211 7889\n"
-      print "  ./smon -1 /dev/pts/6 '01 02_030405...060-70809' 00112233445566778899\n"
-      print "\n"
     end
   end
   def self.bin_cmd_editor()
@@ -697,7 +673,7 @@ class Core
   end
   def self.checkOptions()
     Core.tick()
-    opts = Core.new
+    opts = Core.opts
     if nil == opts['mruby-script'] then
       if nil != opts['comlist'] then
         regs = Array.new

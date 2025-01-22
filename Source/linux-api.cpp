@@ -17,20 +17,21 @@
 #include <chrono>
 #include <cstdio>
 #include <filesystem>
-#include <iconv.h>
 #include <iostream>
 #include <list>
 #include <memory>
 #include <regex>
-#include <stdio.h>
 #include <string>
 #include <thread>
-#include <unistd.h>
-#include <linux/serial.h>
-#include <sys/ioctl.h>
-#include <fcntl.h>
-#include <termios.h>
 
+#include <fcntl.h>
+#include <iconv.h>
+#include <linux/serial.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <sys/ioctl.h>
+#include <termios.h>
+#include <unistd.h>
 
 using namespace MyEntity;
 using namespace std;
@@ -43,9 +44,11 @@ protected:
     int fd;
     bool ctrl;
     bool rts;
+    int  rfd;
+    int  wfd;
 
 public:
-    SerialControlLinux(const char * name, unsigned int bd, Parity pt, StopBit st, bool rts_ctrl);
+    SerialControlLinux(const char * name, struct Profile & profile);
     virtual ~SerialControlLinux(void);
     virtual std::size_t read(unsigned char * data, std::size_t size);
     virtual std::size_t send(unsigned char * data, std::size_t size);
@@ -54,8 +57,9 @@ public:
     virtual void clearRTS(void);
     virtual void close(void);
 };
-SerialControlLinux::SerialControlLinux(const char * name, unsigned int bd, Parity pt, StopBit st, bool rts_ctrl)
-  : fd(-1), ctrl(rts_ctrl), rts(false)
+
+SerialControlLinux::SerialControlLinux(const char * name, struct Profile & profile)
+  : fd(-1), ctrl(profile.rts), rts(false), rfd(-1), wfd(-1)
 {
 #if 0
     50  B50     1200    B1200   57600   B57600  1000000 B1000000
@@ -67,23 +71,22 @@ SerialControlLinux::SerialControlLinux(const char * name, unsigned int bd, Parit
     300 B300    38400   B38400  921600  B921600 3500000 B3500000
     600 B600                                    4000000 B4000000
 #endif
+    int fds[2]; auto presult = ::pipe(&fds[0]); rfd = fds[0]; wfd = fds[1];
     fd = open(name, O_RDWR | O_NOCTTY | O_NONBLOCK);
     if(0 <= fd)
     {
-        // シリアルポートの設定
         struct termios tty;
         if(0 == tcgetattr(fd, &tty))
         {
-            cfsetospeed(&tty, bd); // 出力ボーレート
-            cfsetispeed(&tty, bd); // 入力ボーレート
-
-            tty.c_cflag = (tty.c_cflag & ~CSIZE) | CS8; // 8ビットデータ
-            tty.c_iflag &= ~IGNBRK;                     // ブレークを無視しない
-            tty.c_lflag = 0;                            // 非カノニカルモード
-            tty.c_oflag = 0;                            // ローデータ出力
-            tty.c_cc[VMIN] = 1;                         // 最低1文字の入力を要求
-            tty.c_cc[VTIME] = 0;                        // タイムアウト無効
-            switch(pt)
+            cfsetospeed(&tty, profile.baud);
+            cfsetispeed(&tty, profile.baud);
+            tty.c_cflag = (tty.c_cflag & ~CSIZE) | CS8;
+            tty.c_iflag &= ~IGNBRK;
+            tty.c_lflag = 0;
+            tty.c_oflag = 0;
+            tty.c_cc[VMIN] = 1;
+            tty.c_cc[VTIME] = 0;
+            switch(profile.parity)
             {
             case odd:
                 tty.c_cflag |= PARENB;
@@ -98,20 +101,21 @@ SerialControlLinux::SerialControlLinux(const char * name, unsigned int bd, Parit
                 tty.c_cflag &= ~PARENB;
                 break;
             }
-            switch(st)
+            switch(profile.stop)
             {
             case one:   tty.c_cflag &= ~CSTOPB; break;
             case two:   tty.c_cflag |= CSTOPB;  break;
             }
             if(0 != tcsetattr(fd, TCSANOW, &tty)) { close(); }
-        }
-        else { close(); }
+        } else { close(); }
     }
 }
+
 SerialControlLinux::~SerialControlLinux(void)
 {
     close();
 }
+
 std::size_t SerialControlLinux::send(unsigned char * data, std::size_t size)
 {
     size_t wr_size = 0;
@@ -121,21 +125,26 @@ std::size_t SerialControlLinux::send(unsigned char * data, std::size_t size)
     }
     return wr_size;
 }
+
 std::size_t SerialControlLinux::read(unsigned char * data, std::size_t size)
 {
     size_t rd_size = 0;
     if(0 <= fd)
     {
-
         fd_set readfds;
         FD_ZERO(&readfds);
-        FD_SET(fd, &readfds);    // シリアル通信を追加
-        int max_fd = fd;
-
-        // `select` を呼び出し
+        FD_SET(rfd, &readfds);
+        FD_SET(fd, &readfds);
+        int max_fd = max(fd, rfd);
         int activity = select(max_fd + 1, &readfds, nullptr, nullptr, nullptr);
         if(0 <= activity)
         {
+            if(FD_ISSET(rfd, &readfds))
+            {
+                ::close(wfd);
+                ::close(rfd);
+                return rd_size;
+            }
             if(FD_ISSET(fd, &readfds))
             {
                 rd_size = ::read(fd, data, size);
@@ -144,11 +153,13 @@ std::size_t SerialControlLinux::read(unsigned char * data, std::size_t size)
     }
     return rd_size;
 }
+
 bool SerialControlLinux::rts_status(void) const
 {
     if(ctrl) { return rts; }
     return false;
 }
+
 void SerialControlLinux::setRTS(void)
 {
     if(ctrl)
@@ -158,6 +169,7 @@ void SerialControlLinux::setRTS(void)
     }
     rts = true;
 }
+
 void SerialControlLinux::clearRTS(void)
 {
     if(ctrl)
@@ -167,18 +179,25 @@ void SerialControlLinux::clearRTS(void)
     }
     rts = false;
 }
+
 void SerialControlLinux::close(void)
 {
     if(0 <= fd)
     {
+        uint8_t data[] = {"close"};
+        auto wlen = ::write(wfd, data, sizeof(data));
         ::close(fd);
         fd = -1;
     }
 }
 
-SerialControl * SerialControl::createObject(const string & name, unsigned int baud, Parity pt, StopBit st, bool rts)
+SerialControl * SerialControl::createObject(const std::string & name, SerialControl::Profile & profile)
 {
-    SerialControl * com = new SerialControlLinux(name.c_str(), baud, pt, st, rts);
+    static SerialControl * com = nullptr;
+    if(nullptr == com)
+    {
+        com = new SerialControlLinux(name.c_str(), profile);
+    }
     return com;
 }
 
@@ -244,7 +263,6 @@ std::list<std::string> & ComList::ref(void)
 }
 
 
-
 /* --------------------------------------------------------------------------------<< PipeList >>-------------------------------------------------------------------------------- */
 /**
  * constractor on PipeList: create pipe name list
@@ -269,78 +287,61 @@ std::list<std::string> & PipeList::ref(void)
 }
 
 
-
-
-#if 0
-void test(void)
+class CorePosix : public Core
 {
-        // シリアルポートを開く
-    const char* serial_port = "/dev/ttyS0"; // 使用するシリアルポートを指定
-    int serial_fd = open(serial_port, O_RDWR | O_NOCTTY | O_NONBLOCK);
-    if (serial_fd < 0) {
-        std::cerr << "Failed to open serial port: " << strerror(errno) << std::endl;
-        return;
-    }
+protected:
+    int  rfd;
+    int  wfd;
 
-    // シリアルポートの設定
-    struct termios tty;
-    if (tcgetattr(serial_fd, &tty) != 0) {
-        std::cerr << "Failed to get serial attributes: " << strerror(errno) << std::endl;
-        close(serial_fd);
-        return;
-    }
-
-    cfsetospeed(&tty, B9600); // 出力ボーレート
-    cfsetispeed(&tty, B9600); // 入力ボーレート
-
-    tty.c_cflag = (tty.c_cflag & ~CSIZE) | CS8; // 8ビットデータ
-    tty.c_iflag &= ~IGNBRK;                     // ブレークを無視しない
-    tty.c_lflag = 0;                            // 非カノニカルモード
-    tty.c_oflag = 0;                            // ローデータ出力
-    tty.c_cc[VMIN] = 1;                         // 最低1文字の入力を要求
-    tty.c_cc[VTIME] = 0;                        // タイムアウト無効
-
-    if (tcsetattr(serial_fd, TCSANOW, &tty) != 0) {
-        std::cerr << "Failed to set serial attributes: " << strerror(errno) << std::endl;
-        close(serial_fd);
-        return;
-    }
-
-    // `select` で複数の入力を待つ
-    while (true) {
-        fd_set readfds;
-        FD_ZERO(&readfds);
-        FD_SET(fileno(stdin), &readfds); // 標準入力を追加
-        FD_SET(serial_fd, &readfds);    // シリアル通信を追加
-
-        int max_fd = std::max(fileno(stdin), serial_fd);
-
-        // `select` を呼び出し
-        int activity = select(max_fd + 1, &readfds, nullptr, nullptr, nullptr);
-        if (activity < 0) {
-            std::cerr << "select() error: " << strerror(errno) << std::endl;
-            break;
-        }
-
-        // 標準入力からのデータを処理
-        if (FD_ISSET(fileno(stdin), &readfds)) {
-            char buffer[256];
-            if (fgets(buffer, sizeof(buffer), stdin) != nullptr) {
-                std::cout << "Standard Input: " << buffer;
-            }
-        }
-
-        // シリアル通信からのデータを処理
-        if (FD_ISSET(serial_fd, &readfds)) {
-            char buffer[256];
-            ssize_t bytes_read = read(serial_fd, buffer, sizeof(buffer) - 1);
-            if (bytes_read > 0) {
-                buffer[bytes_read] = '\0';
-                std::cout << "Serial Input: " << buffer;
-            }
-        }
-    }
-
-    close(serial_fd);
+public:
+    CorePosix(void);
+    virtual ~CorePosix(void);
+    virtual void gets(std::string & str);
+};
+CorePosix::CorePosix(void)
+{
+    int fds[2];
+    auto presult = ::pipe(&fds[0]);
+    rfd = fds[0];
+    wfd = fds[1];
 }
-#endif
+
+CorePosix::~CorePosix(void)
+{
+    uint8_t data[] = {"close"};
+    auto wlen = ::write(wfd, data, sizeof(data));
+}
+
+void CorePosix::gets(std::string & str)
+{
+    size_t rd_size = 0;
+    fd_set readfds;
+    FD_ZERO(&readfds);
+    FD_SET(rfd, &readfds);
+    FD_SET(0, &readfds);
+    int max_fd = max(0, rfd);
+    int activity = select(max_fd + 1, &readfds, nullptr, nullptr, nullptr);
+    if(0 <= activity)
+    {
+        if(FD_ISSET(rfd, &readfds))
+        {
+            ::close(wfd);
+            ::close(rfd);
+            return;
+        }
+        if(FD_ISSET(0, &readfds))
+        {
+            std::getline(std::cin, str);
+        }
+    }
+}
+
+Core * Core::createObject(void)
+{
+    static Core * core = nullptr;
+    if(nullptr == core)
+    {
+        core = new CorePosix();
+    }
+    return core;
+}

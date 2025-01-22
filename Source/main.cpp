@@ -24,7 +24,6 @@
 #include <map>
 #include <iostream>
 #include <fstream>
-#include <sstream>
 #include <stdio.h>
 #include <regex>
 #include <filesystem>
@@ -37,19 +36,18 @@
 #include <chrono>
 
 #include <mruby.h>
-#include <mruby/proc.h>
-#include <mruby/data.h>
-#include <mruby/compile.h>
-#include <mruby/string.h>
 #include <mruby/array.h>
-#include <mruby/hash.h>
-#include <mruby/range.h>
-#include <mruby/proc.h>
-#include <mruby/data.h>
 #include <mruby/class.h>
+#include <mruby/compile.h>
+#include <mruby/data.h>
+#include <mruby/data.h>
+#include <mruby/dump.h>
+#include <mruby/hash.h>
+#include <mruby/proc.h>
+#include <mruby/range.h>
+#include <mruby/string.h>
 #include <mruby/value.h>
 #include <mruby/variable.h>
-#include <mruby/dump.h>
 
 #include <OpenXLSX.hpp>
 
@@ -110,6 +108,7 @@ public:
     unsigned char sum(void);
     unsigned char xsum(void);
 };
+
 class CppRegexp: public Object
 {
 private:
@@ -130,6 +129,7 @@ public:
     unsigned int select(const char * str);
     std::list<std::string> split(std::string & org);
 };
+
 class WorkerThread : public Object
 {
 public:
@@ -155,38 +155,114 @@ public:
     inline mrb_value sync(mrb_state * mrb, mrb_value & proc);
     void stop(mrb_state * mrb);
 };
-class SerialMonitor : public Object, MyEntity::TimerHandler
+
+class CyclicTimer
+{
+private:
+    std::atomic<bool>       running;
+    std::thread             th;
+    std::function<void()>   act;
+    std::chrono::system_clock::time_point begin;
+    unsigned int            count;
+    unsigned int            interval;
+public:
+    CyclicTimer()
+      : running(false)
+    {
+    }
+    unsigned long int get_timeout_tick(std::chrono::system_clock::time_point now) const
+    {
+        auto interval = std::chrono::duration_cast<std::chrono::milliseconds>(now - begin).count();
+        auto timeout_value = count;
+        if(interval < timeout_value) { return (timeout_value - interval); }
+        return 0;
+    }
+    void start(unsigned int interval_ms, std::function<void()> callback)
+    {
+        if(running.load()) { return; }
+        running.store(true);
+        begin    = std::chrono::system_clock::now();
+        interval = interval_ms;
+        count    = interval;
+        act      = callback;
+        auto run = [this]()
+        {
+            while(running.load())
+            {
+                auto now = std::chrono::system_clock::now();
+                auto tick = this->get_timeout_tick(now);
+                if(200 < tick)
+                {
+                    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+                    continue;
+                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(tick));
+                act();
+                if((0xffffffff-interval) < count)
+                {
+                    begin = now;
+                    count = interval;
+                }
+                else { count += interval; }
+            }
+        };
+        th = std::thread(run);
+    }
+
+    void stop()
+    {
+        running.store(false);
+        if(th.joinable()) { th.join(); }
+    }
+
+    ~CyclicTimer()
+    {
+        stop();
+    }
+};
+
+class SerialMonitor : public Object
 {
 public:
-    enum State { GAP = 0, TIME_OUT_1, TIME_OUT_2, TIME_OUT_3, CACHE_FULL, CLOSE, NONE };
+    enum State { GAP = 0, TIME_OUT_1, TIME_OUT_2, TIME_OUT_3, CACHE_FULL, CLOSE, CTIMER, OTIMER, WAKEUP, NONE };
     struct ReciveInfo
     {
+        size_t          idx;
         enum State      state;
         unsigned int    cnt;
         unsigned char * buff;
-        unsigned char * prev;
+    };
+    struct Sync
+    {
+        std::mutex              mtx;
+        std::condition_variable cond;
     };
 protected:
-    std::string                              arg;
-    std::vector<size_t>                      timer;
-    SerialControl *                          com;
-    MyEntity::OneShotTimerEventer<size_t> *  tevter;
-    unsigned int                             cache_size;
-    bool                                     rcv_enable;
-    ReciveInfo                               cache;
-    std::thread                              th_recive;
-    std::mutex                               mtx;
-    std::condition_variable                  cond;
-    std::list<ReciveInfo>                    rcv_cache;
+    std::vector<SerialControl *>    com;
+    std::vector<MyEntity::OneShotTimerEventer<size_t> *>  tevter;
+    std::vector<ReciveInfo>         cache;
+    struct Sync *                   sync;
+    unsigned int                    cache_size;
+    bool                            rcv_enable;
+    CyclicTimer                     cyclic;
+    std::mutex                      mtx;
+    std::condition_variable         cond;
+    std::list<ReciveInfo>           rcv_cache;
+    std::vector<size_t>             timer;
+    unsigned int                    ctimer;
+    unsigned int                    otimer;
 public:
-    SerialMonitor(mrb_value & self, const char * arg, std::vector<size_t> & timer_def);
+    SerialMonitor(mrb_value & self, std::list<std::string> & ports, std::vector<size_t> & timer_def);
     virtual ~SerialMonitor(void);
     void close(void);
-    void send(BinaryControl & bin, unsigned int timer);
-    SerialMonitor::State read(BinaryControl & bin);
+    void send(size_t idx, BinaryControl & bin, uint32_t timer);
+    SerialMonitor::ReciveInfo read(BinaryControl & bin);
     SerialMonitor::State read_wait(BinaryControl & bin);
     void reciver(size_t id);
-    void handler(unsigned int idx);
+    void user_timer(int mode, unsigned int tick);
+
+    inline void set_sync(SerialMonitor::Sync * sync);
+    inline SerialMonitor::ReciveInfo refInfo(void);
 };
 
 class OpenXLSXCtrl : public Object
@@ -239,6 +315,7 @@ inline Object::Object(void)
   : id(0), res(nullptr)
 {
 }
+
 Object::~Object(void)
 {
     if(nullptr != res)
@@ -246,6 +323,7 @@ Object::~Object(void)
         res->erase(id);
     }
 }
+
 inline void Object::setControlID(unsigned int id, std::map<unsigned int, Object *> * res)
 {
     if(nullptr != res)
@@ -255,19 +333,23 @@ inline void Object::setControlID(unsigned int id, std::map<unsigned int, Object 
         (*res)[id] = this;
     }
 }
+
 inline unsigned int Object::ControlID(void)
 {
     return this->id;
 }
+
 inline BinaryControl::BinaryControl(void)
   : length(0), compress_size(0), pos(0), data(nullptr)
 {
 }
+
 inline BinaryControl::BinaryControl(BinaryControl & src)
   : length(0), compress_size(0), pos(0), data(nullptr)
 {
     clone(0, src.length, src);
 }
+
 inline BinaryControl::BinaryControl(std::list<BinaryControl *> & list_bin)
   : length(0), compress_size(0), pos(0), data(nullptr)
 {
@@ -283,21 +365,25 @@ inline BinaryControl::BinaryControl(std::list<BinaryControl *> & list_bin)
         addr += bin->length;
     }
 }
+
 inline BinaryControl::BinaryControl(size_t size_)
   : length(0), compress_size(0), pos(0), data(nullptr)
 {
     alloc(size_);
 }
+
 inline BinaryControl::BinaryControl(size_t size_, unsigned char data)
   : length(0), compress_size(0), pos(0), data(nullptr)
 {
     alloc(size_);
     std::memset(this->data, data, size_);
 }
+
 inline unsigned char * BinaryControl::ptr(void)
 {
     return data;
 }
+
 inline size_t BinaryControl::size(void) const
 {
     if(0 < compress_size)
@@ -306,6 +392,7 @@ inline size_t BinaryControl::size(void) const
     }
     return length;
 }
+
 inline size_t BinaryControl::get_pos(void) const
 {
     if(pos < size())
@@ -314,10 +401,12 @@ inline size_t BinaryControl::get_pos(void) const
     }
     return 0;
 }
+
 inline size_t BinaryControl::ref_pos(void) const
 {
     return pos;
 }
+
 inline void BinaryControl::attach(unsigned char * ptr, size_t size)
 {
     if(nullptr != data) { std::free(data); }
@@ -330,12 +419,14 @@ inline CppRegexp::CppRegexp(void)
   : regs(0)
 {
 }
+
 inline CppRegexp::CppRegexp(std::string & str)
   : regs(1)
 {
     std::regex reg(str);
     regs[0] = reg;
 }
+
 inline CppRegexp::CppRegexp(const char * arg)
   : regs(1)
 {
@@ -343,6 +434,7 @@ inline CppRegexp::CppRegexp(const char * arg)
     std::regex reg(str);
     regs[0] = reg;
 }
+
 inline CppRegexp::CppRegexp(const std::list<std::string> & arg)
   : regs(arg.size())
 {
@@ -354,12 +446,14 @@ inline CppRegexp::CppRegexp(const std::list<std::string> & arg)
         idx ++;
     }
 }
+
 inline void CppRegexp::reg_add(const std::string & str)
 {
 
     std::regex reg(str);
     regs.push_back(reg);
 }
+
 inline void CppRegexp::reg_add(const std::list<std::string> & arg)
 {
     for(auto & str : arg)
@@ -367,24 +461,29 @@ inline void CppRegexp::reg_add(const std::list<std::string> & arg)
         reg_add(str);
     }
 }
+
 inline unsigned int CppRegexp::length(void)
 {
     return regs.size();
 }
+
 inline WorkerThread::WorkerThread(void)
   : state(Stop), mrb(nullptr), loop_cnt(0)
 {
 }
+
 inline enum WorkerThread::Status WorkerThread::get_state(void) const
 {
     return state;
 }
+
 inline void WorkerThread::notify(void)
 {
     std::lock_guard<std::mutex> lock(mtx);
     state = Run;
     cond.notify_all();
 }
+
 inline mrb_value WorkerThread::notify(mrb_state * mrb, mrb_value & proc)
 {
     std::lock_guard<std::mutex> lock(mtx);
@@ -393,43 +492,70 @@ inline mrb_value WorkerThread::notify(mrb_state * mrb, mrb_value & proc)
     cond.notify_all();
     return result;
 }
+
 inline mrb_value WorkerThread::sync(mrb_state * mrb, mrb_value & proc)
 {
     std::lock_guard<std::mutex> lock(mtx);
     auto result = mrb_yield_argv(mrb, proc, 0, NULL);
     return result;
 }
+
+inline void SerialMonitor::set_sync(SerialMonitor::Sync * sync)
+{
+    std::lock_guard<std::mutex> lock(mtx);
+    this->sync = sync;
+}
+
+inline SerialMonitor::ReciveInfo SerialMonitor::refInfo(void)
+{
+    std::lock_guard<std::mutex> lock(mtx);
+    if(0 < rcv_cache.size())
+    {
+        return *(rcv_cache.begin());
+    }
+    ReciveInfo info = { 0, NONE, 0, nullptr };
+    return info;
+}
+
 inline OpenXLSXCtrl::OpenXLSXCtrl(void)
 {
 }
+
 inline void OpenXLSXCtrl::create(const std::string & fname)
 {
     doc.create(fname);
 }
+
 inline void OpenXLSXCtrl::open(const std::string & fname)
 {
     doc.open(fname);
 }
+
 inline void OpenXLSXCtrl::workbook(void)
 {
     book = doc.workbook();
 }
+
 inline std::vector<std::string> OpenXLSXCtrl::getWorkSheetNames(void)
 {
     return book.worksheetNames();
 }
+
 inline void OpenXLSXCtrl::set_sheet_name(std::string & sheet_name)
 {
     sheet.setName(sheet_name);
 }
+
 inline void OpenXLSXCtrl::set_cell_value(std::string & cell, int val)
 {
     sheet.cell(OpenXLSX::XLCellReference(cell)).value() = val;
 }
+
 inline void OpenXLSXCtrl::set_cell_value(std::string & cell, char * val)
 {
     sheet.cell(OpenXLSX::XLCellReference(cell)).value() = val;
 }
+
 inline void OpenXLSXCtrl::set_cell_value(std::string & cell, float val)
 {
     DWord temp = { .value = val };
@@ -442,10 +568,12 @@ inline void OpenXLSXCtrl::set_cell_value(std::string & cell, float val)
         sheet.cell(OpenXLSX::XLCellReference(cell)).value() = "NaN";
     }
 }
+
 inline void OpenXLSXCtrl::save(void)
 {
     doc.save();
 }
+
 inline void OpenXLSXCtrl::close(void)
 {
     doc.close();
@@ -459,9 +587,8 @@ static mrb_value mrb_core_gets(mrb_state* mrb, mrb_value self);
 static mrb_value mrb_core_exists(mrb_state* mrb, mrb_value self);
 static mrb_value mrb_core_file_timestamp(mrb_state* mrb, mrb_value self);
 static mrb_value mrb_core_make_qr(mrb_state* mrb, mrb_value self);
-static mrb_value mrb_core_initialize(mrb_state * mrb, mrb_value self);
-static mrb_value mrb_core_opt_size(mrb_state * mrb, mrb_value self);
-static mrb_value mrb_core_opt_get(mrb_state * mrb, mrb_value self);
+static mrb_value mrb_core_get_args(mrb_state * mrb, mrb_value self);
+static mrb_value mrb_core_get_opts(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_core_prog(mrb_state * mrb, mrb_value self);
 static void mrb_core_context_free(mrb_state * mrb, void * ptr);
 
@@ -513,10 +640,11 @@ static mrb_value mrb_smon_comlist(mrb_state* mrb, mrb_value self);
 static mrb_value mrb_smon_pipelist(mrb_state* mrb, mrb_value self);
 static mrb_value mrb_smon_initialize(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_smon_send(mrb_state * mrb, mrb_value self);
-static mrb_value mrb_smon_read(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_smon_read_wait(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_smon_close(mrb_state * mrb, mrb_value self);
+static mrb_value mrb_smon_timer(mrb_state * mrb, mrb_value self);
 static void mrb_smon_context_free(mrb_state * mrb, void * ptr);
+static SerialMonitor * get_smon_ptr(mrb_value & argv);
 
 static mrb_value mrb_xlsx_initialize(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_xlsx_create(mrb_state * mrb, mrb_value self);
@@ -568,25 +696,36 @@ protected:
     std::vector<std::string> &              args;
     std::vector<size_t>                     timer;
     unsigned int                            id;
+    std::atomic<bool>                       is_gets;
+    std::atomic<bool>                       is_cin_open;
+    std::list<std::string>                  list_cin;
+    std::thread                             cin_th;
+    SerialMonitor::Sync                     cin_cync;
     std::map<unsigned int, Object *>        res;
     std::mutex                              mtx;
     std::condition_variable                 cond;
+    Core *                                  core;
 public:
     static Application * getObject(void);
     Application(std::string & program, boost::program_options::variables_map & optmap, std::vector<std::string> & arg)
-      : prog(program), opts(optmap), args(arg), timer(4), id(1)
+      : prog(program), opts(optmap), args(arg), timer(4), id(1), core(nullptr)
     {
         obj = this;
         timer[0] =   30;
         timer[1] =  300;
         timer[2] =  500;
         timer[3] = 1000;
+        is_gets.store(false);
+        is_cin_open.store(true);
+        core = Core::createObject();
     }
     virtual ~Application(void)
     {
         std::list<unsigned int> keys;
         for(auto & item : res) keys.push_back(item.first);
         for(auto & key : keys) delete res[key];
+        if( is_gets.load() ) { is_cin_open.store(false); }
+        delete core;
     }
     void exit(int code) { }
     void push(Object * obj)
@@ -605,54 +744,137 @@ public:
         }
     }
 
-    mrb_value core_init(mrb_state * mrb, mrb_value self)
+    mrb_value core_get_args(mrb_state * mrb, mrb_value self)
     {
-        auto obj = Application::getObject();
-        mrb_data_init(self, obj, &mrb_core_context_type );
-        return self;
-    }
-
-    mrb_value core_opt_size(mrb_state * mrb, mrb_value self)
-    {
-        return mrb_int_value( mrb, args.size() );
-    }
-
-    mrb_value core_opt_get(mrb_state * mrb, mrb_value self)
-    {
-        mrb_value y = mrb_get_arg1(mrb);
-        switch( mrb_type( y ) )
+        mrb_value arry = mrb_ary_new(mrb);
+        for(auto & arg : args)
         {
-        case MRB_TT_FLOAT:
-        case MRB_TT_RATIONAL:
-        case MRB_TT_COMPLEX:
-            break;
-        case MRB_TT_INTEGER:
-            {
-                mrb_int index = mrb_integer(y);
-                if( index < args.size() )
-                {
-                    return mrb_str_new_cstr( mrb, (args[index]).c_str() );
-                }
-            }
-            break;
-        default:
-            {
-                char * key;
-                mrb_get_args( mrb, "z", &key );
-                if( opts.count( key ) )
-                {
-                    std::string opt_val = opts[key].as<std::string>();
-                    return mrb_str_new_cstr( mrb, opt_val.c_str() );
-                }
-            }
-            break;
+            mrb_ary_push(mrb, arry, mrb_str_new_cstr(mrb, arg.c_str()));
         }
-        return mrb_nil_value();
+        return arry;
+    }
+
+    mrb_value core_get_opts(mrb_state * mrb, mrb_value self)
+    {
+        mrb_value hash = mrb_hash_new(mrb);
+        if(opts.count("comlist"))          { mrb_hash_set(mrb, hash, mrb_str_new_cstr(mrb, "comlist"),          mrb_bool_value(true)); }
+        if(opts.count("pipelist"))         { mrb_hash_set(mrb, hash, mrb_str_new_cstr(mrb, "pipelist"),         mrb_bool_value(true)); }
+        if(opts.count("gap"))              { mrb_hash_set(mrb, hash, mrb_str_new_cstr(mrb, "gap"),              mrb_int_value(mrb,     opts["gap"].as<unsigned int>()));                      }
+        if(opts.count("timer"))            { mrb_hash_set(mrb, hash, mrb_str_new_cstr(mrb, "timer"),            mrb_int_value(mrb,     opts["timer"].as<unsigned int>()));                    }
+        if(opts.count("timer2"))           { mrb_hash_set(mrb, hash, mrb_str_new_cstr(mrb, "timer2"),           mrb_int_value(mrb,     opts["timer2"].as<unsigned int>()));                   }
+        if(opts.count("timer3"))           { mrb_hash_set(mrb, hash, mrb_str_new_cstr(mrb, "timer3"),           mrb_int_value(mrb,     opts["timer3"].as<unsigned int>()));                   }
+        if(opts.count("crc"))              { mrb_hash_set(mrb, hash, mrb_str_new_cstr(mrb, "crc"),              mrb_str_new_cstr(mrb, (opts["crc"].as<std::string>()).c_str()));              }
+        if(opts.count("crc8"))             { mrb_hash_set(mrb, hash, mrb_str_new_cstr(mrb, "crc8"),             mrb_str_new_cstr(mrb, (opts["crc8"].as<std::string>()).c_str()));             }
+        if(opts.count("sum"))              { mrb_hash_set(mrb, hash, mrb_str_new_cstr(mrb, "sum"),              mrb_str_new_cstr(mrb, (opts["sum"].as<std::string>()).c_str()));              }
+        if(opts.count("FLOAT"))            { mrb_hash_set(mrb, hash, mrb_str_new_cstr(mrb, "FLOAT"),            mrb_str_new_cstr(mrb, (opts["FLOAT"].as<std::string>()).c_str()));            }
+        if(opts.count("float"))            { mrb_hash_set(mrb, hash, mrb_str_new_cstr(mrb, "float"),            mrb_str_new_cstr(mrb, (opts["float"].as<std::string>()).c_str()));            }
+        if(opts.count("oneline"))          { mrb_hash_set(mrb, hash, mrb_str_new_cstr(mrb, "oneline"),          mrb_str_new_cstr(mrb, (opts["oneline"].as<std::string>()).c_str()));          }
+        if(opts.count("bin-edit"))         { mrb_hash_set(mrb, hash, mrb_str_new_cstr(mrb, "bin-edit"),         mrb_str_new_cstr(mrb, (opts["bin-edit"].as<std::string>()).c_str()));         }
+        if(opts.count("makeQR"))           { mrb_hash_set(mrb, hash, mrb_str_new_cstr(mrb, "makeQR"),           mrb_str_new_cstr(mrb, (opts["makeQR"].as<std::string>()).c_str()));           }
+        if(opts.count("read-bin-to-xlsx")) { mrb_hash_set(mrb, hash, mrb_str_new_cstr(mrb, "read-bin-to-xlsx"), mrb_str_new_cstr(mrb, (opts["read-bin-to-xlsx"].as<std::string>()).c_str())); }
+        if(opts.count("mruby-script"))     { mrb_hash_set(mrb, hash, mrb_str_new_cstr(mrb, "mruby-script"),     mrb_str_new_cstr(mrb, (opts["mruby-script"].as<std::string>()).c_str()));     }
+        if(opts.count("version"))          { mrb_hash_set(mrb, hash, mrb_str_new_cstr(mrb, "version"),          mrb_str_new_cstr(mrb, (opts["version"].as<std::string>()).c_str()));          }
+        if(opts.count("help"))             { mrb_hash_set(mrb, hash, mrb_str_new_cstr(mrb, "help"),             mrb_str_new_cstr(mrb, (opts["help"].as<std::string>()).c_str()));             }
+        if(opts.count("help-misc"))        { mrb_hash_set(mrb, hash, mrb_str_new_cstr(mrb, "help-misc"),        mrb_str_new_cstr(mrb, (opts["help-misc"].as<std::string>()).c_str()));        }
+        return hash;
     }
 
     mrb_value core_prog(mrb_state * mrb, mrb_value self)
     {
         return mrb_str_new_cstr( mrb, prog.c_str() );
+    }
+
+    mrb_value core_gets(mrb_state * mrb, mrb_value self)
+    {
+        if( (is_cin_open.load()) && (!is_gets.load()) )
+        {
+            auto watch_cin = [&]()
+            {
+                cin_th.detach();
+                is_gets.store(true);
+                while(is_cin_open.load())
+                {
+                    try
+                    {
+                        if(std::cin.eof())          { is_cin_open.store(false); break; }
+                        else if(std::cin.fail())    { is_cin_open.store(false); break; }
+                        else
+                        {
+                            std::string str("");
+                            core->gets(str);
+                            if(is_cin_open.load())
+                            {
+                                std::lock_guard<std::mutex> lock(cin_cync.mtx);
+                                list_cin.push_back(str);
+                                cin_cync.cond.notify_all();
+                            }
+                        }
+                    } catch(std::exception & exp)   { is_cin_open.store(false); break; }
+                }
+                is_gets.store(false);
+            };
+            cin_th= std::thread(watch_cin);
+        }
+        SerialMonitor * smon = nullptr;
+        BinaryControl * bin  = nullptr;
+        mrb_value proc; mrb_int argc; mrb_value * argv;
+        mrb_get_args(mrb, "&*", &proc, &argv, &argc);
+        if(!mrb_nil_p(proc))
+        {
+            if(2 == argc)
+            {
+                smon = get_smon_ptr(argv[0]);
+                bin  = get_bedit_ptr(argv[1]);
+                if((nullptr != smon) && (nullptr != bin))
+                    { smon->set_sync(&cin_cync); }
+            }
+        }
+        auto lamda = [&]
+        {
+            if( !is_cin_open.load() ) { return true; }
+            if(0 < list_cin.size())   { return true; }
+            if(nullptr != smon)
+            {
+                if(SerialMonitor::NONE != (smon->refInfo()).state)
+                    { return true; }
+            }
+            return false;
+        };
+        std::unique_lock<std::mutex> lock(cin_cync.mtx);
+        if(0 < list_cin.size())
+        {
+            auto str = *(list_cin.begin());
+            list_cin.pop_front();
+            if(nullptr != smon) { smon->set_sync(nullptr); }
+            return mrb_str_new_cstr( mrb, str.c_str() );
+        }
+        if( is_cin_open.load() )
+        {
+            cin_cync.cond.wait(lock, lamda);
+            if(0 < list_cin.size())
+            {
+                auto str = *(list_cin.begin());
+                list_cin.pop_front();
+                if(nullptr != smon) { smon->set_sync(nullptr); }
+                return mrb_str_new_cstr( mrb, str.c_str() );
+            }
+            if((nullptr != smon) && (nullptr != bin))
+            {
+                SerialMonitor::ReciveInfo info = smon->read(*bin);
+                while(SerialMonitor::NONE != info.state)
+                {
+                    mrb_value argv[2];
+                    argv[0] = mrb_int_value(mrb, info.idx);
+                    argv[1] = mrb_int_value(mrb, info.state);
+                    mrb_yield_argv(mrb, proc, 2, argv);
+                    info = smon->refInfo();
+                }
+                smon->set_sync(nullptr);
+                return mrb_str_new_cstr( mrb, "" );
+            }
+        }
+        if(nullptr != smon) { smon->set_sync(nullptr); }
+        return mrb_nil_value();
     }
 
     mrb_value bedit_init(mrb_state * mrb, mrb_value self)
@@ -811,8 +1033,6 @@ public:
     mrb_value thread_init(mrb_state * mrb, mrb_value self)
     {
         std::lock_guard<std::mutex> lock(mtx);
-        mrb_value proc; mrb_int argc; mrb_value * argv;
-        mrb_get_args(mrb, "&*", &proc, &argv, &argc);
         WorkerThread * th_ctrl = new WorkerThread();
         mrb_data_init(self, th_ctrl, &mrb_thread_context_type);
         th_ctrl->start(mrb, self);
@@ -822,11 +1042,37 @@ public:
     mrb_value smon_init(mrb_state * mrb, mrb_value self)
     {
         std::lock_guard<std::mutex> lock(mtx);
-        char * arg;
-        mrb_get_args(mrb, "z", &arg);
-        SerialMonitor * smon = new SerialMonitor(self, arg, timer);
+        std::list<std::string> ports;
+        mrb_int argc; mrb_value * argv;
+        mrb_get_args(mrb, "*", &argv, &argc);
+        mrb_value item;
+        for(auto idx=0; idx < argc; idx++)
+        {
+            switch(mrb_type(argv[idx]))
+            {
+            case MRB_TT_STRING:
+                {
+                    std::string str(RSTR_PTR(mrb_str_ptr(argv[idx])));
+                    ports.push_back(str);
+                }
+                break;
+            case MRB_TT_ARRAY:
+                while( !mrb_nil_p(item = mrb_ary_shift(mrb, argv[idx])) )
+                {
+                    if(MRB_TT_STRING == mrb_type(item))
+                    {
+                        std::string str(RSTR_PTR(mrb_str_ptr(item)));
+                        ports.push_back(str);
+                    }
+                }
+                break;
+            default:
+                break;
+            }
+        }
+        SerialMonitor * smon = new SerialMonitor(self, ports, timer);
         mrb_data_init(self, smon, &mrb_smon_context_type);
-        //push(smon);
+        push(smon);
         //mrb_garbage_collect(mrb);
         return self;
     }
@@ -868,16 +1114,15 @@ public:
         {
             /* Class Core */
             struct RClass * core_class = mrb_define_class(mrb, "Core", mrb->object_class);
-            mrb_define_module_function(mrb, core_class, "tick",      mrb_core_tick,          MRB_ARGS_ANY()     );
-            mrb_define_module_function(mrb, core_class, "date",      mrb_core_date,          MRB_ARGS_ANY()     );
-            mrb_define_module_function(mrb, core_class, "gets",      mrb_core_gets,          MRB_ARGS_NONE()    );
-            mrb_define_module_function(mrb, core_class, "exists",    mrb_core_exists,        MRB_ARGS_ARG(1, 1) );
-            mrb_define_module_function(mrb, core_class, "timestamp", mrb_core_file_timestamp,MRB_ARGS_ARG(1, 1) );
-            mrb_define_module_function(mrb, core_class, "makeQR",    mrb_core_make_qr,       MRB_ARGS_ARG(1, 1) );
-            mrb_define_method( mrb, core_class, "initialize",        mrb_core_initialize,    MRB_ARGS_NONE()    );
-            mrb_define_method( mrb, core_class, "length",            mrb_core_opt_size,      MRB_ARGS_NONE()    );
-            mrb_define_method( mrb, core_class, "[]",                mrb_core_opt_get,       MRB_ARGS_ARG(1, 1) );
-            mrb_define_method( mrb, core_class, "prog",              mrb_core_prog,          MRB_ARGS_NONE()    );
+            mrb_define_module_function(mrb, core_class, "tick",      mrb_core_tick,             MRB_ARGS_ANY()     );
+            mrb_define_module_function(mrb, core_class, "date",      mrb_core_date,             MRB_ARGS_ANY()     );
+            mrb_define_module_function(mrb, core_class, "gets",      mrb_core_gets,             MRB_ARGS_ANY()     );
+            mrb_define_module_function(mrb, core_class, "exists",    mrb_core_exists,           MRB_ARGS_ARG(1, 1) );
+            mrb_define_module_function(mrb, core_class, "timestamp", mrb_core_file_timestamp,   MRB_ARGS_ARG(1, 1) );
+            mrb_define_module_function(mrb, core_class, "makeQR",    mrb_core_make_qr,          MRB_ARGS_ARG(1, 1) );
+            mrb_define_module_function(mrb, core_class, "args",      mrb_core_get_args,         MRB_ARGS_NONE()    );
+            mrb_define_module_function(mrb, core_class, "opts",      mrb_core_get_opts,         MRB_ARGS_NONE()    );
+            mrb_define_module_function(mrb, core_class, "prog",      mrb_core_prog,             MRB_ARGS_NONE()    );
 
             /* Class BinEdit */
             struct RClass * bedit_class = mrb_define_class(mrb, "BinEdit", mrb->object_class);
@@ -920,7 +1165,7 @@ public:
             mrb_define_const( mrb, thread_class, "RUN",       mrb_fixnum_value(WorkerThread::Run)      );
             mrb_define_const( mrb, thread_class, "WAIT_JOIN", mrb_fixnum_value(WorkerThread::WaitStop) );
             mrb_define_module_function( mrb, thread_class, "ms_sleep", mrb_thread_ms_sleep, MRB_ARGS_ARG(1, 1) );
-            mrb_define_method( mrb, thread_class, "initialize",  mrb_thread_initialize, MRB_ARGS_ANY()  );
+            mrb_define_method( mrb, thread_class, "initialize",  mrb_thread_initialize, MRB_ARGS_NONE()  );
             mrb_define_method( mrb, thread_class, "state",       mrb_thread_state,      MRB_ARGS_ANY()  );
             mrb_define_method( mrb, thread_class, "start",       mrb_thread_start,      MRB_ARGS_ANY()  );
             mrb_define_method( mrb, thread_class, "wait",        mrb_thread_wait,       MRB_ARGS_NONE() );
@@ -937,14 +1182,16 @@ public:
             mrb_define_const(  mrb, smon_class, "TO3",              mrb_fixnum_value(SerialMonitor::TIME_OUT_3)         );
             mrb_define_const(  mrb, smon_class, "CLOSE",            mrb_fixnum_value(SerialMonitor::CLOSE)              );
             mrb_define_const(  mrb, smon_class, "CACHE_FULL",       mrb_fixnum_value(SerialMonitor::CACHE_FULL)         );
+            mrb_define_const(  mrb, smon_class, "CTIMER",           mrb_fixnum_value(SerialMonitor::CTIMER)             );
+            mrb_define_const(  mrb, smon_class, "OTIMER",           mrb_fixnum_value(SerialMonitor::OTIMER)             );
             mrb_define_const(  mrb, smon_class, "NONE",             mrb_fixnum_value(SerialMonitor::NONE)               );
             mrb_define_module_function(mrb, smon_class, "comlist",  mrb_smon_comlist,       MRB_ARGS_ANY()              );
             mrb_define_module_function(mrb, smon_class, "pipelist", mrb_smon_pipelist,      MRB_ARGS_ANY()              );
             mrb_define_method( mrb, smon_class, "initialize",       mrb_smon_initialize,    MRB_ARGS_REQ( 2 )           );
             mrb_define_method( mrb, smon_class, "send",             mrb_smon_send,          MRB_ARGS_ANY()              );
-            mrb_define_method( mrb, smon_class, "read",             mrb_smon_read,          MRB_ARGS_ANY()              );
             mrb_define_method( mrb, smon_class, "read_wait",        mrb_smon_read_wait,     MRB_ARGS_ANY()              );
             mrb_define_method( mrb, smon_class, "close",            mrb_smon_close,         MRB_ARGS_NONE()             );
+            mrb_define_method( mrb, smon_class, "timer",            mrb_smon_timer,         MRB_ARGS_ANY()              );
 
             /* Class OpenXLSX */
             struct RClass * xlsx_class = mrb_define_class(mrb, "OpenXLSX", mrb->object_class);
@@ -1107,18 +1354,13 @@ mrb_value mrb_core_date(mrb_state* mrb, mrb_value self)
 
 mrb_value mrb_core_gets(mrb_state* mrb, mrb_value self)
 {
-    try
+    Application * obj = Application::getObject();
+    if(nullptr != obj)
     {
-        if(std::cin.eof())          { }
-        else if(std::cin.fail())    { }
-        else
-        {
-            std::string str("");
-            std::getline(std::cin, str);
-            return mrb_str_new_cstr( mrb, str.c_str() );
-        }
-    } catch(std::exception & exp) { }
-    return mrb_nil_value();
+        auto result = obj->core_gets(mrb, self);
+        return result;
+    }
+    return self;
 }
 
 mrb_value mrb_core_exists(mrb_state* mrb, mrb_value self)
@@ -1257,40 +1499,28 @@ mrb_value mrb_core_make_qr(mrb_state* mrb, mrb_value self)
     return mrb_nil_value();
 }
 
-mrb_value mrb_core_initialize(mrb_state * mrb, mrb_value self)
+mrb_value mrb_core_get_args(mrb_state * mrb, mrb_value self)
 {
     Application * obj = Application::getObject();
     if(nullptr != obj)
     {
-        auto result = obj->core_init(mrb, self);
+        auto result = obj->core_get_args(mrb, self);
         //mrb_garbage_collect(mrb);
         return result;
     }
     return self;
 }
 
-mrb_value mrb_core_opt_size(mrb_state * mrb, mrb_value self)
+mrb_value mrb_core_get_opts(mrb_state * mrb, mrb_value self)
 {
     Application * obj = Application::getObject();
     if(nullptr != obj)
     {
-        auto result = obj->core_opt_size(mrb, self);
+        auto result = obj->core_get_opts(mrb, self);
         //mrb_garbage_collect(mrb);
         return result;
     }
-    return mrb_nil_value();
-}
-
-mrb_value mrb_core_opt_get(mrb_state * mrb, mrb_value self)
-{
-    Application * obj = Application::getObject();
-    if(nullptr != obj)
-    {
-        auto result = obj->core_opt_get(mrb, self);
-        //mrb_garbage_collect(mrb);
-        return result;
-    }
-    return mrb_nil_value();
+    return self;
 }
 
 mrb_value mrb_core_prog(mrb_state * mrb, mrb_value self)
@@ -2159,7 +2389,7 @@ mrb_value mrb_thread_notify(mrb_state * mrb, mrb_value self)
 {
     mrb_value proc;
     mrb_get_args(mrb, "&", &proc);
-    if (!mrb_nil_p(proc))
+    if(!mrb_nil_p(proc))
     {
         WorkerThread * th_ctrl = static_cast<WorkerThread * >(DATA_PTR(self));
         if(nullptr != th_ctrl)
@@ -2394,53 +2624,55 @@ mrb_value mrb_smon_send(mrb_state * mrb, mrb_value self)
     SerialMonitor * smon = static_cast<SerialMonitor *>(DATA_PTR(self));
     if(nullptr != smon)
     {
-        char *  msg   = nullptr;
-        mrb_int timer = 0;
+        BinaryControl * bin = nullptr;
+        std::string data("");
+        mrb_int idx = 0, timer = 0;
         mrb_int argc; mrb_value * argv;
         mrb_get_args(mrb, "*", &argv, &argc);
-        if(0 < argc)
+        switch(argc)
         {
-            if( (1 < argc) && (MRB_TT_INTEGER == mrb_type(argv[1])) )
+        case 1:
+            if(MRB_TT_STRING == mrb_type(argv[0])) { data = RSTR_PTR(mrb_str_ptr(argv[0])); }
+            else                                   { bin  = get_bedit_ptr(argv[0]);         }
+            break;
+        case 2:
+            if(MRB_TT_INTEGER == mrb_type(argv[0]))
             {
+                idx = mrb_integer(argv[0]);
+                if(MRB_TT_STRING == mrb_type(argv[1])) { data = RSTR_PTR(mrb_str_ptr(argv[1])); }
+                else                                   { bin  = get_bedit_ptr(argv[1]);         }
+            }
+            else if(MRB_TT_INTEGER == mrb_type(argv[1]))
+            {
+                if(MRB_TT_STRING == mrb_type(argv[0])) { data = RSTR_PTR(mrb_str_ptr(argv[0])); }
+                else                                   { bin  = get_bedit_ptr(argv[0]);         }
                 timer = mrb_integer(argv[1]);
-            }
-            if(MRB_TT_STRING == mrb_type(argv[0]))
+            } else { }
+            break;
+        case 3:
+            if(  (MRB_TT_INTEGER == mrb_type(argv[0]))
+               &&(MRB_TT_INTEGER == mrb_type(argv[2])))
             {
-                std::string data( RSTR_PTR(mrb_str_ptr( argv[0] ) ) );
-                BinaryControl bin(data);
-                smon->send(bin, timer);
+                idx   = mrb_integer(argv[0]);
+                if(MRB_TT_STRING == mrb_type(argv[1])) { data = RSTR_PTR(mrb_str_ptr(argv[1])); }
+                else                                   { bin  = get_bedit_ptr(argv[1]);         }
+                timer = mrb_integer(argv[2]);
             }
-            else
-            {
-                BinaryControl * bin = get_bedit_ptr( argv[0] );
-                if(nullptr != bin)
-                {
-                    smon->send(*bin, timer);
-                }
-            }
+            break;
+        default:
+            break;
+        }
+        if(nullptr != bin)
+        {
+            smon->send(idx, *bin, timer);
+        }
+        else if(0 < data.size())
+        {
+            BinaryControl bin(data);
+            smon->send(idx, bin, timer);
         }
     }
     return self;
-}
-
-mrb_value mrb_smon_read(mrb_state * mrb, mrb_value self)
-{
-    SerialMonitor * smon = static_cast<SerialMonitor *>(DATA_PTR(self));
-    if(nullptr != smon)
-    {
-        mrb_int argc; mrb_value * argv;
-        mrb_get_args(mrb, "*", &argv, &argc);
-        if(1==argc)
-        {
-            BinaryControl * bin = get_bedit_ptr( argv[0] );
-            if(nullptr != bin)
-            {
-                auto state = smon->read(*bin);
-                return mrb_fixnum_value(state);
-            }
-        }
-    }
-    return mrb_nil_value();
 }
 
 mrb_value mrb_smon_read_wait(mrb_state * mrb, mrb_value self)
@@ -2472,8 +2704,38 @@ mrb_value mrb_smon_close(mrb_state * mrb, mrb_value self)
         delete smon;
         DATA_PTR(self) = nullptr;
     }
-    //mrb_garbage_collect(mrb);
+    mrb_garbage_collect(mrb);
     return self;
+}
+
+mrb_value mrb_smon_timer(mrb_state * mrb, mrb_value self)
+{
+    SerialMonitor * smon = static_cast<SerialMonitor *>(DATA_PTR(self));
+    if(nullptr != smon)
+    {
+        mrb_int argc; mrb_value * argv;
+        mrb_get_args(mrb, "*", &argv, &argc);
+        if(  (2==argc)
+           &&(MRB_TT_INTEGER == mrb_type(argv[0]))
+           &&(MRB_TT_INTEGER == mrb_type(argv[1])))
+        {
+            mrb_int mode  = mrb_integer(argv[0]);
+            mrb_int timer = mrb_integer(argv[1]);
+            smon->user_timer(mode, timer);
+        }
+    }
+    return self;
+}
+
+static SerialMonitor * get_smon_ptr(mrb_value & argv)
+{
+    const mrb_data_type * src_type = DATA_TYPE(argv);
+    if( src_type == &mrb_smon_context_type )
+    {
+        SerialMonitor * smon = static_cast<SerialMonitor *>(DATA_PTR(argv));
+        return smon;
+    }
+    return nullptr;
 }
 
 mrb_value mrb_xlsx_initialize(mrb_state * mrb, mrb_value self)
@@ -2673,7 +2935,9 @@ mrb_value mrb_xlsx_save(mrb_state * mrb, mrb_value self)
 
 void mrb_bedit_context_free(mrb_state * mrb, void * ptr)
 {
-//    printf("%s:%d: %s\n", __FILE__, __LINE__, __FUNCTION__);
+#if 0
+printf("%s:%d: %s\n", __FILE__, __LINE__, __FUNCTION__);
+#endif
     if(nullptr != ptr)
     {
         BinaryControl * bedit = static_cast<BinaryControl *>(ptr);
@@ -2700,7 +2964,9 @@ void mrb_regexp_context_free(mrb_state * mrb, void * ptr)
 }
 void mrb_thread_context_free(mrb_state * mrb, void * ptr)
 {
-//    printf("%s:%d: %s\n", __FILE__, __LINE__, __FUNCTION__);
+#if 0
+printf("%s:%d: %s\n", __FILE__, __LINE__, __FUNCTION__);
+#endif
     if(nullptr != ptr)
     {
         WorkerThread * th_ctrl = static_cast<WorkerThread *>(ptr);
@@ -2710,7 +2976,9 @@ void mrb_thread_context_free(mrb_state * mrb, void * ptr)
 
 void mrb_smon_context_free(mrb_state * mrb, void * ptr)
 {
-//    printf("%s:%d: %s\n", __FILE__, __LINE__, __FUNCTION__);
+#if 0
+printf("%s:%d: %s\n", __FILE__, __LINE__, __FUNCTION__);
+#endif
     if(nullptr != ptr)
     {
         SerialMonitor * smon = static_cast<SerialMonitor *>(ptr);
@@ -2719,7 +2987,9 @@ void mrb_smon_context_free(mrb_state * mrb, void * ptr)
 }
 void mrb_xlsx_context_free(mrb_state * mrb, void * ptr)
 {
-//    printf("%s:%d: %s\n", __FILE__, __LINE__, __FUNCTION__);
+#if 0
+printf("%s:%d: %s\n", __FILE__, __LINE__, __FUNCTION__);
+#endif
     if(nullptr != ptr)
     {
         OpenXLSXCtrl * xlsx = static_cast<OpenXLSXCtrl *>(ptr);
@@ -3589,44 +3859,47 @@ void WorkerThread::stop(mrb_state * mrb)
 }
 
 /* -------- << class SerialMonitor >>-------- */
-SerialMonitor::SerialMonitor(mrb_value & self, const char * arg_, std::vector<size_t> & timer_default)
-  : arg(arg_), timer(timer_default), com(nullptr), tevter(nullptr), cache_size(1024), rcv_enable(true)
-{   /* str_split */
-    std::vector<std::string> args;
-    std::regex reg(",");
-    for( auto && item : str_split( arg, reg) )
+SerialMonitor::SerialMonitor(mrb_value & self, std::list<std::string> & ports, std::vector<size_t> & timer_default)
+  : com(ports.size()), tevter(ports.size()), cache(ports.size()), sync(nullptr), cache_size(1024), rcv_enable(true)
+{
+    for(size_t idx=0; idx < cache.size(); idx++)
     {
-        args.push_back(item);
+        cache[idx] = {idx, NONE, 0, nullptr };
     }
-    std::string name(args[0]);
-    SerialControl::Profile info = { 1200, SerialControl::odd, SerialControl::one };
-    bool rts_ctrl = true;
-    if(1 < args.size())
+    SerialControl::Profile info = { 1200, SerialControl::odd, SerialControl::one, true };
+    std::vector<std::regex> regs;
+    std::vector<std::function<void(std::string&)>> act;
+    regs.push_back(std::regex("one",  std::regex::icase));
+    regs.push_back(std::regex("two",  std::regex::icase));
+    regs.push_back(std::regex("none", std::regex::icase));
+    regs.push_back(std::regex("even", std::regex::icase));
+    regs.push_back(std::regex("odd",  std::regex::icase));
+    regs.push_back(std::regex("GAP=[0-9]+", std::regex::icase));
+    regs.push_back(std::regex("TO1=[0-9]+", std::regex::icase));
+    regs.push_back(std::regex("TO2=[0-9]+", std::regex::icase));
+    regs.push_back(std::regex("TO3=[0-9]+", std::regex::icase));
+    regs.push_back(std::regex("rts",  std::regex::icase));
+    regs.push_back(std::regex("[0-9]+", std::regex::icase));
+    act.push_back( [&](std::string & arg) { info.stop = SerialControl::one;    } );
+    act.push_back( [&](std::string & arg) { info.stop = SerialControl::two;    } );
+    act.push_back( [&](std::string & arg) { info.parity = SerialControl::none; } );
+    act.push_back( [&](std::string & arg) { info.parity = SerialControl::even; } );
+    act.push_back( [&](std::string & arg) { info.parity = SerialControl::odd;  } );
+    act.push_back( [&](std::string & arg) { timer[0] = stoi(std::regex_replace(arg, std::regex("GAP=([0-9]+)", std::regex::icase), "$1")); } );
+    act.push_back( [&](std::string & arg) { timer[1] = stoi(std::regex_replace(arg, std::regex("TO1=([0-9]+)", std::regex::icase), "$1")); } );
+    act.push_back( [&](std::string & arg) { timer[2] = stoi(std::regex_replace(arg, std::regex("TO2=([0-9]+)", std::regex::icase), "$1")); } );
+    act.push_back( [&](std::string & arg) { timer[3] = stoi(std::regex_replace(arg, std::regex("TO3=([0-9]+)", std::regex::icase), "$1")); } );
+    act.push_back( [&](std::string & arg) { info.rts = (std::regex_match(arg, std::regex("rts=false", std::regex::icase)) ? false : true); } );
+    act.push_back( [&](std::string & arg) { info.baud = stoi(arg); } );
+    std::regex reg(",");
+    std::unique_lock<std::mutex> lock(mtx);
+    size_t idx = 0;
+    for(auto & port : ports)
     {
-        std::vector<std::regex> regs;
-        regs.push_back(std::regex("one",  std::regex::icase));
-        regs.push_back(std::regex("two",  std::regex::icase));
-        regs.push_back(std::regex("none", std::regex::icase));
-        regs.push_back(std::regex("even", std::regex::icase));
-        regs.push_back(std::regex("odd",  std::regex::icase));
-        regs.push_back(std::regex("GAP=[0-9]+", std::regex::icase));
-        regs.push_back(std::regex("TO1=[0-9]+", std::regex::icase));
-        regs.push_back(std::regex("TO2=[0-9]+", std::regex::icase));
-        regs.push_back(std::regex("TO3=[0-9]+", std::regex::icase));
-        regs.push_back(std::regex("rts",  std::regex::icase));
-        regs.push_back(std::regex("[0-9]+", std::regex::icase));
-        std::vector<std::function<void(std::string&)>> act;
-        act.push_back( [&](std::string & arg) { info.stop = SerialControl::one;    } );
-        act.push_back( [&](std::string & arg) { info.stop = SerialControl::two;    } );
-        act.push_back( [&](std::string & arg) { info.parity = SerialControl::none; } );
-        act.push_back( [&](std::string & arg) { info.parity = SerialControl::even; } );
-        act.push_back( [&](std::string & arg) { info.parity = SerialControl::odd;  } );
-        act.push_back( [&](std::string & arg) { timer[0] = stoi(std::regex_replace(arg, std::regex("GAP=([0-9]+)", std::regex::icase), "$1")); } );
-        act.push_back( [&](std::string & arg) { timer[1] = stoi(std::regex_replace(arg, std::regex("TO1=([0-9]+)", std::regex::icase), "$1")); } );
-        act.push_back( [&](std::string & arg) { timer[2] = stoi(std::regex_replace(arg, std::regex("TO2=([0-9]+)", std::regex::icase), "$1")); } );
-        act.push_back( [&](std::string & arg) { timer[3] = stoi(std::regex_replace(arg, std::regex("TO3=([0-9]+)", std::regex::icase), "$1")); } );
-        act.push_back( [&](std::string & arg) { rts_ctrl = (std::regex_match(arg, std::regex("rts=true", std::regex::icase)) ? true : false); } );
-        act.push_back( [&](std::string & arg) { info.baud = stoi(arg); } );
+        timer = timer_default;
+        auto args = str_split( port, reg);
+        auto name = *(args.begin());
+        args.pop_front();
         for(auto arg : args)
         {
             for(size_t idx=0, max=regs.size(); idx < max; idx++)
@@ -3638,13 +3911,23 @@ SerialMonitor::SerialMonitor(mrb_value & self, const char * arg_, std::vector<si
                 }
             }
         }
+        com[idx] = SerialControl::createObject(name.c_str(), info);
+        cache[idx].buff  = static_cast<unsigned char *>(std::malloc(cache_size));
+        cache[idx].cnt   = 0;
+        cache[idx].state = WAKEUP;
+        std::thread th(&SerialMonitor::reciver, this, idx);
+        th.detach();
+        auto lamda = [&]
+        {
+            if(cache[idx].state != WAKEUP)
+            {
+                return true;
+            }
+            return false;
+        };
+        cond.wait(lock, lamda);
+        idx ++;
     }
-    com = SerialControl::createObject(name.c_str(), info.baud, info.parity, info.stop, rts_ctrl);
-    cache.buff  = static_cast<unsigned char *>(std::malloc(cache_size));
-    cache.cnt   = 0;
-    cache.state = NONE;
-    std::thread temp(&SerialMonitor::reciver, this, 0);
-    th_recive.swap(temp);
 }
 SerialMonitor::~SerialMonitor(void)
 {
@@ -3652,147 +3935,245 @@ SerialMonitor::~SerialMonitor(void)
 }
 void SerialMonitor::close(void)
 {
+    bool is_open = false;
     std::unique_lock<std::mutex> lock(mtx);
     rcv_enable = false;
-    if(nullptr != com)
+    try
     {
-        try { com->close(); } catch(...) { }
-        auto lamda = [this]
+        for(auto idx=0; idx < com.size(); idx ++)
         {
-            if(cache.state == CLOSE)
+            if(nullptr != com[idx])
             {
-                return true;
+                com[idx]->close();
+                is_open = true;
             }
-            return false;
-        };
-        cond.wait(lock, lamda);
-        delete com;
-        com = nullptr;
-    }
-    if(nullptr != cache.buff)
-    {
-        std::free(cache.buff);
-        cache.buff = nullptr;
-    }
-    cache.cnt   = 0;
-    for(auto & item : rcv_cache)
-    {
-        std::free(item.buff);
-        item.buff = nullptr;
-    }
-    rcv_cache.clear();
+        }
+        if(is_open)
+        {
+            auto lamda = [this]
+            {
+                for(auto & cache : this->cache)
+                {
+                    if(cache.state != CLOSE)
+                    {
+                        return false;
+                    }
+                }
+                return true;
+            };
+            cond.wait(lock, lamda);
+            for(auto idx=0; idx < com.size(); idx ++)
+            {
+                delete com[idx];
+                com[idx] = nullptr;
+            }
+            for(auto idx=0; idx < cache.size(); idx ++)
+            {
+                if(nullptr != cache[idx].buff)
+                {
+                    std::free(cache[idx].buff);
+                    cache[idx].buff = nullptr;
+                }
+                cache[idx].cnt   = 0;
+            }
+            for(auto & item : rcv_cache)
+            {
+                std::free(item.buff);
+                item.buff = nullptr;
+            }
+            rcv_cache.clear();
+        }
+    } catch(...) { }
 }
-void SerialMonitor::send(BinaryControl & bin, unsigned int timer)
+void SerialMonitor::send(size_t idx, BinaryControl & bin, uint32_t timer)
 {
-    if( nullptr != com)
+    if( nullptr != com[idx])
     {
         if(0 < bin.size())
         {
-            try { com->send(bin.ptr(), bin.size()); } catch(...) { }
-            std::this_thread::sleep_for(std::chrono::milliseconds(timer));
-            if( nullptr != tevter)
+            try
             {
                 std::lock_guard<std::mutex> lock(mtx);
-                tevter->restart();
-            }
+                com[idx]->send(bin.ptr(), bin.size());
+                std::this_thread::sleep_for(std::chrono::milliseconds(timer));
+                if(nullptr != tevter[idx])
+                {
+                    tevter[idx]->restart();
+                }
+            } catch(...) { }
         }
     }
 }
-SerialMonitor::State SerialMonitor::read(BinaryControl & bin)
+SerialMonitor::ReciveInfo SerialMonitor::read(BinaryControl & bin)
 {
-    ReciveInfo rcv_info = { NONE, 0, nullptr, nullptr };
+    ReciveInfo info = { 0, NONE, 0, nullptr };
     std::lock_guard<std::mutex> lock(mtx);
     if(0 < rcv_cache.size())
     {
-        rcv_info = *(rcv_cache.begin());
+        info = *(rcv_cache.begin());
         rcv_cache.pop_front();
-        if(0 < rcv_info.cnt)
+        if(0 < info.cnt)
         {
-            bin.attach(rcv_info.buff, rcv_info.cnt);
+            bin.attach(info.buff, info.cnt);
         }
     }
-    return rcv_info.state;
+    return info;
 }
 SerialMonitor::State SerialMonitor::read_wait(BinaryControl & bin)
 {
-    ReciveInfo rcv_info = { NONE, 0, nullptr, nullptr };
-    auto lamda = [this, &rcv_info]
+    ReciveInfo rcv_info = { 0, NONE, 0, nullptr };
+    auto lamda = [&]
     {
-        if(cache.state == CLOSE)
+        for(size_t idx = 0; idx < cache.size(); idx ++)
         {
-            this->close();
-            return true;
+            if(cache[idx].state == CLOSE)
+            {
+                return true;
+            }
         }
         if(0 < rcv_cache.size())
         {
-            rcv_info = *(rcv_cache.begin());
-            rcv_cache.pop_front();
             return true;
         }
         return false;
     };
     std::unique_lock<std::mutex> lock(mtx);
     cond.wait(lock, lamda);
+    rcv_info = *(rcv_cache.begin());
+    rcv_cache.pop_front();
     if(0 < rcv_info.cnt)
     {
         bin.attach(rcv_info.buff, rcv_info.cnt);
     }
     return rcv_info.state;
 }
-void SerialMonitor::reciver(size_t id)
+void SerialMonitor::reciver(size_t idx)
 {
-    MyEntity::OneShotTimerEventer timeout_evter(timer, *this);
-    tevter = &timeout_evter;
-    while(rcv_enable)
+    std::vector<size_t> timer;
     {
-        if(nullptr == com) { break; }
+        std::lock_guard<std::mutex> lock(mtx);
+        timer = this->timer;
+        cache[idx].state = NONE;
+        cond.notify_all();
+    }
+    MyEntity::OneShotTimerEventer timeout_evter(timer, [&](size_t t_idx)
+    {
+        std::lock_guard<std::mutex> lock(mtx);
+        if(CLOSE != cache[idx].state)
+        {
+            if( !com[idx]->rts_status() )
+            {
+                static const enum State evt_state[] = { GAP, TIME_OUT_1, TIME_OUT_2, TIME_OUT_3 };
+                if(nullptr != sync)
+                {
+                    std::lock_guard<std::mutex> lock(sync->mtx);
+                    cache[idx].state = evt_state[t_idx];
+                    rcv_cache.push_back(cache[idx]);
+                    cache[idx].buff = static_cast<unsigned char *>(std::malloc(cache_size));
+                    cache[idx].cnt  = 0;
+                    sync->cond.notify_all();
+                }
+                else
+                {
+                    cache[idx].state = evt_state[t_idx];
+                    rcv_cache.push_back(cache[idx]);
+                    cache[idx].buff = static_cast<unsigned char *>(std::malloc(cache_size));
+                    cache[idx].cnt  = 0;
+                }
+                cond.notify_all();
+            }
+        }
+    } );
+    {
+        std::lock_guard<std::mutex> lock(mtx);
+        tevter[idx] = &timeout_evter;
+    }
+    while((rcv_enable) && (nullptr != com[idx]))
+    {
         unsigned char data;
         size_t len;
-        try { len = com->read(&(data), 1); } catch(...) { break; }
+        try { len = com[idx]->read(&(data), 1); } catch(...) { break; }
         if(0 == len) { break; }
         std::lock_guard<std::mutex> lock(mtx);
         if(rcv_enable)
         {
-             timeout_evter.restart();
-             cache.buff[cache.cnt] = data;
-             cache.cnt += len;
-             if(cache_size <= cache.cnt)
-             {
-                 cache.state = CACHE_FULL;
-                 rcv_cache.push_back(cache);
-                 cache.buff  = static_cast<unsigned char *>(std::malloc(cache_size));
-                 cache.cnt   = 0;
-                 cond.notify_all();
-             }
+            timeout_evter.restart();
+            cache[idx].buff[cache[idx].cnt] = data;
+            cache[idx].cnt += len;
+            if(cache_size <= cache[idx].cnt)
+            {
+                if(nullptr != sync)
+                {
+                    std::lock_guard<std::mutex> lock(sync->mtx);
+                    cache[idx].state = CACHE_FULL;
+                    rcv_cache.push_back(cache[idx]);
+                    sync->cond.notify_all();
+                }
+                else
+                {
+                    cache[idx].state = CACHE_FULL;
+                    rcv_cache.push_back(cache[idx]);
+                }
+                cache[idx].buff  = static_cast<unsigned char *>(std::malloc(cache_size));
+                cache[idx].cnt   = 0;
+                cond.notify_all();
+            }
         }
     }
     std::lock_guard<std::mutex> lock(mtx);
     rcv_enable = false;
-    cache.state = CLOSE;
-    cache.cnt   = 0;
-    rcv_cache.push_back(cache);
-    cache.buff  = static_cast<unsigned char *>(std::malloc(cache_size));
-    cache.cnt   = 0;
+    cache[idx].state = CLOSE;
+    cache[idx].cnt   = 0;
+    rcv_cache.push_back(cache[idx]);
+    cache[idx].buff  = static_cast<unsigned char *>(std::malloc(cache_size));
+    cache[idx].cnt   = 0;
     cond.notify_all();
-    th_recive.detach();
 }
-void SerialMonitor::handler(unsigned int idx)
+
+void SerialMonitor::user_timer(int mode, unsigned int tick)
 {
-    static const enum State evt_state[] = { GAP, TIME_OUT_1, TIME_OUT_2, TIME_OUT_3 };
-    std::lock_guard<std::mutex> lock(mtx);
-    if(CLOSE != cache.state)
+    auto act_cyclic = [this]()
     {
-        if(idx < __ArrayCount(evt_state))
+        std::lock_guard<std::mutex> lock(mtx);
+        ReciveInfo info = { 0, CTIMER, 0, nullptr };
+        if(nullptr != sync)
         {
-            if( !com->rts_status() )
-            {
-                cache.state = evt_state[idx];
-                rcv_cache.push_back(cache);
-                cache.buff = static_cast<unsigned char *>(std::malloc(cache_size));
-                cache.cnt  = 0;
-                cond.notify_all();
-            }
+            std::lock_guard<std::mutex> lock(sync->mtx);
+            rcv_cache.push_back(info);
+            sync->cond.notify_all();
         }
+        else
+        {
+            rcv_cache.push_back(info);
+        }
+        cond.notify_all();
+    };
+    auto act_oneshot = [this]()
+    {
+        std::lock_guard<std::mutex> lock(mtx);
+        ReciveInfo info = { 0, OTIMER, 0, nullptr };
+        if(nullptr != sync)
+        {
+            std::lock_guard<std::mutex> lock(sync->mtx);
+            rcv_cache.push_back(info);
+            sync->cond.notify_all();
+        }
+        else
+        {
+            rcv_cache.push_back(info);
+        }
+        cond.notify_all();
+    };
+    switch(mode)
+    {
+    case CTIMER:
+        cyclic.start(tick, act_cyclic);
+        break;
+    case OTIMER:
+        cyclic.start(tick, act_oneshot);
+        break;
+    default:
+        break;
     }
 }
 

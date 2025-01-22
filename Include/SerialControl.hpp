@@ -41,16 +41,25 @@ public:
         unsigned int    baud;
         enum Parity     parity;
         enum StopBit    stop;
+        bool            rts;
     };
 
 public:
-    static SerialControl * createObject(const std::string & name, unsigned int  baud, SerialControl::Parity pt, SerialControl::StopBit st, bool rts);
+    static SerialControl * createObject(const std::string & name, SerialControl::Profile & profile);
     virtual std::size_t read(unsigned char * data, std::size_t size) = 0;
     virtual std::size_t send(unsigned char * data, std::size_t size) = 0;
     virtual bool rts_status(void) const = 0;
     virtual void setRTS(void) = 0;
     virtual void clearRTS(void) = 0;
     virtual void close(void) = 0;
+};
+
+
+class Core
+{
+public:
+    virtual void gets(std::string & str) = 0;
+    static Core * createObject(void);
 };
 
 
