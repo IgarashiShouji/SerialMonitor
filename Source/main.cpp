@@ -260,7 +260,6 @@ public:
     SerialMonitor::State read_wait(BinaryControl & bin);
     void reciver(size_t id);
     void user_timer(int mode, unsigned int tick);
-
     inline void set_sync(SerialMonitor::Sync * sync);
     inline SerialMonitor::ReciveInfo refInfo(void);
 };
@@ -4056,7 +4055,7 @@ void SerialMonitor::reciver(size_t idx)
         cache[idx].state = NONE;
         cond.notify_all();
     }
-    MyEntity::OneShotTimerEventer timeout_evter(timer, [&](size_t t_idx)
+    auto user_timer = [&](size_t t_idx)
     {
         std::lock_guard<std::mutex> lock(mtx);
         if(CLOSE != cache[idx].state)
@@ -4083,7 +4082,8 @@ void SerialMonitor::reciver(size_t idx)
                 cond.notify_all();
             }
         }
-    } );
+    };
+    MyEntity::OneShotTimerEventer timeout_evter(timer, user_timer);
     {
         std::lock_guard<std::mutex> lock(mtx);
         tevter[idx] = &timeout_evter;

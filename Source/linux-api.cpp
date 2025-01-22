@@ -193,12 +193,7 @@ void SerialControlLinux::close(void)
 
 SerialControl * SerialControl::createObject(const std::string & name, SerialControl::Profile & profile)
 {
-    static SerialControl * com = nullptr;
-    if(nullptr == com)
-    {
-        com = new SerialControlLinux(name.c_str(), profile);
-    }
-    return com;
+    return new SerialControlLinux(name.c_str(), profile);
 }
 
 

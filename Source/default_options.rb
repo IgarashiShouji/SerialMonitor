@@ -375,16 +375,20 @@ class Core
             else
             end
           end
-          case str
-          when 'quit' then
-            loop = false;
-          else
-            data = str
-            if 0 < data.length then
-              smon.send(data)
-              tick += Core.tick() % 100000000000
-              printf("%s %10d[ms]: Send: %s\n", port, tick, data)
+          if nil != str then
+            case str
+            when 'quit' then
+              loop = false;
+            else
+              data = str
+              if 0 < data.length then
+                smon.send(data)
+                tick += Core.tick() % 100000000000
+                printf("%s %10d[ms]: Send: %s\n", port, tick, data)
+              end
             end
+          else
+            loop = false;
           end
         end
       end
