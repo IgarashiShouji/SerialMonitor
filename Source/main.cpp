@@ -239,7 +239,7 @@ public:
     };
 protected:
     std::vector<SerialControl *>    com;
-    std::vector<MyEntity::OneShotTimerEventer<size_t> *>  tevter;
+    std::vector<MyEntity::OneShotTimerEventer *>  tevter;
     std::vector<ReciveInfo>         cache;
     struct Sync *                   sync;
     unsigned int                    cache_size;
