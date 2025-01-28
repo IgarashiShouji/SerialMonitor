@@ -51,6 +51,7 @@
 
 #include <OpenXLSX.hpp>
 
+
 /* -- static const & functions -- */
 class Object
 {
@@ -156,11 +157,100 @@ public:
     void stop(mrb_state * mrb);
 };
 
+class OneShotTimer
+{
+private:
+    std::atomic<bool>                       running;
+    std::vector<size_t>                     timer;
+    std::atomic<unsigned int>               idx;
+    std::function<void(size_t)>             act;
+    std::atomic<std::chrono::system_clock::time_point>               begin;
+    std::thread                             task;
+    std::mutex                              mtx;        /*! mutex object                */
+public:
+    OneShotTimer(std::vector<size_t> & timer_list, std::function<void(size_t)> callback)
+      : running(true), timer(timer_list), idx(0), act(callback), begin(std::chrono::system_clock::now())
+    {
+        start();
+    }
+    ~OneShotTimer()
+    {
+        stop();
+    }
+    unsigned long int get_timeout_tick(std::chrono::system_clock::time_point now) const
+    {
+        if(idx.load() < timer.size())
+        {
+            auto interval = std::chrono::duration_cast<std::chrono::milliseconds>(now - begin.load()).count();
+            auto timeout_value = timer[idx.load()];
+            if(interval < timeout_value) { return (timeout_value - interval); }
+        }
+        return 0;
+    }
+    void start(void)
+    {
+        auto run = [this]()
+        {
+            running.store(true);
+            while(running.load())
+            {
+                auto max = timer.size();
+                if(idx.load() < max)
+                {
+                    auto now = std::chrono::system_clock::now();
+                    auto tick = this->get_timeout_tick(now);
+                    if(200 < tick) { std::this_thread::sleep_for(std::chrono::milliseconds(200)); }
+                    else
+                    {
+                        std::this_thread::sleep_for(std::chrono::milliseconds(tick));
+                        if(running.load())
+                        {
+//                            std::lock_guard<std::mutex> lock(mtx);
+                            auto idx = this->idx.load();
+                            if(idx < max)
+                            {
+                                act(idx);
+                                this->idx.store(idx+1);
+                            }
+                        }
+                    }
+                }
+                else
+                {
+                    if(200 < timer[0]) { std::this_thread::sleep_for(std::chrono::milliseconds(200));      }
+                    else               { std::this_thread::sleep_for(std::chrono::milliseconds(timer[0])); }
+                }
+            }
+            running.store(false);
+        };
+        task = std::thread(run);
+    }
+    void restart(void)
+    {
+        this->idx.store(timer.size());
+        begin.store(std::chrono::system_clock::now());
+        if(!running.load())
+        {
+            if(task.joinable()) { task.join(); }
+            start();
+        }
+        else
+        {
+            this->idx.store(0);
+        }
+    }
+    void stop()
+    {
+        running.store(false);
+        if(task.joinable()) { task.join(); }
+    }
+};
+
 class CyclicTimer
 {
 private:
     std::atomic<bool>       running;
-    std::thread             th;
+    std::thread             task;
     std::function<void()>   act;
     std::chrono::system_clock::time_point begin;
     unsigned int            count;
@@ -191,28 +281,26 @@ public:
             {
                 auto now = std::chrono::system_clock::now();
                 auto tick = this->get_timeout_tick(now);
-                if(200 < tick)
+                if(200 < tick) { std::this_thread::sleep_for(std::chrono::milliseconds(200)); }
+                else
                 {
-                    std::this_thread::sleep_for(std::chrono::milliseconds(200));
-                    continue;
+                    std::this_thread::sleep_for(std::chrono::milliseconds(tick));
+                    if(running.load())
+                    {
+                        act();
+                        if((0xffffffff-interval) < count) { begin = now; count = interval;  }
+                        else                              {              count += interval; }
+                    }
                 }
-                std::this_thread::sleep_for(std::chrono::milliseconds(tick));
-                act();
-                if((0xffffffff-interval) < count)
-                {
-                    begin = now;
-                    count = interval;
-                }
-                else { count += interval; }
             }
         };
-        th = std::thread(run);
+        task = std::thread(run);
     }
 
     void stop()
     {
         running.store(false);
-        if(th.joinable()) { th.join(); }
+        if(task.joinable()) { task.join(); }
     }
 
     ~CyclicTimer()
@@ -239,7 +327,7 @@ public:
     };
 protected:
     std::vector<SerialControl *>    com;
-    std::vector<MyEntity::OneShotTimerEventer *>  tevter;
+    std::vector<OneShotTimer *>     oneshot;
     std::vector<ReciveInfo>         cache;
     struct Sync *                   sync;
     unsigned int                    cache_size;
@@ -507,7 +595,6 @@ inline void SerialMonitor::set_sync(SerialMonitor::Sync * sync)
 
 inline SerialMonitor::ReciveInfo SerialMonitor::refInfo(void)
 {
-    std::lock_guard<std::mutex> lock(mtx);
     if(0 < rcv_cache.size())
     {
         return *(rcv_cache.begin());
@@ -835,7 +922,8 @@ public:
             if(nullptr != smon)
             {
                 if(SerialMonitor::NONE != (smon->refInfo()).state)
-                    { return true; }
+                    { 
+                        return true; }
             }
             return false;
         };
@@ -847,7 +935,7 @@ public:
             if(nullptr != smon) { smon->set_sync(nullptr); }
             return mrb_str_new_cstr( mrb, str.c_str() );
         }
-        if( is_cin_open.load() )
+        while( is_cin_open.load() )
         {
             cin_cync.cond.wait(lock, lamda);
             if(0 < list_cin.size())
@@ -859,17 +947,16 @@ public:
             }
             if((nullptr != smon) && (nullptr != bin))
             {
+                lock.unlock();
                 SerialMonitor::ReciveInfo info = smon->read(*bin);
-                while(SerialMonitor::NONE != info.state)
+                lock.lock();
+                if(SerialMonitor::NONE != info.state)
                 {
                     mrb_value argv[2];
                     argv[0] = mrb_int_value(mrb, info.idx);
                     argv[1] = mrb_int_value(mrb, info.state);
                     mrb_yield_argv(mrb, proc, 2, argv);
-                    info = smon->refInfo();
                 }
-                smon->set_sync(nullptr);
-                return mrb_str_new_cstr( mrb, "" );
             }
         }
         if(nullptr != smon) { smon->set_sync(nullptr); }
@@ -2670,6 +2757,9 @@ mrb_value mrb_smon_send(mrb_state * mrb, mrb_value self)
             BinaryControl bin(data);
             smon->send(idx, bin, timer);
         }
+        else
+        {
+        }
     }
     return self;
 }
@@ -3859,7 +3949,7 @@ void WorkerThread::stop(mrb_state * mrb)
 
 /* -------- << class SerialMonitor >>-------- */
 SerialMonitor::SerialMonitor(mrb_value & self, std::list<std::string> & ports, std::vector<size_t> & timer_default)
-  : com(ports.size()), tevter(ports.size()), cache(ports.size()), sync(nullptr), cache_size(1024), rcv_enable(true)
+  : com(ports.size()), oneshot(ports.size()), cache(ports.size()), sync(nullptr), cache_size(1024), rcv_enable(true)
 {
     for(size_t idx=0; idx < cache.size(); idx++)
     {
@@ -3888,7 +3978,7 @@ SerialMonitor::SerialMonitor(mrb_value & self, std::list<std::string> & ports, s
     act.push_back( [&](std::string & arg) { timer[1] = stoi(std::regex_replace(arg, std::regex("TO1=([0-9]+)", std::regex::icase), "$1")); } );
     act.push_back( [&](std::string & arg) { timer[2] = stoi(std::regex_replace(arg, std::regex("TO2=([0-9]+)", std::regex::icase), "$1")); } );
     act.push_back( [&](std::string & arg) { timer[3] = stoi(std::regex_replace(arg, std::regex("TO3=([0-9]+)", std::regex::icase), "$1")); } );
-    act.push_back( [&](std::string & arg) { info.rts = (std::regex_match(arg, std::regex("rts=false", std::regex::icase)) ? false : true); } );
+    act.push_back( [&](std::string & arg) { info.rtsctrl = (std::regex_match(arg, std::regex("rts=false", std::regex::icase)) ? false : true); } );
     act.push_back( [&](std::string & arg) { info.baud = stoi(arg); } );
     std::regex reg(",");
     std::unique_lock<std::mutex> lock(mtx);
@@ -3995,9 +4085,9 @@ void SerialMonitor::send(size_t idx, BinaryControl & bin, uint32_t timer)
                 std::lock_guard<std::mutex> lock(mtx);
                 com[idx]->send(bin.ptr(), bin.size());
                 std::this_thread::sleep_for(std::chrono::milliseconds(timer));
-                if(nullptr != tevter[idx])
+                if(nullptr != oneshot[idx])
                 {
-                    tevter[idx]->restart();
+                    oneshot[idx]->restart();
                 }
             } catch(...) { }
         }
@@ -4058,35 +4148,37 @@ void SerialMonitor::reciver(size_t idx)
     auto user_timer = [&](size_t t_idx)
     {
         std::lock_guard<std::mutex> lock(mtx);
+
         if(CLOSE != cache[idx].state)
         {
             if( !com[idx]->rts_status() )
             {
-                static const enum State evt_state[] = { GAP, TIME_OUT_1, TIME_OUT_2, TIME_OUT_3 };
+                auto update_cache = [&](size_t idx)
+                {
+                    static const enum State evt_state[] = { GAP, TIME_OUT_1, TIME_OUT_2, TIME_OUT_3 };
+                    cache[idx].state = evt_state[t_idx];
+                    rcv_cache.push_back(cache[idx]);
+                    cache[idx].cnt  = 0;
+                    cache[idx].buff = static_cast<unsigned char *>(std::malloc(cache_size));
+                };
                 if(nullptr != sync)
                 {
                     std::lock_guard<std::mutex> lock(sync->mtx);
-                    cache[idx].state = evt_state[t_idx];
-                    rcv_cache.push_back(cache[idx]);
-                    cache[idx].buff = static_cast<unsigned char *>(std::malloc(cache_size));
-                    cache[idx].cnt  = 0;
+                    update_cache(idx);
                     sync->cond.notify_all();
                 }
                 else
                 {
-                    cache[idx].state = evt_state[t_idx];
-                    rcv_cache.push_back(cache[idx]);
-                    cache[idx].buff = static_cast<unsigned char *>(std::malloc(cache_size));
-                    cache[idx].cnt  = 0;
+                    update_cache(idx);
                 }
                 cond.notify_all();
             }
         }
     };
-    MyEntity::OneShotTimerEventer timeout_evter(timer, user_timer);
+    OneShotTimer timeout_evter(timer, user_timer);
     {
         std::lock_guard<std::mutex> lock(mtx);
-        tevter[idx] = &timeout_evter;
+        oneshot[idx] = &timeout_evter;
     }
     while((rcv_enable) && (nullptr != com[idx]))
     {

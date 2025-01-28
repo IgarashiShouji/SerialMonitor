@@ -24,6 +24,8 @@
 #include <string>
 #include <thread>
 
+#include <boost/asio.hpp>
+
 #include <fcntl.h>
 #include <iconv.h>
 #include <linux/serial.h>
@@ -35,31 +37,34 @@
 
 using namespace MyEntity;
 using namespace std;
+using namespace boost::asio;
 
 
 /* --------------------------------------------------------------------------------<< Serial Control >>-------------------------------------------------------------------------------- */
 class SerialControlLinux : public SerialControl
 {
 protected:
-    int fd;
-    bool ctrl;
+    boost::asio::io_service     io;
+    boost::asio::serial_port    port;
+    struct Profile profile;
     bool rts;
-    int  rfd;
-    int  wfd;
+    int fd;
+    int rfd;
+    int wfd;
+    unsigned char bit_num;
 
 public:
-    SerialControlLinux(const char * name, struct Profile & profile);
+    SerialControlLinux(const char * name, struct Profile & prof);
     virtual ~SerialControlLinux(void);
     virtual std::size_t read(unsigned char * data, std::size_t size);
     virtual std::size_t send(unsigned char * data, std::size_t size);
     virtual bool rts_status(void) const;
-    virtual void setRTS(void);
-    virtual void clearRTS(void);
+    virtual void setRTS(bool rts);
     virtual void close(void);
 };
 
-SerialControlLinux::SerialControlLinux(const char * name, struct Profile & profile)
-  : fd(-1), ctrl(profile.rts), rts(false), rfd(-1), wfd(-1)
+SerialControlLinux::SerialControlLinux(const char * name, struct Profile & prof)
+  : port(io, name), profile(prof), rts(true), fd(port.native_handle()), rfd(-1), wfd(-1), bit_num(1 + 8)
 {
 #if 0
     50  B50     1200    B1200   57600   B57600  1000000 B1000000
@@ -71,44 +76,26 @@ SerialControlLinux::SerialControlLinux(const char * name, struct Profile & profi
     300 B300    38400   B38400  921600  B921600 3500000 B3500000
     600 B600                                    4000000 B4000000
 #endif
-    int fds[2]; auto presult = ::pipe(&fds[0]); rfd = fds[0]; wfd = fds[1];
-    fd = open(name, O_RDWR | O_NOCTTY | O_NONBLOCK);
-    if(0 <= fd)
+    bit_num += profile.stop;
+    bit_num += (profile.parity != none ? 1 : 0);
+    { int fds[2]; auto presult = ::pipe(&fds[0]); rfd = fds[0]; wfd = fds[1]; }
+    port.set_option(serial_port_base::baud_rate(profile.baud));
+    port.set_option(serial_port_base::character_size(8));
+    port.set_option(serial_port_base::flow_control(serial_port_base::flow_control::none));
+    switch(profile.parity)
     {
-        struct termios tty;
-        if(0 == tcgetattr(fd, &tty))
-        {
-            cfsetospeed(&tty, profile.baud);
-            cfsetispeed(&tty, profile.baud);
-            tty.c_cflag = (tty.c_cflag & ~CSIZE) | CS8;
-            tty.c_iflag &= ~IGNBRK;
-            tty.c_lflag = 0;
-            tty.c_oflag = 0;
-            tty.c_cc[VMIN] = 1;
-            tty.c_cc[VTIME] = 0;
-            switch(profile.parity)
-            {
-            case odd:
-                tty.c_cflag |= PARENB;
-                tty.c_cflag |= PARODD;
-                break;
-            case even:
-                tty.c_cflag |= PARENB;
-                tty.c_cflag &= ~PARODD;
-                break;
-            case none:
-            default:
-                tty.c_cflag &= ~PARENB;
-                break;
-            }
-            switch(profile.stop)
-            {
-            case one:   tty.c_cflag &= ~CSTOPB; break;
-            case two:   tty.c_cflag |= CSTOPB;  break;
-            }
-            if(0 != tcsetattr(fd, TCSANOW, &tty)) { close(); }
-        } else { close(); }
+        case none:  port.set_option(serial_port_base::parity(serial_port_base::parity::none));  break;
+        case odd:   port.set_option(serial_port_base::parity(serial_port_base::parity::odd));   break;
+        case even:  port.set_option(serial_port_base::parity(serial_port_base::parity::even));  break;
+        default: break;
     }
+    switch(profile.stop)
+    {
+        case one: port.set_option(serial_port_base::stop_bits(serial_port_base::stop_bits::one)); break;
+        case two: port.set_option(serial_port_base::stop_bits(serial_port_base::stop_bits::two)); break;
+        default: break;
+    }
+    setRTS(false);
 }
 
 SerialControlLinux::~SerialControlLinux(void)
@@ -121,7 +108,11 @@ std::size_t SerialControlLinux::send(unsigned char * data, std::size_t size)
     size_t wr_size = 0;
     if(0 <= fd)
     {
-        wr_size = ::write(fd, data, size);
+        setRTS(true);
+        unsigned int send_time = (1000 * bit_num * (size+1)) / profile.baud;
+        wr_size = port.write_some(buffer(data, size));
+        std::this_thread::sleep_for(std::chrono::milliseconds(send_time));
+        setRTS(false);
     }
     return wr_size;
 }
@@ -129,55 +120,61 @@ std::size_t SerialControlLinux::send(unsigned char * data, std::size_t size)
 std::size_t SerialControlLinux::read(unsigned char * data, std::size_t size)
 {
     size_t rd_size = 0;
-    if(0 <= fd)
+    try
     {
-        fd_set readfds;
-        FD_ZERO(&readfds);
-        FD_SET(rfd, &readfds);
-        FD_SET(fd, &readfds);
-        int max_fd = max(fd, rfd);
-        int activity = select(max_fd + 1, &readfds, nullptr, nullptr, nullptr);
-        if(0 <= activity)
+        if(port.is_open())
         {
-            if(FD_ISSET(rfd, &readfds))
+            fd_set readfds;
+            FD_ZERO(&readfds);
+            FD_SET(rfd, &readfds);
+            FD_SET(fd, &readfds);
+            int max_fd = max(fd, rfd);
+            int activity = select(max_fd + 1, &readfds, nullptr, nullptr, nullptr);
+            if(0 <= activity)
             {
-                ::close(wfd);
-                ::close(rfd);
-                return rd_size;
-            }
-            if(FD_ISSET(fd, &readfds))
-            {
-                rd_size = ::read(fd, data, size);
+                if(FD_ISSET(rfd, &readfds))
+                {
+                    ::close(wfd);
+                    ::close(rfd);
+                    return rd_size;
+                }
+                if(FD_ISSET(fd, &readfds))
+                {
+                    rd_size = port.read_some(buffer(data, size));
+                }
             }
         }
-    }
+    } catch(...) { }
     return rd_size;
 }
 
 bool SerialControlLinux::rts_status(void) const
 {
-    if(ctrl) { return rts; }
-    return false;
+    return rts;
 }
 
-void SerialControlLinux::setRTS(void)
+void SerialControlLinux::setRTS(bool rts)
 {
-    if(ctrl)
+    if(profile.rtsctrl)
     {
-        int data = TIOCM_RTS;
-        ioctl(fd, TIOCMBIS, &data);
+        if(rts)
+        {
+            if(!this->rts)
+            {   /* RTS: false -> true */
+                int data = TIOCM_RTS;
+                ioctl(fd, TIOCMBIS, &data);
+            }
+        }
+        else
+        {
+            if(this->rts)
+            {   /* RTS: true -> false */
+                int data = TIOCM_RTS;
+                ioctl(fd, TIOCMBIC, &data);
+            }
+        }
     }
-    rts = true;
-}
-
-void SerialControlLinux::clearRTS(void)
-{
-    if(ctrl)
-    {
-        int data = TIOCM_RTS;
-        ioctl(fd, TIOCMBIC, &data);
-    }
-    rts = false;
+    this->rts = rts;
 }
 
 void SerialControlLinux::close(void)
@@ -282,6 +279,7 @@ std::list<std::string> & PipeList::ref(void)
 }
 
 
+/* --------------------------------------------------------------------------------<< Core on posix >>-------------------------------------------------------------------------------- */
 class CorePosix : public Core
 {
 protected:

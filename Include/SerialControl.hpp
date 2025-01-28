@@ -41,7 +41,7 @@ public:
         unsigned int    baud;
         enum Parity     parity;
         enum StopBit    stop;
-        bool            rts;
+        bool            rtsctrl;
     };
 
 public:
@@ -49,8 +49,7 @@ public:
     virtual std::size_t read(unsigned char * data, std::size_t size) = 0;
     virtual std::size_t send(unsigned char * data, std::size_t size) = 0;
     virtual bool rts_status(void) const = 0;
-    virtual void setRTS(void) = 0;
-    virtual void clearRTS(void) = 0;
+    virtual void setRTS(bool rts) = 0;
     virtual void close(void) = 0;
 };
 
