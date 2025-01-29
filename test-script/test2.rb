@@ -19,7 +19,7 @@ end
 def testReadSpradSheet(fname)
   xls = OpenXLSX.new
   xls.open(fname) do
-    xls.sheet_names do |sheet_name|
+    (xls.sheet_names).each do |sheet_name|
       print "sheet name: ", sheet_name, "\n"
       xls.sheet(sheet_name) do
         value = xls.cell('A3'); if nil != value then; printf("A3: %s\n", value); end

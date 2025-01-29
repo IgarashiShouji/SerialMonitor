@@ -189,6 +189,16 @@ class WorkerThread
   end
 end
 
+class OpenXLSX
+  def self.openBook(fname)
+    xls = OpenXLSX.new
+    xls.open(fname) do
+      yield(xls)
+    end
+  end
+end
+
+
 class SvgSequence
   def initialize()
     @title = ''

@@ -745,7 +745,7 @@ static void mrb_xlsx_context_free(mrb_state * mrb, void * ptr);
 
 
 /* -- static tables -- */
-static const char *  SoftwareRevision = "0.14.02";
+static const char *  SoftwareRevision = "0.14.03";
 static const struct mrb_data_type mrb_core_context_type =
 {
     "mrb_core_context",         mrb_core_context_free
@@ -2906,24 +2906,17 @@ mrb_value mrb_xlsx_worksheet(mrb_state * mrb, mrb_value self)
 }
 mrb_value mrb_xlsx_sheet_names(mrb_state * mrb, mrb_value self)
 {
+    mrb_value arry = mrb_ary_new(mrb);
     OpenXLSXCtrl * xlsx = static_cast<OpenXLSXCtrl *>(DATA_PTR(self));
     if(nullptr != xlsx)
     {
-        mrb_value proc; mrb_int argc; mrb_value * argv;
-        mrb_get_args(mrb, "&*", &proc, &argv, &argc);
-        if((0 == argc) && (!mrb_nil_p(proc)))
+        auto list = xlsx->getWorkSheetNames();
+        for(auto & name: list)
         {
-            auto list = xlsx->getWorkSheetNames();
-            for( auto & name: list)
-            {
-                mrb_value argv[1];
-                argv[0] = mrb_str_new_cstr(mrb, name.c_str());
-                auto ret = mrb_yield_argv(mrb, proc, 1, argv);
-                if(mrb_type(ret) == MRB_TT_FALSE) { return ret; }
-            }
+            mrb_ary_push(mrb, arry, mrb_str_new_cstr(mrb, name.c_str()));
         }
     }
-    return mrb_nil_value();
+    return arry;
 }
 mrb_value mrb_xlsx_set_seet_name(mrb_state * mrb, mrb_value self)
 {
