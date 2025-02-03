@@ -370,7 +370,7 @@ class Core
           str = Core.gets(smon, bin) do |idx, state|
             tick += now % 100000000000
             case state
-            when Smon::OTIMER then
+            when Smon::UTIMER then
             when Smon::CTIMER then
               printf("Date: %s\n", Core.date())
             when Smon::CACHE_FULL then
@@ -422,7 +422,7 @@ class Core
             now = Core.tick()
             tick += now % 100000000000
             case state
-            when Smon::OTIMER then
+            when Smon::UTIMER then
             when Smon::CTIMER then
               is_date = true;
             when Smon::CACHE_FULL then

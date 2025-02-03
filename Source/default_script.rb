@@ -20,7 +20,7 @@ Smon.open(Array.new(list_port)) do |smon|
     str = Core.gets(smon, bin) do |idx, state|
       port = list_port[idx]
       case state
-      when Smon::OTIMER then
+      when Smon::UTIMER then
       when Smon::CTIMER then
         printf("Date: %s\n", Core.date())
       when Smon::CACHE_FULL then
