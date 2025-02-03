@@ -283,120 +283,150 @@ end
 
 def test_thead
   print "thread test\n"
-  list = Array.new
-  th = WorkerThread.new
-  th1 = WorkerThread.new
-  th2 = WorkerThread.new
-  th1.run do
-    th.synchronize do
-      print "  run thread 1\n"
-    end
-    th1.wait() do
+  begin
+    th = WorkerThread.new
+    th1 = WorkerThread.run(1) do |th|
       th.synchronize do
-        printf("  th1.list.length(%d)\n", list.length)
+        print '  Thread test 1: th1 = WorkerThread.run(1)', "\n"
       end
     end
-    th1.synchronize do
+    th2 = WorkerThread.run(1) do |th|
       th.synchronize do
-        print "  list.pop: ", list.pop(), "\n"
+        print '  Thread test 1: th2 = WorkerThread.run(1)', "\n"
       end
     end
-    th1.stop()
-    th.synchronize do
-      print "  run thread 1 end\n"
-    end
-  end
-  th2.run do
-    th.synchronize do
-      print "  run thread\n"
-    end
-    th2.wait() do
+    th1.join()
+    th2.join()
+    th1.start(5) do
       th.synchronize do
-        printf("  th2.list.length(%d)\n", list.length)
+        print '  Thread test 1: th1.start(1)', "\n"
       end
     end
-    th2.synchronize do
+    th2.start(2) do
       th.synchronize do
-        print "  list.pop: ", list.pop(), "\n"
+        print '  Thread test 1: th2.start(1)', "\n"
       end
     end
-    th2.stop()
-    th.synchronize do
-      print "  run thread end\n"
+    th1.join()
+    th2.join()
+    th1.start(1) do
+      th1.wait do
+        print '  Thread test 2: th1.wait', "\n"
+      end
     end
-  end
-  th.synchronize do
-    print "  notify \n"
-  end
-  th2.notify do
-    th.synchronize do
-      print "  push(2) + notiry\n"
+    th2.start(1) do
+      th1.notify do
+        print '  Thread test 2: th2.nority', "\n"
+      end
     end
-    list.push(2)
-  end
-  th1.notify do
-    th.synchronize do
-      print "  push(1) + notiry\n"
+    th1.join
+    th2.join
+    th1.start(1) do
+      th1.wait do
+        print '  Thread test 3: th1: str = th1.fifo_pop(bin)', "\n"
+        bin = BinEdit.new
+        str = th1.fifo_pop(bin)
+        print '    str -> "', str, '"', "\n"
+      end
     end
-    list.push(1)
-  end
-  th.synchronize do
-    print "  thread join\n"
-  end
-  th1.join
-  th2.join
+    th2.start(1) do
+      th1.notify do
+        print "  Thread test 3: th2: th1.fifp_push('test')", "\n"
+        th1.fifo_push('test')
+      end
+    end
+    th1.join
+    th2.join
 
-  th = WorkerThread.new
-  th.run do
-    print "  One Shot Thread 1\n"
-    th.stop()
+    th1.start(1) do
+      print '  Thread test 4: th1: str = th1.fifo_pop(bin)', "\n"
+      bin = BinEdit.new
+      len = th1.fifo_wait()
+      str = th1.fifo_pop(bin)
+      print '    str -> "', str, '"', "\n"
+      print "  Thread test 4: th1: th2.fifp_push('test2')", "\n"
+      th2.fifo_push('test2')
+      print "  Thread test 4: th1: end", "\n"
+    end
+    th2.start(1) do
+      print "  Thread test 4: th2: th1.fifp_push('test1')", "\n"
+      th1.fifo_push('test1')
+      bin = BinEdit.new
+      len = th2.fifo_wait()
+      str = th2.fifo_pop(bin)
+      print '  Thread test 4: th2: str = th2.fifo_pop(bin)', "\n"
+      print '    str -> "', str, '"', "\n"
+      print "  Thread test 4: th2: end", "\n"
+    end
+    th1.join
+    th2.join
   end
-  th.join
-
-  th = WorkerThread.new
-  th.run(2) do |cnt|
-    printf("  %d: One Shot Thread\n", cnt)
+  begin
+    th1 = WorkerThread.run(1) do |th|
+      bin = BinEdit.new
+      len = th.fifo_wait()
+      printf("    th1: len -> %d\n", len)
+      str = th.fifo_pop(bin)
+      print  '    th1: str -> "', str, '"', "\n"
+    end
+    th2 = WorkerThread.run(1) do |th|
+      print "  Thread & fifo test 1: th2: Core.fifo_push('test')\n"
+      th1.fifo_push('test')
+    end
+    th1.join
+    th2.join
   end
-  th.join
-
-  th1 = WorkerThread.new (2) do |cnt|
-    printf("  %d: One Shot Thread (1)\n", cnt)
-    WorkerThread.ms_sleep(500);
+  begin
+    th1 = WorkerThread.run(1) do |th|
+      bin = BinEdit.new
+      len = th.fifo_wait()
+      printf("    th1: len -> %d\n", len)
+      str = th.fifo_pop(bin)
+      printf("    th1: str(%d), bin(%s)\n", str.length, bin.dump);
+    end
+    th2 = WorkerThread.run(1) do |th|
+      print "  Thread & fifo test 2: th2: Core.fifo_push(bin)\n"
+      bin = BinEdit.new('1234')
+      th1.fifo_push(bin)
+      print "  Thread & fifo test 2: th2: Core.fifo_push(bin) end\n"
+    end
+    th1.join
+    th2.join
   end
-  th2 = WorkerThread.new (1) do |cnt|
-    printf("  %d: One Shot Thread (2)\n", cnt)
+  begin
+    th1 = WorkerThread.run(1) do |th|
+      bin = BinEdit.new
+      len = th.fifo_wait()
+      printf("    th1: len -> %d\n", len)
+      str = th.fifo_pop(bin)
+      printf("    th1: str(%d), bin(%s)\n", str.length, bin.dump);
+    end
+    th2 = WorkerThread.run(1) do |th|
+      print "  Thread & fifo test 2: th2: Core.fifo_push(bin)\n"
+      bin = BinEdit.new('1234')
+      th1.fifo_push(bin)
+      print "  Thread & fifo test 2: th2: Core.fifo_push(bin) end\n"
+    end
+    th1.join
+    th2.join
   end
-  th1.join
-  th2.join
-
-  th = WorkerThread.new(2) do |cnt|
-    printf("  %d: One Shot Thread\n", cnt)
-    printf("  %d: One Shot Thread End\n", cnt)
+  begin
+    th1 = WorkerThread.run(1) do |th|
+      bin = BinEdit.new
+      len = th.fifo_wait()
+      printf("    th1: len -> %d\n", len)
+      str = th.fifo_pop(bin)
+      printf("    th1: str(%d:%s), bin(%s)\n", str.length, str, bin.dump);
+    end
+    th2 = WorkerThread.run(1) do |th|
+      print "  Thread & fifo test 2: th2: Core.fifo_push(bin)\n"
+      bin = BinEdit.new('1234')
+      th1.fifo_push('test1', bin)
+      print "  Thread & fifo test 2: th2: Core.fifo_push(bin) end\n"
+    end
+    th1.join
+    th2.join
   end
-  th.join
-
-#   begin
-#     th = WorkerThread.new
-#     th1 = WorkerThread.new
-#     th1.run(1) do |cnt|
-#       printf("  %d: One Shot Thread Wait\n", cnt)
-# #      th.wait() do
-# #        printf("  %d: One Shot Thread Wait now\n", cnt)
-# #      end
-#       printf("  %d: One Shot Thread Wait End\n", cnt)
-#     end
-#     th2 = WorkerThread.new
-#     th2.run(1) do |cnt|
-#       printf("  %d: One Shot Thread notify\n", cnt)
-#       th.notify() do
-#         printf("  %d: One Shot Thread notify now\n", cnt)
-#       end
-#       printf("  %d: One Shot Thread notify End\n", cnt)
-#     end
-#     th1.join
-#     th2.join
-#   end
-
   print "thead test end\n"
 end
 
@@ -408,7 +438,7 @@ else
   test_core(); print "\n"
   test_bin_edit(); print "\n"
   test_cpp_regexp(); print "\n"
-#  test_thead(); print "\n"
+  test_thead(); print "\n"
   print "mruby test script 1 end\n"
   print "\n"
 end

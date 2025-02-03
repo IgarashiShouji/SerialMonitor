@@ -143,6 +143,15 @@ protected:
     std::thread             th_ctrl;
     std::mutex              mtx;
     std::condition_variable cond;
+protected:
+    struct FifoItem
+    {
+        std::string                 str;
+        std::vector<unsigned char>  bin;
+    };
+    std::list<FifoItem>             fifo;
+    std::mutex                      mtx_fifo;
+    std::condition_variable         cond_fifo;
 public:
     inline WorkerThread(void);
     virtual ~WorkerThread(void);
@@ -155,6 +164,11 @@ public:
     inline mrb_value notify(mrb_state * mrb, mrb_value & proc);
     inline mrb_value sync(mrb_state * mrb, mrb_value & proc);
     void stop(mrb_state * mrb);
+
+    mrb_value fifo_push(mrb_state * mrb, mrb_value self);
+    mrb_value fifo_pop(mrb_state * mrb, mrb_value self);
+    mrb_value fifo_len(mrb_state * mrb, mrb_value self);
+    mrb_value fifo_wait(mrb_state * mrb, mrb_value self);
 };
 
 class OneShotTimer
@@ -719,6 +733,10 @@ static mrb_value mrb_thread_notify(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_thread_sync(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_thread_join(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_thread_stop(mrb_state * mrb, mrb_value self);
+static mrb_value mrb_thread_fifo_push(mrb_state * mrb, mrb_value self);
+static mrb_value mrb_thread_fifo_pop(mrb_state * mrb, mrb_value self);
+static mrb_value mrb_thread_fifo_len(mrb_state * mrb, mrb_value self);
+static mrb_value mrb_thread_fifo_wait(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_thread_ms_sleep(mrb_state * mrb, mrb_value self);
 static void mrb_thread_context_free(mrb_state * mrb, void * ptr);
 
@@ -745,7 +763,7 @@ static void mrb_xlsx_context_free(mrb_state * mrb, void * ptr);
 
 
 /* -- static tables -- */
-static const char *  SoftwareRevision = "0.14.03";
+static const char *  SoftwareRevision = "0.14.04";
 static const struct mrb_data_type mrb_core_context_type =
 {
     "mrb_core_context",         mrb_core_context_free
@@ -788,9 +806,27 @@ protected:
     std::thread                             cin_th;
     SerialMonitor::Sync                     cin_cync;
     std::map<unsigned int, Object *>        res;
-    std::mutex                              mtx;
-    std::condition_variable                 cond;
+    std::mutex                              mtx_init;
     Core *                                  core;
+
+private:
+    void push(Object * obj)
+    {
+        if(nullptr != obj)
+        {
+            for(unsigned int id = this->id + 1; id != this->id; id ++)
+            {
+                if(res.count(id) == 0)
+                {
+                    this->id = id;
+                    obj->setControlID(id, &res);
+                    break;
+                }
+            }
+        }
+    }
+    void exit(int code) { }
+
 public:
     static Application * getObject(void);
     Application(std::string & program, boost::program_options::variables_map & optmap, std::vector<std::string> & arg)
@@ -807,27 +843,16 @@ public:
     }
     virtual ~Application(void)
     {
-        std::list<unsigned int> keys;
-        for(auto & item : res) keys.push_back(item.first);
-        for(auto & key : keys) delete res[key];
         if( is_gets.load() ) { is_cin_open.store(false); }
-        delete core;
-    }
-    void exit(int code) { }
-    void push(Object * obj)
-    {
-        if(nullptr != obj)
+        if(nullptr != core)  { delete core; core = nullptr; }
+        std::lock_guard<std::mutex> lock(mtx_init);
+        for(auto & item : res)
         {
-            for(unsigned int id = this->id + 1; id != this->id; id ++)
-            {
-                if(res.count(id) == 0)
-                {
-                    this->id = id;
-                    obj->setControlID(id, &res);
-                    break;
-                }
-            }
+            auto key = item.first;
+            delete res[key];
+            res[key] = nullptr;
         }
+        res.clear();
     }
 
     mrb_value core_get_args(mrb_state * mrb, mrb_value self)
@@ -869,7 +894,6 @@ public:
     {
         return mrb_str_new_cstr( mrb, prog.c_str() );
     }
-
     mrb_value core_gets(mrb_state * mrb, mrb_value self)
     {
         if( (is_cin_open.load()) && (!is_gets.load()) )
@@ -965,7 +989,7 @@ public:
 
     mrb_value bedit_init(mrb_state * mrb, mrb_value self)
     {
-        std::lock_guard<std::mutex> lock(mtx);
+        std::lock_guard<std::mutex> lock(mtx_init);
         BinaryControl * bedit = nullptr;
         mrb_int argc; mrb_value * argv;
         mrb_get_args(mrb, "*", &argv, &argc);
@@ -1070,7 +1094,7 @@ public:
 
     mrb_value cppregexp_init(mrb_state * mrb, mrb_value self)
     {
-        std::lock_guard<std::mutex> lock(mtx);
+        std::lock_guard<std::mutex> lock(mtx_init);
         mrb_int argc; mrb_value * argv;
         mrb_get_args(mrb, "*", &argv, &argc);
         CppRegexp * regexp = nullptr;
@@ -1118,7 +1142,7 @@ public:
 
     mrb_value thread_init(mrb_state * mrb, mrb_value self)
     {
-        std::lock_guard<std::mutex> lock(mtx);
+        std::lock_guard<std::mutex> lock(mtx_init);
         WorkerThread * th_ctrl = new WorkerThread();
         mrb_data_init(self, th_ctrl, &mrb_thread_context_type);
         th_ctrl->start(mrb, self);
@@ -1127,7 +1151,7 @@ public:
 
     mrb_value smon_init(mrb_state * mrb, mrb_value self)
     {
-        std::lock_guard<std::mutex> lock(mtx);
+        std::lock_guard<std::mutex> lock(mtx_init);
         std::list<std::string> ports;
         mrb_int argc; mrb_value * argv;
         mrb_get_args(mrb, "*", &argv, &argc);
@@ -1165,7 +1189,7 @@ public:
 
     mrb_value xlsx_init(mrb_state * mrb, mrb_value self)
     {
-        std::lock_guard<std::mutex> lock(mtx);
+        std::lock_guard<std::mutex> lock(mtx_init);
         OpenXLSXCtrl * xlsx = new OpenXLSXCtrl();
         mrb_data_init(self, xlsx, &mrb_xlsx_context_type);
         push(xlsx);
@@ -1246,19 +1270,23 @@ public:
 
             /* Class Thread */
             struct RClass * thread_class = mrb_define_class(mrb, "WorkerThread", mrb->object_class);
-            mrb_define_const( mrb, thread_class, "STOP",      mrb_fixnum_value(WorkerThread::Stop)     );
-            mrb_define_const( mrb, thread_class, "WAKEUP",    mrb_fixnum_value(WorkerThread::Wakeup)   );
-            mrb_define_const( mrb, thread_class, "RUN",       mrb_fixnum_value(WorkerThread::Run)      );
-            mrb_define_const( mrb, thread_class, "WAIT_JOIN", mrb_fixnum_value(WorkerThread::WaitStop) );
+            mrb_define_const(mrb, thread_class, "STOP",      mrb_fixnum_value(WorkerThread::Stop)     );
+            mrb_define_const(mrb, thread_class, "WAKEUP",    mrb_fixnum_value(WorkerThread::Wakeup)   );
+            mrb_define_const(mrb, thread_class, "RUN",       mrb_fixnum_value(WorkerThread::Run)      );
+            mrb_define_const(mrb, thread_class, "WAIT_JOIN", mrb_fixnum_value(WorkerThread::WaitStop) );
             mrb_define_module_function( mrb, thread_class, "ms_sleep", mrb_thread_ms_sleep, MRB_ARGS_ARG(1, 1) );
-            mrb_define_method( mrb, thread_class, "initialize",  mrb_thread_initialize, MRB_ARGS_NONE()  );
-            mrb_define_method( mrb, thread_class, "state",       mrb_thread_state,      MRB_ARGS_ANY()  );
-            mrb_define_method( mrb, thread_class, "start",       mrb_thread_start,      MRB_ARGS_ANY()  );
-            mrb_define_method( mrb, thread_class, "wait",        mrb_thread_wait,       MRB_ARGS_NONE() );
-            mrb_define_method( mrb, thread_class, "notify",      mrb_thread_notify,     MRB_ARGS_NONE() );
-            mrb_define_method( mrb, thread_class, "synchronize", mrb_thread_sync,       MRB_ARGS_NONE() );
-            mrb_define_method( mrb, thread_class, "join",        mrb_thread_join,       MRB_ARGS_ANY()  );
-            mrb_define_method( mrb, thread_class, "stop",        mrb_thread_stop,       MRB_ARGS_NONE() );
+            mrb_define_method(mrb, thread_class, "initialize",  mrb_thread_initialize,      MRB_ARGS_NONE()   );
+            mrb_define_method(mrb, thread_class, "state",       mrb_thread_state,           MRB_ARGS_ANY()    );
+            mrb_define_method(mrb, thread_class, "start",       mrb_thread_start,           MRB_ARGS_ANY()    );
+            mrb_define_method(mrb, thread_class, "wait",        mrb_thread_wait,            MRB_ARGS_NONE()   );
+            mrb_define_method(mrb, thread_class, "notify",      mrb_thread_notify,          MRB_ARGS_NONE()   );
+            mrb_define_method(mrb, thread_class, "synchronize", mrb_thread_sync,            MRB_ARGS_NONE()   );
+            mrb_define_method(mrb, thread_class, "join",        mrb_thread_join,            MRB_ARGS_ANY()    );
+            mrb_define_method(mrb, thread_class, "stop",        mrb_thread_stop,            MRB_ARGS_NONE()   );
+            mrb_define_method(mrb, thread_class, "fifo_push",   mrb_thread_fifo_push,       MRB_ARGS_ANY()    );
+            mrb_define_method(mrb, thread_class, "fifo_pop",    mrb_thread_fifo_pop,        MRB_ARGS_ARG(1, 1));
+            mrb_define_method(mrb, thread_class, "fifo_len",    mrb_thread_fifo_len,        MRB_ARGS_NONE()   );
+            mrb_define_method(mrb, thread_class, "fifo_wait",   mrb_thread_fifo_wait,       MRB_ARGS_NONE()   );
 
             /* Class Smon */
             struct RClass * smon_class = mrb_define_class(mrb, "Smon", mrb->object_class);
@@ -1620,7 +1648,6 @@ mrb_value mrb_core_prog(mrb_state * mrb, mrb_value self)
     }
     return mrb_nil_value();
 }
-
 static void mrb_core_context_free(mrb_state * mrb, void * ptr)
 {
 }
@@ -2516,9 +2543,33 @@ mrb_value mrb_thread_stop(mrb_state * mrb, mrb_value self)
     if(nullptr != th_ctrl) { th_ctrl->stop(mrb); }
     return mrb_nil_value();
 }
+mrb_value mrb_thread_fifo_push(mrb_state * mrb, mrb_value self)
+{
+    WorkerThread * th_ctrl = static_cast<WorkerThread *>(DATA_PTR(self));
+    if(nullptr != th_ctrl) { return th_ctrl->fifo_push(mrb, self); }
+    return mrb_nil_value();
+}
+mrb_value mrb_thread_fifo_pop(mrb_state * mrb, mrb_value self)
+{
+    WorkerThread * th_ctrl = static_cast<WorkerThread *>(DATA_PTR(self));
+    if(nullptr != th_ctrl) { return th_ctrl->fifo_pop(mrb, self); }
+    return mrb_nil_value();
+}
+mrb_value mrb_thread_fifo_len(mrb_state * mrb, mrb_value self)
+{
+    WorkerThread * th_ctrl = static_cast<WorkerThread *>(DATA_PTR(self));
+    if(nullptr != th_ctrl) { return th_ctrl->fifo_len(mrb, self); }
+    return mrb_nil_value();
+}
+mrb_value mrb_thread_fifo_wait(mrb_state * mrb, mrb_value self)
+{
+    WorkerThread * th_ctrl = static_cast<WorkerThread *>(DATA_PTR(self));
+    if(nullptr != th_ctrl) { return th_ctrl->fifo_wait(mrb, self); }
+    return mrb_nil_value();
+}
 static mrb_value mrb_thread_ms_sleep(mrb_state * mrb, mrb_value self)
 {
-    mrb_int tick;
+    mrb_int tick = 0;
     mrb_get_args(mrb, "i", &tick);
     std::this_thread::sleep_for(std::chrono::milliseconds(tick));
     return mrb_nil_value();
@@ -3939,6 +3990,123 @@ void WorkerThread::stop(mrb_state * mrb)
     }
     cond.notify_all();
 }
+mrb_value WorkerThread::fifo_push(mrb_state * mrb, mrb_value self)
+{
+    FifoItem item;
+    mrb_int argc; mrb_value * argv;
+    mrb_get_args(mrb, "*", &argv, &argc);
+    switch(argc)
+    {
+    case 1:
+        if(MRB_TT_STRING == mrb_type(argv[0]))
+        {
+            std::string data(RSTR_PTR(mrb_str_ptr(argv[0])));
+            item.str = data;
+            std::lock_guard<std::mutex> lock(mtx_fifo);
+            fifo.push_back(item);
+            cond_fifo.notify_all();
+            return mrb_bool_value(true);
+        }
+        else
+        {
+            BinaryControl * bin_src = get_bedit_ptr(argv[0]);
+            if(nullptr != bin_src)
+            {
+                auto len = bin_src->size();
+                auto ptr = bin_src->ptr();
+                item.bin.resize(len);
+                for(size_t idx=0; idx<len; idx++)
+                {
+                    item.bin[idx] = ptr[idx];
+                }
+                std::lock_guard<std::mutex> lock(mtx_fifo);
+                fifo.push_back(item);
+                cond_fifo.notify_all();
+                return mrb_bool_value(true);
+            }
+        }
+        break;
+    case 2:
+        if(MRB_TT_STRING == mrb_type(argv[0]))
+        {
+            BinaryControl * bin_src = get_bedit_ptr(argv[1]);
+            if(nullptr != bin_src)
+            {
+                std::string data(RSTR_PTR(mrb_str_ptr(argv[0])));
+                item.str = data;
+                auto len = bin_src->size();
+                auto ptr = bin_src->ptr();
+                item.bin.resize(len);
+                for(size_t idx=0; idx<len; idx++)
+                {
+                    item.bin[idx] = ptr[idx];
+                }
+                std::lock_guard<std::mutex> lock(mtx_fifo);
+                fifo.push_back(item);
+                cond_fifo.notify_all();
+                return mrb_bool_value(true);
+            }
+        }
+        break;
+    default:
+        break;
+    }
+    return mrb_bool_value(false);
+}
+mrb_value WorkerThread::fifo_pop(mrb_state * mrb, mrb_value self)
+{
+    mrb_int argc; mrb_value * argv;
+    mrb_get_args(mrb, "*", &argv, &argc);
+    if(1==argc)
+    {
+        BinaryControl * bin = get_bedit_ptr(argv[0]);
+        if(nullptr != bin)
+        {
+            std::lock_guard<std::mutex> lock(mtx_fifo);
+            cond_fifo.notify_all();
+            if(0<fifo.size())
+            {
+                auto item = *(fifo.begin());
+                fifo.pop_front();
+                if(0 < item.bin.size())
+                {
+                    auto len = item.bin.size();
+                    bin->resize(len);
+                    auto ptr = bin->ptr();
+                    for(auto idx=0; idx<len; idx++)
+                    {
+                        ptr[idx] = item.bin[idx];
+                    }
+                }
+                if(0 < item.str.size())
+                {
+                    return mrb_str_new_cstr(mrb, item.str.c_str());
+                }
+                cond_fifo.notify_all();
+            }
+        }
+    }
+    return mrb_str_new_cstr(mrb, "");
+}
+mrb_value WorkerThread::fifo_len(mrb_state * mrb, mrb_value self)
+{
+    std::lock_guard<std::mutex> lock(mtx_fifo);
+    auto len = fifo.size();
+    return mrb_int_value(mrb, len);
+}
+mrb_value WorkerThread::fifo_wait(mrb_state * mrb, mrb_value self)
+{
+    auto lamda = [&]
+    {
+        if(0<fifo.size()) { return true; }
+        return false;
+    };
+    std::unique_lock<std::mutex> lock(mtx_fifo);
+    cond_fifo.wait(lock, lamda);
+    auto len = fifo.size();
+    return mrb_int_value(mrb, len);
+}
+
 
 /* -------- << class SerialMonitor >>-------- */
 SerialMonitor::SerialMonitor(mrb_value & self, std::list<std::string> & ports, std::vector<size_t> & timer_default)
