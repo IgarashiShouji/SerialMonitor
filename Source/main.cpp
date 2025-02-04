@@ -147,7 +147,8 @@ protected:
     struct FifoItem
     {
         std::string                 str;
-        std::vector<unsigned char>  bin;
+        unsigned char *             data;
+        size_t                      len;
     };
     std::list<FifoItem>             fifo;
     std::mutex                      mtx_fifo;
@@ -509,7 +510,6 @@ inline size_t BinaryControl::ref_pos(void) const
 
 inline void BinaryControl::attach(unsigned char * ptr, size_t size)
 {
-    if(nullptr != data) { std::free(data); }
     compress_size = pos = 0;
     length = size;
     data = ptr;
@@ -762,7 +762,7 @@ static void mrb_xlsx_context_free(mrb_state * mrb, void * ptr);
 
 
 /* -- static tables -- */
-static const char *  SoftwareRevision = "0.14.05";
+static const char *  SoftwareRevision = "0.14.06";
 static const struct mrb_data_type mrb_core_context_type =
 {
     "mrb_core_context",         mrb_core_context_free
@@ -793,6 +793,7 @@ static const struct mrb_data_type mrb_xlsx_context_type =
 class Application : public Object
 {
 protected:
+    mrb_state *                             mrb_main;
     std::string                             prog;
     static Application *                    obj;
     boost::program_options::variables_map & opts;
@@ -825,11 +826,20 @@ private:
         }
     }
     void exit(int code) { }
+    inline void garbage_collect(mrb_state * mrb)
+    {
+        if((nullptr != mrb_main) && (mrb == mrb_main))
+        {
+#if 0
+            mrb_garbage_collect(mrb_main);
+#endif
+        }
+    }
 
 public:
-    static Application * getObject(void);
+    static Application * getObject(mrb_state * mrb);
     Application(std::string & program, boost::program_options::variables_map & optmap, std::vector<std::string> & arg)
-      : prog(program), opts(optmap), args(arg), timer(4), id(1), core(nullptr)
+      : mrb_main(nullptr), prog(program), opts(optmap), args(arg), timer(4), id(1), core(nullptr)
     {
         obj = this;
         timer[0] =   30;
@@ -1085,7 +1095,6 @@ public:
         if(nullptr == bedit) { bedit = new BinaryControl(); }
         mrb_data_init(self, bedit, &mrb_bedit_context_type);
         push(bedit);
-        //mrb_garbage_collect(mrb);
         return self;
     }
 
@@ -1133,7 +1142,6 @@ public:
         if(nullptr == regexp) { regexp = new CppRegexp(); }
         mrb_data_init(self, regexp, &mrb_cpp_regexp_context_type);
         push(regexp);
-        //mrb_garbage_collect(mrb);
         return self;
     }
 
@@ -1180,7 +1188,6 @@ public:
         SerialMonitor * smon = new SerialMonitor(self, ports, timer);
         mrb_data_init(self, smon, &mrb_smon_context_type);
         push(smon);
-        //mrb_garbage_collect(mrb);
         return self;
     }
 
@@ -1190,7 +1197,6 @@ public:
         OpenXLSXCtrl * xlsx = new OpenXLSXCtrl();
         mrb_data_init(self, xlsx, &mrb_xlsx_context_type);
         push(xlsx);
-        //mrb_garbage_collect(mrb);
         return self;
     }
 
@@ -1219,6 +1225,7 @@ public:
         mrb_state * mrb = mrb_open();
         if( nullptr != mrb )
         {
+            mrb_main = mrb;
             /* Class Core */
             struct RClass * core_class = mrb_define_class(mrb, "Core", mrb->object_class);
             mrb_define_module_function(mrb, core_class, "tick",      mrb_core_tick,             MRB_ARGS_ANY()     );
@@ -1348,7 +1355,14 @@ public:
     }
 };
 Application * Application::obj = nullptr;
-Application * Application::getObject(void) { return Application::obj; }
+Application * Application::getObject(mrb_state * mrb)
+{
+    if(nullptr != Application::obj)
+    {
+        Application::obj->garbage_collect(mrb);
+    }
+    return Application::obj;
+}
 
 
 /* -- functions for mruby interface -- */
@@ -1465,7 +1479,7 @@ mrb_value mrb_core_date(mrb_state* mrb, mrb_value self)
 
 mrb_value mrb_core_gets(mrb_state* mrb, mrb_value self)
 {
-    Application * obj = Application::getObject();
+    Application * obj = Application::getObject(mrb);
     if(nullptr != obj)
     {
         auto result = obj->core_gets(mrb, self);
@@ -1612,11 +1626,10 @@ mrb_value mrb_core_make_qr(mrb_state* mrb, mrb_value self)
 
 mrb_value mrb_core_get_args(mrb_state * mrb, mrb_value self)
 {
-    Application * obj = Application::getObject();
+    Application * obj = Application::getObject(mrb);
     if(nullptr != obj)
     {
         auto result = obj->core_get_args(mrb, self);
-        //mrb_garbage_collect(mrb);
         return result;
     }
     return self;
@@ -1624,11 +1637,10 @@ mrb_value mrb_core_get_args(mrb_state * mrb, mrb_value self)
 
 mrb_value mrb_core_get_opts(mrb_state * mrb, mrb_value self)
 {
-    Application * obj = Application::getObject();
+    Application * obj = Application::getObject(mrb);
     if(nullptr != obj)
     {
         auto result = obj->core_get_opts(mrb, self);
-        //mrb_garbage_collect(mrb);
         return result;
     }
     return self;
@@ -1636,11 +1648,10 @@ mrb_value mrb_core_get_opts(mrb_state * mrb, mrb_value self)
 
 mrb_value mrb_core_prog(mrb_state * mrb, mrb_value self)
 {
-    Application * obj = Application::getObject();
+    Application * obj = Application::getObject(mrb);
     if(nullptr != obj)
     {
         auto result = obj->core_prog(mrb, self);
-        //mrb_garbage_collect(mrb);
         return result;
     }
     return mrb_nil_value();
@@ -1651,7 +1662,7 @@ static void mrb_core_context_free(mrb_state * mrb, void * ptr)
 
 mrb_value mrb_bedit_initialize(mrb_state * mrb, mrb_value self)
 {
-    Application * obj = Application::getObject();
+    Application * obj = Application::getObject(mrb);
     if(nullptr != obj)
     {
         auto result = obj->bedit_init(mrb, self);
@@ -2238,7 +2249,7 @@ static mrb_value mrb_cppregexp_reg_split(mrb_state* mrb, mrb_value self)
 }
 mrb_value mrb_cppregexp_initialize(mrb_state * mrb, mrb_value self)
 {
-    Application * obj = Application::getObject();
+    Application * obj = Application::getObject(mrb);
     if(nullptr != obj)
     {
         auto result = obj->cppregexp_init(mrb, self);
@@ -2467,7 +2478,7 @@ mrb_value mrb_cppregexp_split(mrb_state * mrb, mrb_value self)
 
 mrb_value mrb_thread_initialize(mrb_state * mrb, mrb_value self)
 {
-    Application * obj = Application::getObject();
+    Application * obj = Application::getObject(mrb);
     if(nullptr != obj)
     {
         auto result = obj->thread_init(mrb, self);
@@ -2492,7 +2503,6 @@ mrb_value mrb_thread_wait(mrb_state * mrb, mrb_value self)
 {
     WorkerThread * th_ctrl = static_cast<WorkerThread *>(DATA_PTR(self));
     if(nullptr != th_ctrl) { th_ctrl->wait(mrb); }
-    //mrb_garbage_collect(mrb);
     return mrb_nil_value();
 }
 mrb_value mrb_thread_notify(mrb_state * mrb, mrb_value self)
@@ -2531,7 +2541,6 @@ mrb_value mrb_thread_join(mrb_state * mrb, mrb_value self)
 {
     WorkerThread * th_ctrl = static_cast<WorkerThread *>(DATA_PTR(self));
     if(nullptr != th_ctrl) { th_ctrl->join(); }
-    mrb_garbage_collect(mrb);
     return mrb_nil_value();
 }
 mrb_value mrb_thread_stop(mrb_state * mrb, mrb_value self)
@@ -2744,7 +2753,7 @@ static mrb_value mrb_smon_pipelist(mrb_state* mrb, mrb_value self)
 }
 mrb_value mrb_smon_initialize(mrb_state * mrb, mrb_value self)
 {
-    Application * obj = Application::getObject();
+    Application * obj = Application::getObject(mrb);
     if(nullptr != obj)
     {
         auto result = obj->smon_init(mrb, self);
@@ -2841,7 +2850,6 @@ mrb_value mrb_smon_close(mrb_state * mrb, mrb_value self)
         delete smon;
         DATA_PTR(self) = nullptr;
     }
-    mrb_garbage_collect(mrb);
     return self;
 }
 
@@ -2877,7 +2885,7 @@ static SerialMonitor * get_smon_ptr(mrb_value & argv)
 
 mrb_value mrb_xlsx_initialize(mrb_state * mrb, mrb_value self)
 {
-    Application * obj = Application::getObject();
+    Application * obj = Application::getObject(mrb);
     if(nullptr != obj)
     {
         auto result = obj->xlsx_init(mrb, self);
@@ -2903,7 +2911,6 @@ mrb_value mrb_xlsx_create(mrb_state * mrb, mrb_value self)
                 mrb_value result = mrb_yield_argv(mrb, proc, 0, nullptr);
                 xlsx->save();
                 xlsx->close();
-                //mrb_garbage_collect(mrb);
                 return result;
             }
         }
@@ -2911,7 +2918,6 @@ mrb_value mrb_xlsx_create(mrb_state * mrb, mrb_value self)
     default:
         break;
     }
-    //mrb_garbage_collect(mrb);
     return mrb_nil_value();
 }
 mrb_value mrb_xlsx_open(mrb_state * mrb, mrb_value self)
@@ -2929,11 +2935,9 @@ mrb_value mrb_xlsx_open(mrb_state * mrb, mrb_value self)
             xlsx->workbook();
             mrb_value ret = mrb_yield_argv(mrb, proc, 0, nullptr);
             xlsx->close();
-            //mrb_garbage_collect(mrb);
             return ret;
         }
     }
-    //mrb_garbage_collect(mrb);
     return mrb_nil_value();
 }
 mrb_value mrb_xlsx_worksheet(mrb_state * mrb, mrb_value self)
@@ -3989,7 +3993,7 @@ void WorkerThread::stop(mrb_state * mrb)
 }
 mrb_value WorkerThread::fifo_push(mrb_state * mrb, mrb_value self)
 {
-    FifoItem item;
+    FifoItem item; item.len = 0; item.data = nullptr;
     mrb_int argc; mrb_value * argv;
     mrb_get_args(mrb, "*", &argv, &argc);
     switch(argc)
@@ -3997,8 +4001,8 @@ mrb_value WorkerThread::fifo_push(mrb_state * mrb, mrb_value self)
     case 1:
         if(MRB_TT_STRING == mrb_type(argv[0]))
         {
-            std::string data(RSTR_PTR(mrb_str_ptr(argv[0])));
-            item.str = data;
+            std::string str(RSTR_PTR(mrb_str_ptr(argv[0])));
+            item.str  = str;
             std::lock_guard<std::mutex> lock(mtx_fifo);
             fifo.push_back(item);
             cond_fifo.notify_all();
@@ -4006,16 +4010,12 @@ mrb_value WorkerThread::fifo_push(mrb_state * mrb, mrb_value self)
         }
         else
         {
-            BinaryControl * bin_src = get_bedit_ptr(argv[0]);
-            if(nullptr != bin_src)
+            BinaryControl * bin = get_bedit_ptr(argv[0]);
+            if(nullptr != bin)
             {
-                auto len = bin_src->size();
-                auto ptr = bin_src->ptr();
-                item.bin.resize(len);
-                for(size_t idx=0; idx<len; idx++)
-                {
-                    item.bin[idx] = ptr[idx];
-                }
+                item.data = bin->ptr();
+                item.len  = bin->size();
+                bin->attach(nullptr, 0);
                 std::lock_guard<std::mutex> lock(mtx_fifo);
                 fifo.push_back(item);
                 cond_fifo.notify_all();
@@ -4026,18 +4026,12 @@ mrb_value WorkerThread::fifo_push(mrb_state * mrb, mrb_value self)
     case 2:
         if(MRB_TT_STRING == mrb_type(argv[0]))
         {
-            BinaryControl * bin_src = get_bedit_ptr(argv[1]);
-            if(nullptr != bin_src)
+            BinaryControl * bin = get_bedit_ptr(argv[1]);
+            if(nullptr != bin)
             {
-                std::string data(RSTR_PTR(mrb_str_ptr(argv[0])));
-                item.str = data;
-                auto len = bin_src->size();
-                auto ptr = bin_src->ptr();
-                item.bin.resize(len);
-                for(size_t idx=0; idx<len; idx++)
-                {
-                    item.bin[idx] = ptr[idx];
-                }
+                std::string str(RSTR_PTR(mrb_str_ptr(argv[0])));
+                item.str = str;
+                bin->attach(item.data, item.len);
                 std::lock_guard<std::mutex> lock(mtx_fifo);
                 fifo.push_back(item);
                 cond_fifo.notify_all();
@@ -4065,15 +4059,9 @@ mrb_value WorkerThread::fifo_pop(mrb_state * mrb, mrb_value self)
             {
                 auto item = *(fifo.begin());
                 fifo.pop_front();
-                if(0 < item.bin.size())
+                if(0 < item.len)
                 {
-                    auto len = item.bin.size();
-                    bin->resize(len);
-                    auto ptr = bin->ptr();
-                    for(auto idx=0; idx<len; idx++)
-                    {
-                        ptr[idx] = item.bin[idx];
-                    }
+                    bin->attach(item.data, item.len);
                 }
                 if(0 < item.str.size())
                 {
@@ -4261,6 +4249,8 @@ SerialMonitor::ReciveInfo SerialMonitor::read(BinaryControl & bin)
         rcv_cache.pop_front();
         if(0 < info.cnt)
         {
+            auto data = bin.ptr();
+            if(nullptr != data) { std::free(data); }
             bin.attach(info.buff, info.cnt);
         }
         else
@@ -4294,6 +4284,8 @@ SerialMonitor::State SerialMonitor::read_wait(BinaryControl & bin)
     rcv_cache.pop_front();
     if(0 < rcv_info.cnt)
     {
+        auto data = bin.ptr();
+        if(nullptr != data) { std::free(data); }
         bin.attach(rcv_info.buff, rcv_info.cnt);
     }
     return rcv_info.state;

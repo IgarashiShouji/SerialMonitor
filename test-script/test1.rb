@@ -321,28 +321,35 @@ def test_thead
     end
     th1.join
     th2.join
+    printf("  Thread test 3: th1: fifo.len=%d\n", th1.fifo_len);
     th1.start(1) do
       th1.wait do
         print '  Thread test 3: th1: str = th1.fifo_pop(bin)', "\n"
+        printf("  Thread test 3: th1: fifo.len=%d\n", th1.fifo_len);
         bin = BinEdit.new
-        str = th1.fifo_pop(bin)
-        print '    str -> "', str, '"', "\n"
+        while(0 < th1.fifo_len)
+          str = th1.fifo_pop(bin)
+          print '    str -> "', str, '"', "\n"
+        end
       end
     end
     th2.start(1) do
       th1.notify do
         print "  Thread test 3: th2: th1.fifp_push('test')", "\n"
-        th1.fifo_push('test')
+        th1.fifo_push('test 1')
+        th1.fifo_push('test 2')
       end
     end
     th1.join
     th2.join
-
+    printf("  Thread test 4: th1: fifo.len=%d\n", th1.fifo_len);
     th1.start(1) do
       print '  Thread test 4: th1: str = th1.fifo_pop(bin)', "\n"
       bin = BinEdit.new
       len = th1.fifo_wait()
+      printf("  Thread test 4: th1: fifo.len=%d\n", th1.fifo_len);
       str = th1.fifo_pop(bin)
+      printf("  Thread test 4: th1: fifo.len=%d\n", th1.fifo_len);
       print '    str -> "', str, '"', "\n"
       print "  Thread test 4: th1: th2.fifp_push('test2')", "\n"
       th2.fifo_push('test2')
