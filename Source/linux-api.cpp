@@ -48,10 +48,10 @@ protected:
     boost::asio::serial_port    port;
     struct Profile profile;
     bool rts;
+    unsigned char bit_num;
     int fd;
     int rfd;
     int wfd;
-    unsigned char bit_num;
 
 public:
     SerialControlLinux(const char * name, struct Profile & prof);
@@ -64,7 +64,7 @@ public:
 };
 
 SerialControlLinux::SerialControlLinux(const char * name, struct Profile & prof)
-  : port(io, name), profile(prof), rts(true), fd(port.native_handle()), rfd(-1), wfd(-1), bit_num(1 + 8)
+  : port(io, name), profile(prof), rts(true), bit_num(1 + 8), fd(port.native_handle()), rfd(-1), wfd(-1)
 {
 #if 0
     50  B50     1200    B1200   57600   B57600  1000000 B1000000
@@ -103,20 +103,6 @@ SerialControlLinux::~SerialControlLinux(void)
     close();
 }
 
-std::size_t SerialControlLinux::send(unsigned char * data, std::size_t size)
-{
-    size_t wr_size = 0;
-    if(0 <= fd)
-    {
-        setRTS(true);
-        unsigned int send_time = (1000 * bit_num * (size+1)) / profile.baud;
-        wr_size = port.write_some(buffer(data, size));
-        std::this_thread::sleep_for(std::chrono::milliseconds(send_time));
-        setRTS(false);
-    }
-    return wr_size;
-}
-
 std::size_t SerialControlLinux::read(unsigned char * data, std::size_t size)
 {
     size_t rd_size = 0;
@@ -146,6 +132,23 @@ std::size_t SerialControlLinux::read(unsigned char * data, std::size_t size)
         }
     } catch(...) { }
     return rd_size;
+}
+
+std::size_t SerialControlLinux::send(unsigned char * data, std::size_t size)
+{
+    size_t wr_size = 0;
+    try
+    {
+        if((0 <= fd) && (port.is_open()))
+        {
+            setRTS(true);
+            unsigned int send_time = (1000 * bit_num * (size+1)) / profile.baud;
+            wr_size = port.write_some(buffer(data, size));
+            std::this_thread::sleep_for(std::chrono::milliseconds(send_time));
+            setRTS(false);
+        }
+    } catch(...) { }
+    return wr_size;
 }
 
 bool SerialControlLinux::rts_status(void) const
