@@ -14,308 +14,20 @@
 #include "SerialControl.hpp"
 #include "ComList.hpp"
 #include "PipeList.hpp"
-#include <thread>
+
 #include <chrono>
-#include <string>
 #include <list>
+#include <string>
+#include <thread>
+
 #include <windows.h>
-#include <setupapi.h>
-#include <initguid.h>
 #include <hidsdi.h>
 #include <iconv.h>
+#include <initguid.h>
+#include <setupapi.h>
+
 
 using namespace std;
-
-/* --------------------------------------------------------------------------------<< Serial Control >>-------------------------------------------------------------------------------- */
-class SerialControlWinAPI : public SerialControl
-{
-protected:
-    HANDLE handle;
-    bool    ctrl;
-    bool    rts;
-    static const DWORD clear_RTS = 4;
-    static const DWORD set_RTS   = 3;
-
-public:
-    SerialControlWinAPI(const char * name, unsigned int bd, Parity pt, StopBit st, bool rts);
-    virtual ~SerialControlWinAPI(void);
-    virtual std::size_t read(unsigned char * data, std::size_t size);
-    virtual std::size_t send(unsigned char * data, std::size_t size);
-    virtual bool rts_status(void) const;
-    virtual void setRTS(void);
-    virtual void clearRTS(void);
-    virtual void close(void);
-};
-
-SerialControlWinAPI::SerialControlWinAPI(const char * name, unsigned int bd, Parity pt, StopBit st, bool rts_ctrl)
-  : handle(INVALID_HANDLE_VALUE), ctrl(rts_ctrl), rts(false)
-{
-    std::string sname("\\\\.\\");
-    sname += name;
-
-    handle = CreateFile(sname.c_str(), GENERIC_READ | GENERIC_WRITE, 0, nullptr, OPEN_EXISTING, 0, nullptr);
-    if(INVALID_HANDLE_VALUE != handle)
-    {
-        DCB params = { 0 };
-        params.DCBlength = sizeof(params);
-        if(GetCommState(handle, &params))
-        {
-            params.BaudRate = bd;
-            params.ByteSize = 8;
-            switch(pt)
-            {
-                case none: params.Parity = NOPARITY;   break;
-                case odd:  params.Parity = ODDPARITY;  break;
-                case even: params.Parity = EVENPARITY; break;
-                default: break;
-            }
-            switch(st)
-            {
-                case one: params.StopBits = ONESTOPBIT;  break;
-                case two: params.StopBits = TWOSTOPBITS; break;
-                default: break;
-            }
-            if(SetCommState(handle, &params))
-            {
-                COMMTIMEOUTS timeouts = {0};
-                timeouts.ReadIntervalTimeout        = 50;
-                timeouts.ReadTotalTimeoutConstant   = 50;
-                timeouts.ReadTotalTimeoutMultiplier = 10;
-                timeouts.WriteTotalTimeoutConstant  = 50;
-                timeouts.WriteTotalTimeoutMultiplier = 10;
-                if(SetCommTimeouts(handle, &timeouts))
-                {
-                    return;
-                }
-            }
-        }
-        close();
-        handle = INVALID_HANDLE_VALUE;
-    }
-}
-SerialControlWinAPI::~SerialControlWinAPI(void)
-{
-    close();
-}
-std::size_t SerialControlWinAPI::read(unsigned char * data, std::size_t size)
-{
-    size_t rd_size = 0;
-    if(INVALID_HANDLE_VALUE != handle)
-    {
-        while(rd_size <= size)
-        {
-            DWORD bytesReadSerial = 0;
-            if(ReadFile(handle, &(data[rd_size]), (size - rd_size), &bytesReadSerial, nullptr))
-            {
-                rd_size += bytesReadSerial;
-printf("ReadFile 1: %d(%d)/%d\n", rd_size, bytesReadSerial, size);
-            }
-            else
-            {
-                if(GetLastError() != ERROR_IO_PENDING)
-                {
-                    close();
-                    rd_size = 0;
-                }
-            }
-        }
-    }
-    return rd_size;
-}
-std::size_t SerialControlWinAPI::send(unsigned char * data, std::size_t size)
-{
-    size_t wr_size = 0;
-    if((INVALID_HANDLE_VALUE != handle) && (0 < size))
-    {
-        while(wr_size < size)
-        {
-            DWORD bytesWriteSerial = 0;
-            if(WriteFile(handle, &(data[wr_size]), (size - wr_size), &bytesWriteSerial, nullptr))
-            {
-                wr_size += bytesWriteSerial;
-//printf("WriteFile 1: %d(%d)/%d\n", wr_size, bytesWriteSerial, size);
-            }
-            else
-            {
-                close();
-                wr_size = 0;
-                break;
-            }
-        }
-    }
-    return wr_size;
-}
-bool SerialControlWinAPI::rts_status(void) const
-{
-    if(INVALID_HANDLE_VALUE != handle)
-    {
-        if(ctrl)
-        {
-            return rts;
-        }
-    }
-    return false;
-}
-void SerialControlWinAPI::setRTS(void)
-{
-    if(INVALID_HANDLE_VALUE != handle)
-    {
-        if(ctrl)
-        {
-            EscapeCommFunction(handle, set_RTS);
-        }
-        rts = true;
-    }
-}
-void SerialControlWinAPI::clearRTS(void)
-{
-    if(INVALID_HANDLE_VALUE != handle)
-    {
-        if(ctrl)
-        {
-            EscapeCommFunction(handle, clear_RTS);
-        }
-        rts = false;
-    }
-}
-void SerialControlWinAPI::close(void)
-{
-    if(INVALID_HANDLE_VALUE != handle)
-    {
-        CloseHandle(handle);
-        handle = INVALID_HANDLE_VALUE;
-    }
-}
-
-#if 0
-SerialControl * SerialControl::createObject(const string & name, unsigned int baud, Parity pt, StopBit st, bool rts)
-{
-    SerialControl * com = new SerialControlWinAPI(name.c_str(), baud, pt, st, rts);
-    return com;
-}
-#endif
-
-#if 0
-void test(void)
-{
-//#include <windows.h>
-//#include <iostream>
-//#include <string>
-
-    // シリアルポートを開く
-    const char* serialPortName = "COM1"; // 使用するシリアルポート
-    HANDLE hSerial = CreateFileA(
-        serialPortName,
-        GENERIC_READ | GENERIC_WRITE,
-        0,    // 他のプロセスと共有しない
-        nullptr,
-        OPEN_EXISTING,
-        FILE_FLAG_OVERLAPPED, // 非同期I/O
-        nullptr
-    );
-
-    if (hSerial == INVALID_HANDLE_VALUE) {
-        std::cerr << "Failed to open serial port: " << GetLastError() << std::endl;
-        return;
-    }
-
-    // シリアルポートの設定
-    DCB dcbSerialParams = { 0 };
-    dcbSerialParams.DCBlength = sizeof(dcbSerialParams);
-    if (!GetCommState(hSerial, &dcbSerialParams)) {
-        std::cerr << "Failed to get serial parameters: " << GetLastError() << std::endl;
-        CloseHandle(hSerial);
-        return;
-    }
-
-    dcbSerialParams.BaudRate = CBR_9600;
-    dcbSerialParams.ByteSize = 8;
-    dcbSerialParams.StopBits = ONESTOPBIT;
-    dcbSerialParams.Parity = NOPARITY;
-
-    if (!SetCommState(hSerial, &dcbSerialParams)) {
-        std::cerr << "Failed to set serial parameters: " << GetLastError() << std::endl;
-        CloseHandle(hSerial);
-        return;
-    }
-
-    // 標準入力を非同期モードに設定
-    HANDLE hStdInput = GetStdHandle(STD_INPUT_HANDLE);
-    if (hStdInput == INVALID_HANDLE_VALUE) {
-        std::cerr << "Failed to get standard input handle: " << GetLastError() << std::endl;
-        CloseHandle(hSerial);
-        return;
-    }
-
-    // オーバーラップ構造を初期化
-    OVERLAPPED olSerial = { 0 };
-    olSerial.hEvent = CreateEvent(nullptr, TRUE, FALSE, nullptr);
-
-    OVERLAPPED olInput = { 0 };
-    olInput.hEvent = CreateEvent(nullptr, TRUE, FALSE, nullptr);
-
-    if (!olSerial.hEvent || !olInput.hEvent) {
-        std::cerr << "Failed to create event objects: " << GetLastError() << std::endl;
-        CloseHandle(hSerial);
-        return;
-    }
-
-    // メインループ
-    while (true) {
-        char serialBuffer[256];
-        char inputBuffer[256];
-
-        // シリアルポートの読み取りを非同期で開始
-        DWORD bytesReadSerial = 0;
-        if (!ReadFile(hSerial, serialBuffer, sizeof(serialBuffer) - 1, &bytesReadSerial, &olSerial)) {
-            if (GetLastError() != ERROR_IO_PENDING) {
-                std::cerr << "Serial read error: " << GetLastError() << std::endl;
-                break;
-            }
-        }
-
-        // 標準入力の読み取りを非同期で開始
-        DWORD bytesReadInput = 0;
-        if (!ReadFile(hStdInput, inputBuffer, sizeof(inputBuffer) - 1, &bytesReadInput, &olInput)) {
-            if (GetLastError() != ERROR_IO_PENDING) {
-                std::cerr << "Input read error: " << GetLastError() << std::endl;
-                break;
-            }
-        }
-
-        // イベントの待機
-        HANDLE events[] = { olSerial.hEvent, olInput.hEvent };
-        DWORD waitResult = WaitForMultipleObjects(2, events, FALSE, INFINITE);
-
-        switch (waitResult) {
-        case WAIT_OBJECT_0: // シリアルポートからのデータ
-            if (GetOverlappedResult(hSerial, &olSerial, &bytesReadSerial, TRUE)) {
-                serialBuffer[bytesReadSerial] = '\0';
-                std::cout << "Serial Input: " << serialBuffer << std::endl;
-            }
-            break;
-
-        case WAIT_OBJECT_0 + 1: // 標準入力からのデータ
-            if (GetOverlappedResult(hStdInput, &olInput, &bytesReadInput, TRUE)) {
-                inputBuffer[bytesReadInput] = '\0';
-                std::cout << "Standard Input: " << inputBuffer << std::endl;
-            }
-            break;
-
-        default:
-            std::cerr << "WaitForMultipleObjects error: " << GetLastError() << std::endl;
-            break;
-        }
-    }
-
-    // リソースの解放
-    CloseHandle(hSerial);
-    CloseHandle(olSerial.hEvent);
-    CloseHandle(olInput.hEvent);
-}
-#endif
-
-
 
 
 /* --------------------------------------------------------------------------------<< Local Logic >>-------------------------------------------------------------------------------- */
@@ -441,3 +153,297 @@ std::list<std::string> & PipeList::ref(void)
 {
     return list;
 }
+
+
+/* --------------------------------------------------------------------------------<< CoreWin >>-------------------------------------------------------------------------------- */
+class CoreWin : public Core
+{
+protected:
+    HANDLE hStdin;
+
+public:
+    CoreWin(void);
+    virtual ~CoreWin(void);
+    virtual void gets(std::string & str);
+};
+
+CoreWin::CoreWin(void)
+{
+    hStdin= GetStdHandle(STD_INPUT_HANDLE);
+    if(INVALID_HANDLE_VALUE == hStdin)
+    {
+        printf("%s:%d: %s: ErrorCode(%d)\n", __FILE__, __LINE__, __FUNCTION__, GetLastError());
+    }
+}
+
+CoreWin::~CoreWin(void)
+{
+}
+
+void CoreWin::gets(std::string & str)
+{
+    DWORD waitResult = WaitForSingleObject(hStdin, INFINITE);
+    if(WAIT_OBJECT_0 == waitResult)
+    {
+        std::getline(std::cin, str);
+    } else { printf("%s:%d: %s: result(0x%x), ErrorCode(%d)\n", __FILE__, __LINE__, __FUNCTION__, waitResult, GetLastError()); }
+}
+
+Core * Core::createObject(void)
+{
+    static Core * core = nullptr;
+    if(nullptr == core)
+    {
+        core = new CoreWin();
+    }
+    return core;
+}
+
+
+#if 0
+/* --------------------------------------------------------------------------------<< Serial Control >>-------------------------------------------------------------------------------- */
+class SerialControlWinAPI : public SerialControl
+{
+protected:
+    HANDLE handle;
+    struct Profile profile;
+    bool rts;
+    unsigned char bit_num;
+
+    enum RtsCtrl
+    {
+        set_RTS   = 3,
+        clear_RTS = 4,
+    };
+    OVERLAPPED sendOverlapped, recieveOverlapped;
+
+public:
+    SerialControlWinAPI(const char * name, SerialControl::Profile & profile);
+    virtual ~SerialControlWinAPI(void);
+    virtual std::size_t read(unsigned char * data, std::size_t size);
+    virtual std::size_t send(unsigned char * data, std::size_t size);
+    virtual bool rts_status(void) const;
+    virtual void setRTS(bool rts);
+    virtual void close(void);
+};
+
+SerialControlWinAPI::SerialControlWinAPI(const char * name, SerialControl::Profile & prof)
+  : handle(INVALID_HANDLE_VALUE), profile(prof), rts(true), bit_num(1 + 8)
+{
+    std::string sname("\\\\.\\");
+    sname += name;
+
+    bit_num += profile.stop;
+    bit_num += (profile.parity != none ? 1 : 0);
+    handle = CreateFile(sname.c_str(), GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_EXISTING, FILE_FLAG_OVERLAPPED, NULL);
+    if(INVALID_HANDLE_VALUE != handle)
+    {
+        DCB params = { 0 };
+        params.DCBlength = sizeof(params);
+        if(GetCommState(handle, &params))
+        {
+            params.BaudRate = profile.baud;
+            params.ByteSize = 8;
+            switch(profile.parity)
+            {
+                case none: params.Parity = NOPARITY;   break;
+                case odd:  params.Parity = ODDPARITY;  break;
+                case even: params.Parity = EVENPARITY; break;
+                default: break;
+            }
+            switch(profile.stop)
+            {
+                case one: params.StopBits = ONESTOPBIT;  break;
+                case two: params.StopBits = TWOSTOPBITS; break;
+                default: break;
+            }
+            if(profile.rtsctrl) { params.fRtsControl = RTS_CONTROL_ENABLE; }
+            else                { params.fRtsControl = RTS_CONTROL_DISABLE; }
+            params.fOutxCtsFlow = FALSE;
+            params.EvtChar = '\0';
+            if(SetCommState(handle, &params))
+            {
+#if 0
+                COMMTIMEOUTS timeouts = {0};
+                timeouts.ReadIntervalTimeout        = 50;
+                timeouts.ReadTotalTimeoutConstant   = 50;
+                timeouts.ReadTotalTimeoutMultiplier = 10;
+                timeouts.WriteTotalTimeoutConstant  = 50;
+                timeouts.WriteTotalTimeoutMultiplier = 10;
+                if(SetCommTimeouts(handles[0], &timeouts))
+#endif
+                {
+                    ZeroMemory(&sendOverlapped,    sizeof(OVERLAPPED));
+                    ZeroMemory(&recieveOverlapped, sizeof(OVERLAPPED));
+                    recieveOverlapped.hEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
+                    if(recieveOverlapped.hEvent == NULL)
+                    {
+                        DWORD err = GetLastError();
+                        printf("CreateEvent failed: %d\n", err);
+                        return;
+                    }
+                    //PurgeComm(handle, PURGE_TXABORT | PURGE_RXABORT | PURGE_TXCLEAR | PURGE_RXCLEAR);
+                    //SetCommMask(handle, EV_RXFLAG|EV_RXCHAR|EV_ERR);
+                    setRTS(false);
+                    return;
+                }
+            }
+        }
+        printf("%s:%d: %s: ErrorCode(%d)\n", __FILE__, __LINE__, __FUNCTION__, GetLastError());
+        CloseHandle(handle);
+        handle = INVALID_HANDLE_VALUE;
+    }
+}
+
+SerialControlWinAPI::~SerialControlWinAPI(void)
+{
+    close();
+}
+
+std::size_t SerialControlWinAPI::read(unsigned char * data, std::size_t size)
+{
+    size_t rd_size = 0;
+    try
+    {
+        if(INVALID_HANDLE_VALUE != handle)
+        {
+            while(rd_size < size)
+            {
+                ZeroMemory(&recieveOverlapped, sizeof(OVERLAPPED));
+                recieveOverlapped.hEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
+                if(NULL != recieveOverlapped.hEvent)
+                {
+                    DWORD event;
+                    if(WaitCommEvent(handle, &event, &recieveOverlapped))
+                    {
+                        if((EV_RXFLAG == event) || (EV_RXCHAR == event))
+                        {
+                        }
+                    }
+                }
+                else
+                {
+                    DWORD err = GetLastError();
+                    printf("CreateEvent failed: %d\n", err);
+                    return rd_size;
+                }
+
+                        if(WAIT_OBJECT_0 == WaitForSingleObject(handle, INFINITE))
+                        {
+                        DWORD rd_len = 0;
+                        //if(ReadFile(handle, &(data[rd_size]), (size - rd_size), &rd_len , nullptr))
+                        if(ReadFile(handle, &(data[rd_size]), (size - rd_size), &rd_len , &recieveOverlapped))
+                        {
+                            rd_size += rd_len;
+                        }
+                        else
+                        {
+                            if(GetLastError() != ERROR_IO_PENDING)
+                            {
+                                printf("%s:%d: %s: ErrorCode(%d)\n", __FILE__, __LINE__, __FUNCTION__, GetLastError());
+                                close();
+                                return 0;
+                            }
+                        }
+                        }
+                    }
+                    else
+                    {
+                        printf("%s:%d: %s: ErrorCode(%d)\n", __FILE__, __LINE__, __FUNCTION__, GetLastError());
+                        if(INVALID_HANDLE_VALUE != handle)
+                        {
+                            PurgeComm(handle, PURGE_TXABORT | PURGE_RXABORT | PURGE_TXCLEAR | PURGE_RXCLEAR);
+                        }
+                        return 0;
+                    }
+
+                }
+                else
+                {
+                    auto code = GetLastError();
+                    if(ERROR_IO_PENDING == code)
+                    {
+                        printf("%s:%d: %s: ErrorCode(%d)\n", __FILE__, __LINE__, __FUNCTION__, code);
+                    } else { printf("%s:%d: %s: ErrorCode(%d)\n", __FILE__, __LINE__, __FUNCTION__, code); }
+                }
+            }
+        }
+    } catch(...) { }
+    return rd_size;
+}
+
+std::size_t SerialControlWinAPI::send(unsigned char * data, std::size_t size)
+{
+    size_t wr_size = 0;
+    try
+    {
+        if(INVALID_HANDLE_VALUE != handle)
+        {
+            setRTS(true);
+            while(wr_size < size)
+            {
+                    ZeroMemory(&sendOverlapped,    sizeof(OVERLAPPED));
+                DWORD wlen = 0;
+                //if(WriteFile(handle, &(data[wr_size]), (size - wr_size), &wlen, &sendOverlapped))
+                if(WriteFile(handle, &(data[wr_size]), (size - wr_size), &wlen, nullptr))
+                {
+//                    unsigned int send_time = (1000 * bit_num * (wlen+1)) / profile.baud;
+//                    std::this_thread::sleep_for(std::chrono::milliseconds(send_time));
+                    wr_size += wlen;
+                }
+                else
+                {
+                    close();
+                    return 0;
+                }
+            }
+            setRTS(false);
+        }
+    } catch(...) { }
+    return wr_size;
+}
+
+bool SerialControlWinAPI::rts_status(void) const
+{
+    return rts;
+}
+
+void SerialControlWinAPI::setRTS(bool rts)
+{
+    if(profile.rtsctrl)
+    {
+        if(rts)
+        {
+            if(!this->rts)
+            {   /* RTS: false -> true */
+                EscapeCommFunction(handle, set_RTS);
+            }
+        }
+        else
+        {
+            if(this->rts)
+            {   /* RTS: true -> false */
+                EscapeCommFunction(handle, clear_RTS);
+            }
+        }
+    }
+    this->rts = rts;
+}
+
+void SerialControlWinAPI::close(void)
+{
+printf("%s:%d: %s: ErrorCode(%d)\n", __FILE__, __LINE__, __FUNCTION__, GetLastError());
+    if(INVALID_HANDLE_VALUE != handle)
+    {
+printf("%s:%d: %s: ErrorCode(%d)\n", __FILE__, __LINE__, __FUNCTION__, GetLastError());
+        SetCommMask(handle, EV_ERR);
+        PurgeComm(handle, PURGE_TXABORT | PURGE_RXABORT | PURGE_TXCLEAR | PURGE_RXCLEAR);
+        CloseHandle(handle);
+    }
+}
+
+SerialControl * SerialControl::createObject(const std::string & name, SerialControl::Profile & profile)
+{
+    return new SerialControlWinAPI(name.c_str(), profile);
+}
+#endif
