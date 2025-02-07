@@ -709,21 +709,25 @@ class Core
     opts = Core.opts
     if nil == opts['mruby-script'] then
       if nil != opts['comlist'] then
-        regs = Array.new
-        (opts.length()).times do |idx|
-          regs.push(opts[idx])
+        list = Smon.comlist()
+        arg = Core.args()
+        if 0 < arg.length then
+          reg = CppRegexp.new(arg);
+          list = reg.grep(list);
         end
-        (Smon.comlist(regs)).each do |name|
+        list.each do |name|
           print name, "\n"
         end
         exit 0
       end
       if nil != opts['pipelist'] then
-        regs = Array.new
-        (opts.length()).times do |idx|
-          regs.push(opts[idx])
+        list = Smon.pipelist()
+        arg = Core.args()
+        if 0 < arg.length then
+          reg = CppRegexp.new(arg);
+          list = reg.grep(list);
         end
-        (Smon.pipelist(regs)).each do |name|
+        list.each do |name|
           print name, "\n"
         end
         exit 0
