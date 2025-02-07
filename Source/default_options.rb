@@ -598,6 +598,25 @@ class Core
     end
     list_cmd.push(cmd)
 
+    list_reg.push('^[ \t]*text\b')
+    cmd = Proc.new do |str|
+      # text command
+      fmt = sprintf("a%d", bin.length)
+      print bin.get(0, fmt), "\n"
+    end
+    list_cmd.push(cmd)
+    list_reg.push('^[ \t]*tx\b')
+    list_cmd.push(cmd)
+
+    list_reg.push('^[ \t]*pfmt\b')
+    cmd = Proc.new do |str|
+      # text command
+      fmt  = CppRegexp.reg_replace(str, '^[ \t]*pfmt[ \t]*', '')
+      print fmt, "\n"
+      print bin.get(0, fmt), "\n"
+    end
+    list_cmd.push(cmd)
+
     list_reg.push('^[ \t]*offset\b')
     cmd = Proc.new do |str|
       # set offset command

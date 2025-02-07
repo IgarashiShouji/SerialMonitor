@@ -389,7 +389,7 @@ def test_thead
       len = th.fifo_wait()
       printf("    th1: len -> %d\n", len)
       str = th.fifo_pop(bin)
-      printf("    th1: str(%d), bin(%s)\n", str.length, bin.dump);
+      printf("    th1: str -> %d, bin.dump -> %s\n", str.length, bin.dump);
     end
     th2 = WorkerThread.run(1) do |th|
       print "  Thread & fifo test 2: th2: Core.fifo_push(bin)\n"
@@ -409,10 +409,10 @@ def test_thead
       printf("    th1: str(%d), bin(%s)\n", str.length, bin.dump);
     end
     th2 = WorkerThread.run(1) do |th|
-      print "  Thread & fifo test 2: th2: Core.fifo_push(bin)\n"
+      print "  Thread & fifo test 3: th2: Core.fifo_push(bin)\n"
       bin = BinEdit.new('1234')
       th1.fifo_push(bin)
-      print "  Thread & fifo test 2: th2: Core.fifo_push(bin) end\n"
+      print "  Thread & fifo test 3: th2: Core.fifo_push(bin) end\n"
     end
     th1.join
     th2.join
@@ -426,10 +426,8 @@ def test_thead
       printf("    th1: str(%d:%s), bin(%s)\n", str.length, str, bin.dump);
     end
     th2 = WorkerThread.run(1) do |th|
-      print "  Thread & fifo test 2: th2: Core.fifo_push(bin)\n"
-      bin = BinEdit.new('1234')
-      th1.fifo_push('test1', bin)
-      print "  Thread & fifo test 2: th2: Core.fifo_push(bin) end\n"
+      print "  Thread & fifo test 4: th2: Core.fifo_push('test1', bin)\n"
+      th1.fifo_push('test1', BinEdit.new('1234'))
     end
     th1.join
     th2.join
