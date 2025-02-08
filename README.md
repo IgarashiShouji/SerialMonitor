@@ -204,39 +204,184 @@ dump 16 sum
 
 # mruby exection mode
 
-- Core
-- BinEdit
-- CppRegexp
-- WorkerThread
-- Smon
-- OpenXLSX
+This is extended class on mruby for smon program.
 
-## Core
+| Extened class | <center>Overview</center>       |
+|:--------------|:--------------------------------|
+| Core          | System methods.                 |
+| BinEdit       | Binary editor control           |
+| CppRegexp     | Regexp contorl                  |
+| WorkerThread  | Worker thread                   |
+| Smon          | Serial monitor control          |
+| OpenXLSX      | spread sheet read/write control |
 
+## Core Class
+
+### Core.gets
+
+Get standard input. You can listen for Smon and standard input.
 ~~~
+ex1)
+str = Core.gets()
+ex2)
+Smon.open(Array.new(list_port)) do |smon|
+  bin = BinEdit.new()
+  str = Core.gets(smon, bin) do |idx, state|
+    case state
+    when Smon::GAP then
+      ...
+    else
+      ...
+    end
+  end
+  print str, "\n"
+  ...
+end
+~~~
+
+### Core.tick
+
+Get the execution time from the previous execution point.
+~~~
+ex)
 Core.tick
-Core.date
-Core.gets
-Core.exists
-Core.timestamp
-Core.makeQR
-arg = Core.new
-arg.length
-arg[]
-arg.prog
+...
+print Core.tick
 
-Core.opt_send
-Core.bin_cmd_editor
-Core.checkOptions
 ~~~
+
+### Core.date
+
+Get the date and time.
+~~~
+ex)
+print Core.date
+~~~
+
+### Core.exists
+
+Check for the existence of a file.
+~~~
+ex)
+if Core.exists('smon.exe') then
+~~~
+
+### Core.timestamp
+
+Get the file timestamp.
+~~~
+ex)
+print Core.timestamp('smon.exe')
+~~~
+
+### Core.makeQR
+
+Generate a QR code in SVG.
+~~~
+ex)
+print Core.makeQR('test')
+~~~
+
+### Core.args
+
+Gets the list of startup arguments.
+~~~
+ex)
+arg = Core.args
+print arg[0]
+~~~
+
+### Core.opts
+
+Get a list of startup options.
+~~~
+ex)
+opts = Core.opts
+print opts['gap']
+~~~
+
+### Core.prog
+
+Get the launch program path.
+~~~
+ex)
+print Core.prog
+ => ./smon
+~~~
+
+### Core.opt_send
+
+serial data send of one line command
+~~~
+ex)
+ # smon -1 com10 010203 112233
+~~~
+
+### Core.bin_cmd_editor
+
+binary edit mode
+~~~
+ex)
+ # smon
+~~~
+
+### Core.checkOptions
+Runs at startup, checks startup options, and performs functions according to the options.
+
 
 ## BinEdit
 
+### BinEdit.new
+
+create a Binary Editor Resource.
 ~~~
 bin = BinEdit.new
-bin.length
-bin.dump
-bin.write
+bin = BinEdit.new(num)
+bin = BinEdit.new('010203')
+bin = BinEdit.new(bin)              # copy from bin
+bin = BinEdit.new(['112233', bin])  # copy from '112233' and bin
+bin = BinEdit.new(bin, 2)           # 2 byte copy from bin
+bin = BinEdit.new(16, 0xff)         # 16 byte and fill data 0xff
+bin = BinEdit.new(bin, 2, 3)        # copy from bin[2..5]
+~~~
+
+### bin.length
+
+get binary length.
+~~~
+bin = BinEdit.new('010203')
+print bin.length
+~~~
+
+### bin.resize
+
+change binary length.
+~~~
+bin = BinEdit.new('010203')
+bin.resize(10)
+~~~
+
+### bin.dump
+
+get binary hex data string.
+~~~
+bin = BinEdit.new('010203040506070809')
+print bin.dump          => 010203040506070809
+print bin.dump(2)       => 0102
+print bin.dump(2, 3)    => 030405
+~~~
+
+### bin.write
+
+write binary data.
+~~~
+bin.write('112233')
+bin.write(2, '112233')      # write from address 2
+bin.write('112233', 3)      # write size 3
+bin.write(2, '112233', 3)   # write from address 2 and size 3
+~~~
+
+~~~
 bin.memset
 bin.memcpy
 bin.memcmp

@@ -52,6 +52,10 @@
 #include <OpenXLSX.hpp>
 
 
+/**
+ * One Shot Timer Control Class
+ *
+ */
 class OneShotTimer
 {
 private:
@@ -59,7 +63,7 @@ private:
     std::atomic<unsigned int>               idx;
     std::vector<size_t>                     timer;
     std::function<void(size_t)>             act;
-    std::atomic<std::chrono::system_clock::time_point>               begin;
+    std::atomic<std::chrono::system_clock::time_point> begin;
     std::thread                             task;
     std::mutex                              mtx;        /*! mutex object                */
 private:
@@ -143,6 +147,10 @@ inline OneShotTimer::~OneShotTimer(void)
     stop();
 }
 
+/**
+ * Cyclic Timer Control Class
+ *
+ */
 class CyclicTimer
 {
 private:
@@ -210,6 +218,10 @@ inline void CyclicTimer::stop()
 }
 
 /* -- static const & functions -- */
+/**
+ * Base Object Class
+ *
+ */
 class Object
 {
 protected:
@@ -222,6 +234,10 @@ public:
     inline unsigned int ControlID(void);
 };
 
+/**
+ * Binary Data Edit Class for mruby
+ *
+ */
 class BinaryControl : public Object
 {
 protected:
@@ -235,8 +251,8 @@ public:
     inline BinaryControl(BinaryControl & src);
     inline BinaryControl(size_t size_);
     inline BinaryControl(size_t size_, unsigned char data);
-    BinaryControl(std::string & data);
-    BinaryControl(std::list<BinaryControl *> & list_bin);
+    inline BinaryControl(std::string & data);
+    inline BinaryControl(std::list<BinaryControl *> & list_bin);
     virtual ~BinaryControl(void);
     inline unsigned char * ptr(void);
     inline size_t size(void) const;
@@ -268,6 +284,10 @@ public:
     unsigned char xsum(void);
 };
 
+/**
+ * Regexp methods on c++ for mruby
+ *
+ */
 class CppRegexp: public Object
 {
 private:
@@ -289,6 +309,10 @@ public:
     std::list<std::string> split(std::string & org);
 };
 
+/**
+ * Worker Thread Control for mruby
+ *
+ */
 class WorkerThread : public Object
 {
 public:
@@ -330,6 +354,10 @@ public:
     mrb_value fifo_wait(mrb_state * mrb, mrb_value self);
 };
 
+/**
+ * Serial communication Control class for mruby
+ *
+ */
 class SerialMonitor : public Object
 {
 public:
@@ -372,6 +400,10 @@ public:
     inline SerialMonitor::ReciveInfo refInfo(void);
 };
 
+/**
+ * Spread sheet edit Control class for mruby
+ *
+ */
 class OpenXLSXCtrl : public Object
 {
 public:
@@ -457,6 +489,50 @@ inline BinaryControl::BinaryControl(BinaryControl & src)
     clone(0, src.length, src);
 }
 
+inline BinaryControl::BinaryControl(size_t size_)
+  : length(0), compress_size(0), pos(0), data(nullptr)
+{
+    alloc(size_);
+}
+
+inline BinaryControl::BinaryControl(size_t size_, unsigned char data)
+  : length(0), compress_size(0), pos(0), data(nullptr)
+{
+    alloc(size_);
+    std::memset(this->data, data, size_);
+}
+
+inline BinaryControl::BinaryControl(std::string & data)
+  : length(0), compress_size(0), pos(0), data(nullptr)
+{
+    auto reg_file = std::regex("^file:");
+    auto reg_comp = std::regex("^compress:");
+    auto reg_text = std::regex("^tx:");
+    if(std::regex_search(data, reg_file))
+    {   /* file */
+        auto fname= std::regex_replace(data, reg_file, "");
+        loadBinaryFile(fname);
+    }
+    else if(std::regex_search(data, reg_comp))
+    {   /* compress file */
+        auto fname= std::regex_replace(data, reg_comp, "");
+        loadBinaryFile(fname);
+        chg_compress();
+    }
+    else if(std::regex_search(data, reg_text))
+    {   /* text data */
+        data = std::regex_replace(data, reg_text, "");
+        alloc(data.size());
+        std::memcpy( this->data, data.c_str(), length);
+    }
+    else
+    {
+        data = std::regex_replace(data, std::regex("[^0-9a-fA-F]"), "");
+        alloc(data.size()/2);
+        length = this->write(0, data, static_cast<mrb_int>(length));
+    }
+}
+
 inline BinaryControl::BinaryControl(std::list<BinaryControl *> & list_bin)
   : length(0), compress_size(0), pos(0), data(nullptr)
 {
@@ -471,19 +547,6 @@ inline BinaryControl::BinaryControl(std::list<BinaryControl *> & list_bin)
         std::memcpy(&(data[addr]), &(bin->data[0]), bin->length);
         addr += bin->length;
     }
-}
-
-inline BinaryControl::BinaryControl(size_t size_)
-  : length(0), compress_size(0), pos(0), data(nullptr)
-{
-    alloc(size_);
-}
-
-inline BinaryControl::BinaryControl(size_t size_, unsigned char data)
-  : length(0), compress_size(0), pos(0), data(nullptr)
-{
-    alloc(size_);
-    std::memset(this->data, data, size_);
 }
 
 inline unsigned char * BinaryControl::ptr(void)
@@ -802,6 +865,10 @@ static const struct mrb_data_type mrb_xlsx_context_type =
 
 
 /* -- Application -- */
+/**
+ * Smon Program main Class
+ *
+ */
 class Application : public Object
 {
 protected:
@@ -3132,37 +3199,6 @@ printf("%s:%d: %s\n", __FILE__, __LINE__, __FUNCTION__);
 }
 
 /* -------- << class BinaryControl >>-------- */
-BinaryControl::BinaryControl(std::string & data)
-  : length(0), compress_size(0), pos(0), data(nullptr)
-{
-    auto reg_file = std::regex("^file:");
-    auto reg_comp = std::regex("^compress:");
-    auto reg_text = std::regex("^tx:");
-    if(std::regex_search(data, reg_file))
-    {   /* file */
-        auto fname= std::regex_replace(data, reg_file, "");
-        loadBinaryFile(fname);
-    }
-    else if(std::regex_search(data, reg_comp))
-    {   /* compress file */
-        auto fname= std::regex_replace(data, reg_comp, "");
-        loadBinaryFile(fname);
-        chg_compress();
-    }
-    else if(std::regex_search(data, reg_text))
-    {   /* text data */
-        data = std::regex_replace(data, reg_text, "");
-        alloc(data.size());
-        std::memcpy( this->data, data.c_str(), length);
-    }
-    else
-    {
-        data = std::regex_replace(data, std::regex("[^0-9a-fA-F]"), "");
-        alloc(data.size()/2);
-        length = this->write(0, data, static_cast<mrb_int>(length));
-    }
-}
-
 BinaryControl::~BinaryControl(void)
 {
     if(nullptr!=data)
