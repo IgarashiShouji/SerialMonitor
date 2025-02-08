@@ -90,89 +90,121 @@ end
 def test_bin_edit
   print "BinEdit test\n"
 
-  bin = BinEdit.new('01 02-0304@#_05')
-  printf("  %s: length check %s, dump check %s\n", bin.dump, (5 == bin.length ? 'OK' : 'NG'), ('0102030405' == bin.dump ? "OK" : "NG"))
-  printf("  %s\n", bin.dump(3))
-  printf("  %s\n", bin.dump(1, 2))
-  printf("  %s\n", bin.dump(0,10))
-  print "  ", BinEdit.hexToArray('bb sS wW iI dD fF h2 A3', '0102 FEFF FFFE 0100 0100 FCFFFFFF FFFFFFFC 01000000 00000001 12345678 12345678 5566 303132'), "\n"
-
-  bin = BinEdit.new(3)
-  printf("  wsize: %s\n", bin.write('11 22'))
-  printf("  wsize: %s\n", bin.write(2, '03'))
-  printf("  %d: %s\n", bin.length, bin.dump)
-
-  bin = BinEdit.new('010203040506070809112233445566778899AABBCCDDEEFF010203040506070809')
-  printf("  compress: \n")
-  printf("  %d: %s\n", bin.length, bin.dump)
-  bin.compress();   printf("  %d: %s\n", bin.length, bin.dump)
-  bin.uncompress(); printf("  %d: %s\n", bin.length, bin.dump)
-
-  bin = BinEdit.new('010203040506070809FFFFFFFFFFFFFFFFFFFFFFFFFFFFFF010203040506070809')
-  printf("  compress: \n")
-  printf("  %d: %s\n", bin.length, bin.dump)
-  bin.compress();   printf("  %d: %s\n", bin.length, bin.dump)
-  bin.uncompress(); printf("  %d: %s\n", bin.length, bin.dump)
+  begin
+    bin = BinEdit.new('01 02-0304@#_05')
+    printf("  %s: length check %s, dump check %s\n", bin.dump, (5 == bin.length ? 'OK' : 'NG'), ('0102030405' == bin.dump ? "OK" : "NG"))
+    printf("  check %s: %s\n", ("010203" == bin.dump(3) ? "OK" : "NG"),  bin.dump(3))
+    printf("  check %s: %s\n", ("0203" == bin.dump(1, 2) ? 'OK' : 'NG'), bin.dump(1, 2))
+    printf("  check %s: %s\n", ("0102030405" == bin.dump(0,10) ? 'OK' : 'NG'), bin.dump(0,10))
+    print "\n"
+  end
+  begin
+    bin = BinEdit.new()
+    printf("  bin.length check %s\n", (0 == bin.length ? 'OK' : 'NG'))
+    data_set = [ 85, 85, -2, -2, 258, 258, -4, -4, 0x01020304, 0x01020304, 7.0, 7.0, '01234', '01234', 'aa55', 'aa55' ]
+    print "  set: ", data_set, "\n"
+    bin.set(0, 'cbsSwWiIdDfFaAhH',  data_set)
+    printf("  dump check %s: dump: %s\n", ("5555FEFFFFFE02010102FCFFFFFFFFFFFFFC04030201010203040000E04040E0000030313233343433323130AA5555AA" == bin.dump() ? 'OK' : 'NG'), bin.dump())
+    data = bin.get(0, 'cbsSwWiIdDfFa5A5h2H2')
+    print "  get: ", data, "\n"
+    check = 'OK'
+    data_set.each_with_index do |d, idx|
+      if d != data[idx] then
+        check = 'NG'
+        break;
+      end
+    end
+    printf("  set -> get verify check %s\n\n", check)
+  end
 
   begin
+    list = BinEdit.hexToArray('bb sS wW iI dD fF h2 A3', '0102 FEFF FFFE 0100 0100 FCFFFFFF FFFFFFFC 01000000 00000001 00002041 41200000 5566 303132')
+    print "  ", list, "\n"
+    check = 'OK'
+    [1, 2, -2, -2, 1, 256, -4, -4, 1, 1, 10.0, 10.0, "5566", "210"].each_with_index do |data, idx|
+      if data != list[idx] then
+        check = 'NG'
+        break;
+      end
+    end
+    printf("  hexToArray check: %s\n", check)
+    print "\n"
+  end
+
+  begin
+    bin = BinEdit.new(3)
+    printf("  check bin.length %s: %d: %s\n", (3 == bin.length ? 'OK' : 'NG' ), bin.length, bin.dump)
+    bin.write('11 22')
+    #printf("  %d: %s\n", bin.length, bin.dump)
+    bin.write(2, '33')
+    printf("  Write check %s: %d: %s\n", ("112233" == bin.dump ? 'OK' : 'NG'), bin.length, bin.dump)
+    print "\n"
+  end
+
+  begin
+    bin = BinEdit.new('010203040506070809112233445566778899AABBCCDDEEFF010203040506070809')
+    printf("  compress: \n")
+    printf("  %d: %s\n", bin.length, bin.dump)
+    bin.compress();   printf("  %d: %s\n", bin.length, bin.dump)
+    bin.uncompress(); printf("  %d: %s\n", bin.length, bin.dump)
+    bin = BinEdit.new('010203040506070809FFFFFFFFFFFFFFFFFFFFFFFFFFFFFF010203040506070809')
+    printf("  compress: \n")
+    printf("  %d: %s\n", bin.length, bin.dump)
+    bin.compress();   printf("  %d: %s\n", bin.length, bin.dump)
+    bin.uncompress(); printf("  %d: %s\n", bin.length, bin.dump)
+    print "\n"
+  end
+
+  begin
+    print "  BinEdit: file load\n"
     bin = BinEdit.new('file:test1.rb')
-    printf("  length: %d\n", bin.length)
-    print "  ", bin.dump(0, 16), "\n"
+    len = bin.length
     bin.compress()
-    bin.save( 'test1.rb.compress' )
-    bin2 = BinEdit.new( 'file:test1.rb.compress' )
-    print "  compress check ", ( (0 == bin.memcmp(bin2)) ? "OK" : "NG"), "\n"
+    bin.save('test1.rb.compress')
+    printf("  Original length: %d -> %d\n", len, bin.length)
+    bin2 = BinEdit.new('file:test1.rb.compress')
+    len2 = bin2.length
+    bin2.uncompress()
+    printf("  Compress file: %d -> %d\n", len2, bin2.length)
+    printf("  Complress check %s\n", (len == bin2.length ? 'OK' : 'NG'))
+    print "\n"
   end
 
-  bin = BinEdit.new('00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000 ')
-  print "  ", bin.dump(), "\n"
-  data = [ 0x11223344, 0.1, 0xaabb, 0x99, -10, -3, -2, 0.1, '01234', 'aabbccdd' ];
-  print "  ", data, "\n"
-  bin.set(0, 'dfwbcsiFAH',  data)
-  print "  ", bin.dump(), "\n"
-  print "  ", bin.get(0, 'dfwbcsiFA5H4'), "\n"
   begin
+    print "  BinEdit: copy constractor\n"
+    bin  = BinEdit.new('010203040506070809112233445566778899AABBCCDDEEFF010203040506070809')
     bin2 = BinEdit.new(bin)
-    print "  ", bin2.dump(), "\n"
-    bin3 = BinEdit.new(bin, 10)
-    print "  ", bin3.dump(), "\n"
+    printf("  bin2.dup check %s: %s\n", ('010203040506070809112233445566778899AABBCCDDEEFF010203040506070809' == bin2.dump() ? 'OK' : 'NG'), bin2.dump())
+    bin3 = BinEdit.new(bin, 9)
+    printf("  bin3.dup check %s: %s\n", ('010203040506070809' == bin3.dump() ? 'OK' : 'NG'), bin3.dump())
     bin4 = BinEdit.new(bin, 1, 3)
-    print "  ", bin4.dump(), "\n"
+    printf("  bin4.dup check %s: %s\n", ('020304' == bin4.dump() ? 'OK' : 'NG'), bin4.dump())
+    bin = BinEdit.new(bin.length, 0x00)
+    printf("  bin. dup check %s: %s\n", ("000000000000000000000000000000000000000000000000000000000000000000" == bin.dump ? 'OK' : 'NG'), bin.dump)
+    print "\n"
   end
 
-  bin = BinEdit.new(bin.length, 0x00)
-  print "  ", bin.dump(), "\n"
-  data = [ 0x11223344, 0.1, 0xaabb, 0x99, -10, -3, -2, 0.1, '01234', 'AABBCCDD' ];
-  print "  ", data, "\n"
-  bin.set(0, 'dfwbcsiFah',  data)
-  print "  ", bin.dump(), "\n"
-  print "  ", bin.get(0, 'dfwbcsiFa5h4'), "\n"
-
-  bin = BinEdit.new('00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000 ')
-  bin.set('DFWbcSIFA',  [ 0x11223344, 1.0, 0xaabb, 0x99, -10, -3, -2, 0.1, '987' ])
-  print "  ", bin.dump(), "\n"
-  print "  ", bin.get(0, 'DFWbcSIFA3'), "\n"
-
-  bin = BinEdit.new(25);
-  bin.memset(0xff)
-  print "  ", bin.dump(), "\n"
-  bin.memset(0xAA, 10)
-  print "  ", bin.dump(), "\n"
-  bin.memset(5, 0x55, 3)
-  print "  ", bin.dump(), "\n"
-  bin.memset(0x00)
-  print "  ", bin.dump(), "\n"
-  list = Array.new
-  (3).times do |idx|
-    list.push( [ idx, idx * 3, sprintf("%02x", idx + 0x10) ] )
-  end
-  list.each do |item|
-    bin.set("bwA2", item)
-  end
-  print "  ", bin.dump(), "\n"
-  bin.get(0, '')
-  (3).times do |idx|
-    print "  ", bin.get("bwA2"), "\n"
+  begin
+    print "  BinEdit: memset\n"
+    bin = BinEdit.new(25);
+    bin.memset(0xff)
+    printf("  memset check %s: %s\n", ("FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF" == bin.dump ? 'OK' : 'NG'), bin.dump)
+    bin.memset(0xAA, 10)
+    printf("  memset check %s: %s\n", ("AAAAAAAAAAAAAAAAAAAAFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF" == bin.dump ? 'OK' : 'NG'), bin.dump)
+    bin.memset(5, 0x55, 3)
+    printf("  memset check %s: %s\n", ("AAAAAAAAAA555555AAAAFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF" == bin.dump ? 'OK' : 'NG'), bin.dump)
+    bin.memset(0x00)
+    printf("  memset check %s: %s\n", ("00000000000000000000000000000000000000000000000000" == bin.dump ? 'OK' : 'NG'), bin.dump)
+    bin = BinEdit.new(5*3, 0x00);
+    (3).times do |idx|
+      bin.set("bwA", [ idx, 1 + idx * 3, sprintf("%02x", idx + 0x10) ])
+    end
+    printf("  check %s: %s\n", ("000100303101040031310207003231" == bin.dump ? 'OK' : 'NG'), bin.dump)
+    bin.pos(0)
+    (3).times do |idx|
+      print "  ", bin.get("bwA2"), "\n"
+    end
+    print "\n"
   end
 
   begin
@@ -189,6 +221,7 @@ def test_bin_edit
     print "  ", bin1.dump(), "\n"
     bin1.memcpy(24, 2, 2, bin2)
     print "  ", bin1.dump(), "\n"
+    print "\n"
   end
 
   begin
@@ -200,31 +233,47 @@ def test_bin_edit
     print "  bin2: ", bin2.dump(), "\n"
     print "  bin3: ", bin3.dump(), "\n"
     print "  bin4: ", bin4.dump(), "\n"
+    print "\n"
   end
 
-  print "  ", (BinEdit.new("00000001")).get('D'), "\n"
-  print "  ", (BinEdit.new("000000010200")).get('Dw'), "\n"
+  begin
+    print "  ", (BinEdit.new("00000001")).get('D'), "\n"
+    print "  ", (BinEdit.new("000000010200")).get('Dw'), "\n"
+    print "\n"
+  end
 
-  bin = BinEdit.new('00000000')
-  num = 7.0
-  bin.set('F', [num])
-  printf("  FLOAT: %f: %s\n", num, bin.dump)
-  printf("  float: %f: %s\n", num, BinEdit.hexFromArray('f', [7.0]))
+  begin
+    bin = BinEdit.new
+    num = 7.0
+    bin.set('F', [num])
+    printf("  FLOAT: %f: %s\n", num, bin.dump)
+    printf("  float: %f: %s\n", num, BinEdit.hexFromArray('f', [7.0]))
+    print "\n"
+  end
 
-  str = '0123456789012345'
-  bin = BinEdit.new(str.length)
-  bin.set('a', [str])
-  print '  hex: ', bin.dump(), "\n"
-  print '  tx:  ', bin.get(sprintf("a%d", bin.length())), "\n"
+  begin
+    str = '0123456789012345'
+    bin = BinEdit.new(str.length)
+    bin.set('a', [str])
+    print '  hex: ', bin.dump(), "\n"
+    print '  tx:  ', bin.get(sprintf("a%d", bin.length())), "\n"
+    print "\n"
+  end
 
-  str = 'tx:0123456'
-  bin = BinEdit.new('tx:0123456')
-  printf("  %s -> %s\n", str, bin.dump())
+  begin
+    str = 'tx:0123456'
+    bin = BinEdit.new('tx:0123456')
+    printf("  %s -> %s\n", str, bin.dump())
+    print "\n"
+  end
 
-  bin = BinEdit.new('010203040506070809')
-  printf("  modbus crc: %s -> %-6s : check %s\n",  bin.dump(), bin.crc16(), ('0EB2' == bin.crc16() ? 'OK' : 'NG'))
-  printf("  crc8 crc  : %s -> %-6s : check %s\n",  bin.dump(), bin.crc8(),  ('98'   == bin.crc8()  ? 'OK' : 'NG'))
-  printf("  checksum  : %s -> %-6s : check %s\n",  bin.dump(), bin.sum(),   ('01'   == bin.sum()   ? 'OK' : 'NG'))
+  begin
+    bin = BinEdit.new('010203040506070809')
+    printf("  modbus crc: %s -> %-6s : check %s\n",  bin.dump(), bin.crc16(), ('0EB2' == bin.crc16() ? 'OK' : 'NG'))
+    printf("  crc8 crc  : %s -> %-6s : check %s\n",  bin.dump(), bin.crc8(),  ('98'   == bin.crc8()  ? 'OK' : 'NG'))
+    printf("  checksum  : %s -> %-6s : check %s\n",  bin.dump(), bin.sum(),   ('01'   == bin.sum()   ? 'OK' : 'NG'))
+    print "\n"
+  end
 
   GC.start()
   print "BinEdit test end\n"
