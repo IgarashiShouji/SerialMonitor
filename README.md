@@ -331,9 +331,10 @@ Runs at startup, checks startup options, and performs functions according to the
 
 ## BinEdit
 
-### BinEdit.new
+### BinEdit.new, bin.save
 
 create a Binary Editor Resource.
+And save to file.
 ~~~
 bin = BinEdit.new
 bin = BinEdit.new(num)
@@ -343,6 +344,9 @@ bin = BinEdit.new(['112233', bin])  # copy from '112233' and bin
 bin = BinEdit.new(bin, 2)           # 2 byte copy from bin
 bin = BinEdit.new(16, 0xff)         # 16 byte and fill data 0xff
 bin = BinEdit.new(bin, 2, 3)        # copy from bin[2..5]
+
+bin = BinEdit.new('file:test.bin')  # load binary file('test.bin')
+bin.save('test.bin')                # binary save to file('test.bin')
 ~~~
 
 ### bin.length
@@ -381,28 +385,110 @@ bin.write('112233', 3)      # write size 3
 bin.write(2, '112233', 3)   # write from address 2 and size 3
 ~~~
 
-~~~
-bin.memset
-bin.memcpy
-bin.memcmp
-bin.get
-bin.set
-bin.pos
-bin.crc32
-bin.crc16
-bin.crc8
-bin.sum
-bin.xsum
-bin.compress
-bin.uncompress
-bin.save
+### bin.memset
 
+set data to memory.
+~~~
+    bin.memset(0xff)          # set data(0xff)
+    bin.memset(0xAA, 10)      # set data(0xAA) and size(10)
+    bin.memset(5, 0x55, 3)    # set data(0x55) and size(3) from address(5)
+~~~
+
+### bin.memcpy
+
+data copy from binary data.
+~~~
+bin1 = BinEdit.new    # binary data 1
+bin2 = BinEdit.new    # binary data 2
+bin1.memcpy(bin2)             # copy binary data(bin2) to binary data(bin1).
+bin1.memcpy(16, bin2)         # copy binary data(bin2) to binary data(bin1) of address(16).
+bin1.memcpy(bin2, 10)         # copy binary data(bin2) of copy size(10) to binary data(bin1).
+bin1.memcpy(16, 2, bin2)      # copy binary data(bin2) of address(2) to binary data(bin1) of address(16).
+bin1.memcpy(16, bin2, 10)     # copy binary data(bin2) of of copy size(10) to binary data(bin1) of address(16).
+bin1.memcpy(16, 2, bin2, 10)  # copy binary data(bin2) of address(2) of copy size(10) to binary data(bin1) of address(16).
+~~~
+
+### bin.memcmp
+
+data compere of binary data.
+~~~
+bin1 = BinEdit.new    # binary data 1
+bin2 = BinEdit.new    # binary data 2
+bin1.memcmp(bin2)             # compare to binary data(bin2) to binary data(bin1).
+bin1.memcmp(16, bin2)         # compare to binary data(bin2) to binary data(bin1) of address(16).
+bin1.memcmp(bin2, 10)         # compare to binary data(bin2) of copy size(10) to binary data(bin1).
+bin1.memcmp(16, 2, bin2)      # compare to binary data(bin2) of address(2) to binary data(bin1) of address(16).
+bin1.memcmp(16, bin2, 10)     # compare to binary data(bin2) of of copy size(10) to binary data(bin1) of address(16).
+bin1.memcmp(16, 2, bin2, 10)  # compare to binary data(bin2) of address(2) of copy size(10) to binary data(bin1) of address(16).
+~~~
+
+### bin.set, bin.get, bin.pos
+
+set data with data format.
+And get data with data format.
+pos is set or get start position.
+~~~
+bin.set(0, 'cbsSwWiIdDfFaAhH', [85, 85, -2, -2, 258, 258, -4, -4, 0x01020304, 0x01020304, 7.0, 7.0, '01234', '01234', 'aa55', 'aa55'])
+bin.pos(0)
+arry = bin.get(0, 'cbsSwWiIdDfFa5A5h2H2')
+
+Format:
+c: signed char
+b: unsigned char
+s: signed short for litle endian
+S: signed short for big endian
+w: unsigned short for litle endian
+W: unsigned short for big endian
+i: signed long for litle endian
+I: signed long for big endian
+d: unsigned long for litle endian
+D: unsigned long for big endian
+f: float for litle endian
+F: float for big endian
+a: ascii data for litle endian
+A: ascii data for big endian
+h: hex string for litle endian
+H: hex string for big endian
+~~~
+
+### bin.crc32, bin.crc16, bin.crc8, bin.sum, bin.xsum
+
+Below is the checksum calculator.
+
+CRC32, CRC16(modbus), CRC8, Check Sum, XOR sum
+
+|   Function    |                   <center>Overview</center>                                       |
+|:--------------|:----------------------------------------------------------------------------------|
+| CRC32         | x32 + x26 + x23 + x22 + x16 + x12 + x11 + x10 + x8 + x7 + x5 + x4 + x2 + x + 1    |
+| CRC16(modbus) | CRC16 for MODBUS-RTU communication.                                               |
+| CRC8          | x8 + x7 + x6 + x4 + x2 + 1                                                        |
+| Check Sum     | byte sum (for srec, ihex)                                                         |
+| XOR sum       | modem communication 1 byte sum. for XMODEM (Checksum mode), HART etc.             |
+
+~~~
+bin = BinEdit.new('010203040506070809')
+print bin.crc32
+print bin.crc16
+print bin.crc8
+print bin.sum
+print bin.xsum
+~~~
+
+### bin.compress, bin.uncompress
+
+data compress and uncompress.
+complress is lz4 algolizm.
+~~~
+bin = BinEdit.new('010203040506070809FFFFFFFFFFFFFFFFFFFFFFFFFFFFFF010203040506070809')
+bin.compress();
+bin.uncompress();
+~~~
+
+# Now testing.
+
+~~~
 BinEdit.hexToArray
 BinEdit.hexFromArray
-~~~
-
-Now testing.
-~~~
 BinEdit.readBinToXlsx
 ~~~
 

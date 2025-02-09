@@ -269,8 +269,8 @@ public:
     uint32_t compress(void);
     uint32_t uncompress(void);
     uint32_t memset(mrb_int address, mrb_int set_data, mrb_int sz);
-    uint32_t memcpy(mrb_int address_dst, mrb_int address_src, mrb_int len, BinaryControl & src);
-    int32_t memcmp(mrb_int address_dst, mrb_int address_src, mrb_int len, BinaryControl & src);
+    uint32_t memcpy(mrb_int address_dst, mrb_int address_src, BinaryControl & src, mrb_int len);
+    int32_t memcmp(mrb_int address_dst, mrb_int address_src, BinaryControl & src, mrb_int len);
     uint32_t write(mrb_int address, std::string & data, mrb_int size);
     uint32_t write_big(mrb_int address, std::string & src, mrb_int size);
     uint32_t dump(mrb_int address, mrb_int size, std::string & output);
@@ -1330,11 +1330,11 @@ public:
             mrb_define_method( mrb, bedit_class, "get",        mrb_bedit_get,        MRB_ARGS_ANY()     );
             mrb_define_method( mrb, bedit_class, "set",        mrb_bedit_set,        MRB_ARGS_ANY()     );
             mrb_define_method( mrb, bedit_class, "pos",        mrb_bedit_pos,        MRB_ARGS_ANY()     );
-            mrb_define_method( mrb, bedit_class, "crc32",      mrb_bedit_crc32,      MRB_ARGS_ARG(1, 1) );
-            mrb_define_method( mrb, bedit_class, "crc16",      mrb_bedit_crc16,      MRB_ARGS_ANY()     );
-            mrb_define_method( mrb, bedit_class, "crc8",       mrb_bedit_crc8,       MRB_ARGS_ANY()     );
-            mrb_define_method( mrb, bedit_class, "sum",        mrb_bedit_sum,        MRB_ARGS_ANY()     );
-            mrb_define_method( mrb, bedit_class, "xsum",       mrb_bedit_xsum,       MRB_ARGS_ANY()     );
+            mrb_define_method( mrb, bedit_class, "crc32",      mrb_bedit_crc32,      MRB_ARGS_NONE()    );
+            mrb_define_method( mrb, bedit_class, "crc16",      mrb_bedit_crc16,      MRB_ARGS_NONE()    );
+            mrb_define_method( mrb, bedit_class, "crc8",       mrb_bedit_crc8,       MRB_ARGS_NONE()    );
+            mrb_define_method( mrb, bedit_class, "sum",        mrb_bedit_sum,        MRB_ARGS_NONE()    );
+            mrb_define_method( mrb, bedit_class, "xsum",       mrb_bedit_xsum,       MRB_ARGS_NONE()    );
             mrb_define_method( mrb, bedit_class, "compress",   mrb_bedit_compress,   MRB_ARGS_NONE()    );
             mrb_define_method( mrb, bedit_class, "uncompress", mrb_bedit_uncompress, MRB_ARGS_NONE()    );
             mrb_define_method( mrb, bedit_class, "save",       mrb_bedit_save,       MRB_ARGS_ARG(1, 1) );
@@ -1918,7 +1918,8 @@ mrb_value mrb_bedit_memcpy(mrb_state * mrb, mrb_value self)
                 BinaryControl * src = get_bedit_ptr(argv[0]);
                 if(nullptr != src)
                 {
-                    return mrb_int_value(mrb, bedit->memcpy(0, 0, src->size(), *src));
+                    auto size = src->size();
+                    return mrb_int_value(mrb, bedit->memcpy(0, 0, *src, size));
                 }
             }
             break;
@@ -1929,32 +1930,62 @@ mrb_value mrb_bedit_memcpy(mrb_state * mrb, mrb_value self)
                 BinaryControl * src = get_bedit_ptr(argv[1]);
                 if(nullptr != src)
                 {
-                    return mrb_int_value(mrb, bedit->memcpy(mrb_integer(argv[0]), 0, src->size(), *src));
+                    auto dst_addr = mrb_integer(argv[0]);
+                    auto size     = src->size();
+                    return mrb_int_value(mrb, bedit->memcpy(dst_addr, 0, *src, size));
                 }
             }
+            else if(  (MRB_TT_OBJECT  == mrb_type(argv[0]))      // arg 1: Source BinEdit
+                    &&(MRB_TT_INTEGER == mrb_type(argv[1])))     // arg 2: copy size
+            {
+                BinaryControl * src = get_bedit_ptr(argv[0]);
+                if(nullptr != src)
+                {
+                    auto size = mrb_integer(argv[1]);
+                    return mrb_int_value(mrb, bedit->memcpy(0, 0, *src, size));
+                }
+            } else { }
             break;
         case 3:
             if(  (MRB_TT_INTEGER == mrb_type(argv[0]))      // arg 1: dst start address
-               &&(MRB_TT_INTEGER == mrb_type(argv[1]))      // arg 2: copy size
-               &&(MRB_TT_OBJECT  == mrb_type(argv[2])))     // arg 3: Source BinEdit
+               &&(MRB_TT_OBJECT  == mrb_type(argv[1]))      // arg 2: Source BinEdit
+               &&(MRB_TT_INTEGER == mrb_type(argv[2])))     // arg 3: copy size
+            {
+                BinaryControl * src = get_bedit_ptr(argv[1]);
+                if(nullptr != src)
+                {
+                    auto dst_addr = mrb_integer(argv[0]);
+                    auto size     = mrb_integer(argv[2]);
+                    return mrb_int_value(mrb, bedit->memcpy(dst_addr, 0, *src, size));
+                }
+            }
+            else if(  (MRB_TT_INTEGER == mrb_type(argv[0]))      // arg 1: dst start address
+                    &&(MRB_TT_INTEGER == mrb_type(argv[1]))      // arg 2: source binary start address
+                    &&(MRB_TT_OBJECT  == mrb_type(argv[2])))     // arg 3: Source BinEdit
             {
                 BinaryControl * src = get_bedit_ptr(argv[2]);
                 if(nullptr != src)
                 {
-                    return mrb_int_value(mrb, bedit->memcpy(mrb_integer(argv[0]), 0, mrb_integer(argv[1]), *src));
+                    auto dst_addr = mrb_integer(argv[0]);
+                    auto src_addr = mrb_integer(argv[1]);
+                    auto size     = src->size();
+                    return mrb_int_value(mrb, bedit->memcpy(dst_addr, src_addr, *src, size));
                 }
-            }
+            } else {}
             break;
         case 4:
             if(  (MRB_TT_INTEGER == mrb_type(argv[0]))      // arg 1: dest binary start address
                &&(MRB_TT_INTEGER == mrb_type(argv[1]))      // arg 2: source binary start address
-               &&(MRB_TT_INTEGER == mrb_type(argv[2]))      // arg 3: copy size
-               &&(MRB_TT_OBJECT  == mrb_type(argv[3])))     // arg 4: Source BinEdit
+               &&(MRB_TT_OBJECT  == mrb_type(argv[2]))      // arg 3: Source BinEdit
+               &&(MRB_TT_INTEGER == mrb_type(argv[3])))     // arg 4: copy size
             {
-                BinaryControl * src = get_bedit_ptr(argv[3]);
+                BinaryControl * src = get_bedit_ptr(argv[2]);
                 if(nullptr != src)
                 {
-                    return mrb_int_value(mrb, bedit->memcpy(mrb_integer(argv[0]), mrb_integer(argv[1]), mrb_integer(argv[2]), *src));
+                    auto dst_addr = mrb_integer(argv[0]);
+                    auto src_addr = mrb_integer(argv[1]);
+                    auto size     = mrb_integer(argv[3]);
+                    return mrb_int_value(mrb, bedit->memcpy(dst_addr, src_addr, *src, size));
                 }
             }
             break;
@@ -1978,7 +2009,75 @@ mrb_value mrb_bedit_memcmp(mrb_state * mrb, mrb_value self)
                 BinaryControl * src = get_bedit_ptr(argv[0]);
                 if(nullptr != src)
                 {
-                    return mrb_int_value(mrb, bedit->memcmp(0, 0, src->size(), *src));
+                    auto size = src->size();
+                    return mrb_int_value(mrb, bedit->memcmp(0, 0, *src, size));
+                }
+            }
+            break;
+        case 2:
+            if(  (MRB_TT_INTEGER == mrb_type(argv[0]))      // arg 1: dst start address
+               &&(MRB_TT_OBJECT  == mrb_type(argv[1])))     // arg 2: Source BinEdit
+            {
+                BinaryControl * src = get_bedit_ptr(argv[1]);
+                if(nullptr != src)
+                {
+                    auto dst_addr = mrb_integer(argv[0]);
+                    auto size     = src->size();
+                    return mrb_int_value(mrb, bedit->memcmp(dst_addr, 0, *src, size));
+                }
+            }
+            else if(  (MRB_TT_OBJECT  == mrb_type(argv[0]))      // arg 1: Source BinEdit
+                    &&(MRB_TT_INTEGER == mrb_type(argv[1])))     // arg 2: memcmp size
+            {
+                BinaryControl * src = get_bedit_ptr(argv[0]);
+                if(nullptr != src)
+                {
+                    auto size = mrb_integer(argv[1]);
+                    return mrb_int_value(mrb, bedit->memcmp(0, 0, *src, size));
+                }
+            } else { }
+            break;
+        case 3:
+            if(  (MRB_TT_INTEGER == mrb_type(argv[0]))      // arg 1: dst start address
+               &&(MRB_TT_OBJECT  == mrb_type(argv[1]))      // arg 2: Source BinEdit
+               &&(MRB_TT_INTEGER == mrb_type(argv[2])))     // arg 3: copy size
+            {
+                BinaryControl * src = get_bedit_ptr(argv[1]);
+                if(nullptr != src)
+                {
+                    auto dst_addr = mrb_integer(argv[0]);
+                    auto src_addr = 0;
+                    auto size     = mrb_integer(argv[2]);
+                    return mrb_int_value(mrb, bedit->memcmp(dst_addr, src_addr, *src, size));
+                }
+            }
+            else if(  (MRB_TT_INTEGER == mrb_type(argv[0]))      // arg 1: dst start address
+                    &&(MRB_TT_INTEGER == mrb_type(argv[1]))      // arg 2: source binary start address
+                    &&(MRB_TT_OBJECT  == mrb_type(argv[2])))     // arg 3: Source BinEdit
+            {
+                BinaryControl * src = get_bedit_ptr(argv[2]);
+                if(nullptr != src)
+                {
+                    auto dst_addr = mrb_integer(argv[0]);
+                    auto src_addr = mrb_integer(argv[1]);
+                    auto size     = src->size();
+                    return mrb_int_value(mrb, bedit->memcmp(dst_addr, src_addr, *src, size));
+                }
+            } else {}
+            break;
+        case 4:
+            if(  (MRB_TT_INTEGER == mrb_type(argv[0]))      // arg 1: dest binary start address
+               &&(MRB_TT_INTEGER == mrb_type(argv[1]))      // arg 2: source binary start address
+               &&(MRB_TT_OBJECT  == mrb_type(argv[2]))      // arg 3: Source BinEdit
+               &&(MRB_TT_INTEGER == mrb_type(argv[3])))     // arg 4: copy size
+            {
+                BinaryControl * src = get_bedit_ptr(argv[2]);
+                if(nullptr != src)
+                {
+                    auto dst_addr = mrb_integer(argv[0]);
+                    auto src_addr = mrb_integer(argv[1]);
+                    auto size     = mrb_integer(argv[3]);
+                    return mrb_int_value(mrb, bedit->memcmp(dst_addr, src_addr, *src, size));
                 }
             }
             break;
@@ -3375,7 +3474,7 @@ uint32_t BinaryControl::memset(mrb_int address, mrb_int set_data, mrb_int sz)
     return len;
 }
 
-uint32_t BinaryControl::memcpy(mrb_int address_dst, mrb_int address_src, mrb_int len, BinaryControl & src)
+uint32_t BinaryControl::memcpy(mrb_int address_dst, mrb_int address_src, BinaryControl & src, mrb_int len)
 {
     auto dst_len = size()     - address_dst;
     auto src_len = src.size() - address_src;
@@ -3388,7 +3487,7 @@ uint32_t BinaryControl::memcpy(mrb_int address_dst, mrb_int address_src, mrb_int
     return len;
 }
 
-int32_t BinaryControl::memcmp(mrb_int address_dst, mrb_int address_src, mrb_int len, BinaryControl & src)
+int32_t BinaryControl::memcmp(mrb_int address_dst, mrb_int address_src, BinaryControl & src, mrb_int len)
 {
     auto dst_len = size()     - address_dst;
     auto src_len = src.size() - address_src;

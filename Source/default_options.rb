@@ -1,6 +1,16 @@
 # Defalult Option Script for smon.exe
 
 class BinEdit
+  def self.getArray(format, hex_string)
+    bin = BinEdit.new(hex_string)
+    return bin.get(format)
+  end
+  def self.getHexString(format, arry)
+    bin = BinEdit.new()
+    bin.set(format, array)
+    return bin.dump
+  end
+
   def self.hexToArray(format, hex_string)
     bin = BinEdit.new(hex_string)
     return bin.get(format)
@@ -26,6 +36,7 @@ class BinEdit
     bin.set(format, item)
     return bin.dump
   end
+
   def self.readBinToXlsx(bin_file, xls_file)
     xls = OpenXLSX.new
     bin = BinEdit.new(sprintf("file:%s", bin_file))

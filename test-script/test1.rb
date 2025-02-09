@@ -132,6 +132,22 @@ def test_bin_edit
   end
 
   begin
+    print "  BinEdit: bin.set => bin.get\n"
+    fmt = 'bwA2'
+    bin = BinEdit.new(5*3, 0x00);
+    (3).times do |idx|
+      bin.set(fmt, [ idx, 1 + idx * 3, sprintf("%02x", idx + 0x10) ])
+    end
+    printf("  check %s: %s\n", ("000100303101040031310207003231" == bin.dump ? 'OK' : 'NG'), bin.dump)
+    bin.pos(0)
+    (3).times do |idx|
+      print "  ", bin.get(fmt), "\n"
+    end
+    print "\n"
+  end
+
+  begin
+    print "  BinEdit: bin.write\n"
     bin = BinEdit.new(3)
     printf("  check bin.length %s: %d: %s\n", (3 == bin.length ? 'OK' : 'NG' ), bin.length, bin.dump)
     bin.write('11 22')
@@ -142,6 +158,7 @@ def test_bin_edit
   end
 
   begin
+    print "  BinEdit: test compress\n"
     bin = BinEdit.new('010203040506070809112233445566778899AABBCCDDEEFF010203040506070809')
     printf("  compress: \n")
     printf("  %d: %s\n", bin.length, bin.dump)
@@ -195,54 +212,59 @@ def test_bin_edit
     printf("  memset check %s: %s\n", ("AAAAAAAAAA555555AAAAFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF" == bin.dump ? 'OK' : 'NG'), bin.dump)
     bin.memset(0x00)
     printf("  memset check %s: %s\n", ("00000000000000000000000000000000000000000000000000" == bin.dump ? 'OK' : 'NG'), bin.dump)
-    bin = BinEdit.new(5*3, 0x00);
-    (3).times do |idx|
-      bin.set("bwA", [ idx, 1 + idx * 3, sprintf("%02x", idx + 0x10) ])
-    end
-    printf("  check %s: %s\n", ("000100303101040031310207003231" == bin.dump ? 'OK' : 'NG'), bin.dump)
-    bin.pos(0)
-    (3).times do |idx|
-      print "  ", bin.get("bwA2"), "\n"
-    end
-    print "\n"
   end
 
   begin
-    bin1 = BinEdit.new(32)
-    bin1.memset(0);
+    print "  BinEdit: memcpy\n"
+    bin1 = BinEdit.new(32, 0)
+    printf("  check %s: %s\n", ('0000000000000000000000000000000000000000000000000000000000000000' == bin1.dump ? 'OK' : 'NG'), bin1.dump)
     bin2 = BinEdit.new('AABBCCDD')
-    print "  ", bin1.dump(), "\n"
-    print "  ", bin2.dump(), "\n"
+    bin1.memcpy(bin2, 2)
+    printf("  check %s: %s\n", ('AABB000000000000000000000000000000000000000000000000000000000000' == bin1.dump ? 'OK' : 'NG'), bin1.dump)
     bin1.memcpy(bin2)
-    print "  ", bin1.dump(), "\n"
+    printf("  check %s: %s\n", ('AABBCCDD00000000000000000000000000000000000000000000000000000000' == bin1.dump ? 'OK' : 'NG'), bin1.dump)
     bin1.memcpy(16, bin2)
-    print "  ", bin1.dump(), "\n"
-    bin1.memcpy(8, 2, bin2)
-    print "  ", bin1.dump(), "\n"
-    bin1.memcpy(24, 2, 2, bin2)
-    print "  ", bin1.dump(), "\n"
+    printf("  check %s: %s\n", ('AABBCCDD000000000000000000000000AABBCCDD000000000000000000000000' == bin1.dump ? 'OK' : 'NG'), bin1.dump)
+    bin1.memcpy(5, bin2, 2)
+    printf("  check %s: %s\n", ('AABBCCDD00AABB000000000000000000AABBCCDD000000000000000000000000' == bin1.dump ? 'OK' : 'NG'), bin1.dump)
+    bin1.memcpy(10, 1, bin2)
+    printf("  check %s: %s\n", ('AABBCCDD00AABB000000BBCCDD000000AABBCCDD000000000000000000000000' == bin1.dump ? 'OK' : 'NG'), bin1.dump)
+    bin1.memcpy(25, 1, bin2, 2)
+    printf("  check %s: %s\n", ('AABBCCDD00AABB000000BBCCDD000000AABBCCDD0000000000BBCC0000000000' == bin1.dump ? 'OK' : 'NG'), bin1.dump)
     print "\n"
   end
 
   begin
+    print "  BinEdit: memcmp\n"
     bin1 = BinEdit.new('01020304')
-    bin2 = BinEdit.new(bin1)
-    bin3 = BinEdit.new(bin1, 3)
-    bin4 = BinEdit.new(bin1, 1, 2)
-    print "  bin1: ", bin1.dump(), "\n"
-    print "  bin2: ", bin2.dump(), "\n"
-    print "  bin3: ", bin3.dump(), "\n"
-    print "  bin4: ", bin4.dump(), "\n"
+    bin2 = BinEdit.new('01020304')
+    bin3 = BinEdit.new('01020405')
+    bin4 = BinEdit.new('01020200')
+    printf("  check %s: %s\n", (0 == bin1.memcmp(bin2) ? 'OK' : 'NG'), bin1.memcmp(bin2))
+    printf("  check %s: %s\n", (bin1.memcmp(bin3) < 0 ? 'OK' : 'NG'), bin1.memcmp(bin3))
+    printf("  check %s: %s\n", (0 < bin1.memcmp(bin4) ? 'OK' : 'NG'), bin1.memcmp(bin4))
+    bin1 = BinEdit.new('010203040102030401020304')
+    printf("  check %s: %s\n", (0 == bin1.memcmp(4, bin2) ? 'OK' : 'NG'),     bin1.memcmp(4, bin2))
+    printf("  check %s: %s\n", (0 != bin1.memcmp(3, bin2) ? 'OK' : 'NG'),     bin1.memcmp(3, bin2))
+    printf("  check %s: %s\n", (     bin1.memcmp(4, bin3) < 0 ? 'OK' : 'NG'), bin1.memcmp(4, bin3))
+    printf("  check %s: %s\n", (0 <  bin1.memcmp(4, bin4) ? 'OK' : 'NG'),     bin1.memcmp(4, bin4))
+
+    printf("  check %s: %s\n", (0 == bin1.memcmp(5, 1, bin2) ? 'OK' : 'NG'),     bin1.memcmp(5, 1, bin2))
+    printf("  check %s: %s\n", (0 != bin1.memcmp(4, 1, bin2) ? 'OK' : 'NG'),     bin1.memcmp(4, 1, bin2))
+    printf("  check %s: %s\n", (     bin1.memcmp(5, 1, bin3) < 0 ? 'OK' : 'NG'), bin1.memcmp(5, 1, bin3))
+    printf("  check %s: %s\n", (0 <  bin1.memcmp(5, 1, bin4) ? 'OK' : 'NG'),     bin1.memcmp(5, 1, bin4))
+
+    printf("  check %s: %s\n", (0 == bin1.memcmp(5, 1, bin2, 2) ? 'OK' : 'NG'),     bin1.memcmp(5, 1, bin2, 2))
+    printf("  check %s: %s\n", (0 != bin1.memcmp(4, 1, bin2, 2) ? 'OK' : 'NG'),     bin1.memcmp(4, 1, bin2, 2))
+    printf("  check %s: %s\n", (     bin1.memcmp(5, 1, bin3, 2) < 0 ? 'OK' : 'NG'), bin1.memcmp(5, 1, bin3, 2))
+    printf("  check %s: %s\n", (0 <  bin1.memcmp(5, 1, bin4, 2) ? 'OK' : 'NG'),     bin1.memcmp(5, 1, bin4, 2))
     print "\n"
   end
 
   begin
+    print "  BinEdit: etc\n"
     print "  ", (BinEdit.new("00000001")).get('D'), "\n"
     print "  ", (BinEdit.new("000000010200")).get('Dw'), "\n"
-    print "\n"
-  end
-
-  begin
     bin = BinEdit.new
     num = 7.0
     bin.set('F', [num])
@@ -269,9 +291,11 @@ def test_bin_edit
 
   begin
     bin = BinEdit.new('010203040506070809')
-    printf("  modbus crc: %s -> %-6s : check %s\n",  bin.dump(), bin.crc16(), ('0EB2' == bin.crc16() ? 'OK' : 'NG'))
-    printf("  crc8 crc  : %s -> %-6s : check %s\n",  bin.dump(), bin.crc8(),  ('98'   == bin.crc8()  ? 'OK' : 'NG'))
-    printf("  checksum  : %s -> %-6s : check %s\n",  bin.dump(), bin.sum(),   ('01'   == bin.sum()   ? 'OK' : 'NG'))
+    printf("  crc32 crc : %s -> %-8s : check %s\n",  bin.dump(), bin.crc32(), ('40EFAB9E' == bin.crc32() ? 'OK' : 'NG'))
+    printf("  modbus crc: %s -> %-8s : check %s\n",  bin.dump(), bin.crc16(), ('0EB2'     == bin.crc16() ? 'OK' : 'NG'))
+    printf("  crc8 crc  : %s -> %-8s : check %s\n",  bin.dump(), bin.crc8(),  ('98'       == bin.crc8()  ? 'OK' : 'NG'))
+    printf("  checksum  : %s -> %-8s : check %s\n",  bin.dump(), bin.sum(),   ('D3'       == bin.sum()   ? 'OK' : 'NG'))
+    printf("  XOR check : %s -> %-8s : check %s\n",  bin.dump(), bin.xsum(),  ('01'       == bin.xsum()  ? 'OK' : 'NG'))
     print "\n"
   end
 
