@@ -499,7 +499,7 @@ print BinEdit.toArray('0102 FEFF FFFE 0100 0100 FCFFFFFF FFFFFFFC 01000000 00000
 print BinEdit.toHexString([1, 2, -2, -2, 1, 256, -4, -4, 1, 1, 10.0, 10.0, "5566", "210"], 'bbsSwWiIdDfFh2A3')
 ~~~
 
-# Now testing.
+### Now testing.
 
 ~~~
 BinEdit.readBinToXlsx
