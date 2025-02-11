@@ -484,7 +484,7 @@ bin.compress();
 bin.uncompress();
 ~~~
 
-# BinEdit.toArray, BinEdit.toHexString
+### BinEdit.toArray, BinEdit.toHexString
 
 data convert functions.
 
