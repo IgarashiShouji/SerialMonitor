@@ -118,8 +118,8 @@ def test_bin_edit
   end
 
   begin
-    list = BinEdit.hexToArray('bb sS wW iI dD fF h2 A3', '0102 FEFF FFFE 0100 0100 FCFFFFFF FFFFFFFC 01000000 00000001 00002041 41200000 5566 303132')
-    print "  ", list, "\n"
+    print "  test BinEdit.toArray, BinEdit.toHexString\n"
+    list = BinEdit.toArray('0102 FEFF FFFE 0100 0100 FCFFFFFF FFFFFFFC 01000000 00000001 00002041 41200000 5566 303132', 'bb sS wW iI dD fF h2 A3')
     check = 'OK'
     [1, 2, -2, -2, 1, 256, -4, -4, 1, 1, 10.0, 10.0, "5566", "210"].each_with_index do |data, idx|
       if data != list[idx] then
@@ -127,7 +127,10 @@ def test_bin_edit
         break;
       end
     end
-    printf("  hexToArray check: %s\n", check)
+    printf("  BinEdit.toArray check: %s: ", check)
+    print list, "\n"
+    hex = BinEdit.toHexString([1, 2, -2, -2, 1, 256, -4, -4, 1, 1, 10.0, 10.0, "5566", "210"], 'bbsSwWiIdDfFh2A3')
+    printf("  BinEdit.toHexString check: %s: %s\n", ('0102FEFFFFFE01000100FCFFFFFFFFFFFFFC010000000000000100002041412000005566303132' == hex ? 'OK' : 'NG'), hex)
     print "\n"
   end
 
@@ -269,7 +272,7 @@ def test_bin_edit
     num = 7.0
     bin.set('F', [num])
     printf("  FLOAT: %f: %s\n", num, bin.dump)
-    printf("  float: %f: %s\n", num, BinEdit.hexFromArray('f', [7.0]))
+    printf("  float: %f: %s\n", num, BinEdit.toHexString([7.0], 'f'))
     print "\n"
   end
 

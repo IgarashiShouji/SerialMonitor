@@ -1,39 +1,13 @@
 # Defalult Option Script for smon.exe
 
 class BinEdit
-  def self.getArray(format, hex_string)
-    bin = BinEdit.new(hex_string)
+  def self.toArray(hex, format)
+    bin = BinEdit.new(hex)
     return bin.get(format)
   end
-  def self.getHexString(format, arry)
+  def self.toHexString(arry, format)
     bin = BinEdit.new()
-    bin.set(format, array)
-    return bin.dump
-  end
-
-  def self.hexToArray(format, hex_string)
-    bin = BinEdit.new(hex_string)
-    return bin.get(format)
-  end
-  def self.hexFromArray(format, item)
-    size = 0
-    (format.length).times do |idx|
-      m = format[idx, 1]
-      size += (m == 'c' ? 1 : 0)
-      size += (m == 'b' ? 1 : 0)
-      size += (m == 's' ? 2 : 0)
-      size += (m == 'w' ? 2 : 0)
-      size += (m == 'i' ? 4 : 0)
-      size += (m == 'd' ? 4 : 0)
-      size += (m == 'f' ? 4 : 0)
-      size += (m == 'S' ? 2 : 0)
-      size += (m == 'W' ? 2 : 0)
-      size += (m == 'I' ? 4 : 0)
-      size += (m == 'D' ? 4 : 0)
-      size += (m == 'F' ? 4 : 0)
-    end
-    bin = BinEdit.new(size)
-    bin.set(format, item)
+    bin.set(0, format, arry)
     return bin.dump
   end
 
@@ -208,7 +182,6 @@ class OpenXLSX
     end
   end
 end
-
 
 class SvgSequence
   def initialize()
@@ -467,7 +440,8 @@ class Core
     end
   end
   def self.bin_cmd_editor()
-    bin = BinEdit.new()
+    bin = BinEdit.new(0)
+    temp = BinEdit.new()
     loop = true
     offset = 0
     list_cmd = Array.new
@@ -621,10 +595,34 @@ class Core
 
     list_reg.push('^[ \t]*pfmt\b')
     cmd = Proc.new do |str|
-      # text command
+      # print array(with array format)
       fmt  = CppRegexp.reg_replace(str, '^[ \t]*pfmt[ \t]*', '')
       print fmt, "\n"
       print bin.get(0, fmt), "\n"
+    end
+    list_cmd.push(cmd)
+
+    list_reg.push('^[ \t]*fmt:[^:]+:')
+    cmd = Proc.new do |str|
+      # set array(with array format)
+      list = CppRegexp.reg_split(str, ':')
+      fmt = list[1]
+      data = CppRegexp.reg_split(list[2], ',')
+      arg = Array.new
+      data.each_with_index do |val, idx|
+        case fmt[idx]
+        when 'f', 'F' then
+          arg.push(val.to_f)
+        when 'c', 'b', 's', 'w', 'i', 'd', 'S', 'W', 'I', 'D' then
+          arg.push(val.to_i)
+        when 'a', 'A', 'h', 'H' then
+          arg.push(val)
+        else
+        end
+      end
+      temp.resize(0)
+      temp.set(0, fmt, arg)
+      bin.write(bin.length, temp.dump)
     end
     list_cmd.push(cmd)
 
@@ -685,32 +683,11 @@ class Core
         cmd.call(str)
       else
         if 0 < str.length then
-          temp = ''
-          if CppRegexp.reg_match(str, '^fmt:[^:]+:') then
-            list = CppRegexp.reg_split(str, ':')
-            fmt = list[1]
-            data = CppRegexp.reg_split(list[2], ',')
-            arg = Array.new
-            data.each_with_index do |val, idx|
-              ch = fmt[idx]
-              case ch
-              when 'f', 'F' then
-                arg.push(val.to_f)
-              when 'c', 'b', 's', 'w', 'i', 'd', 'S', 'W', 'I', 'D' then
-                arg.push(val.to_i)
-              when 'a', 'A' then
-              when 'h', 'H' then
-              else
-              end
-            end
-            temp = BinEdit.hexFromArray(fmt, arg)
-          else
-            str = CppRegexp.reg_replace(str, '^[0-9a-fA-f]+:', '')
-            str = CppRegexp.reg_replace(str, '0x([0-9a-fA-F])', '$1')
-            temp = BinEdit.new(str)
-          end
-          #printf("in: %s\n", temp.dump)
-          bin = BinEdit.new( [ bin, temp ] )
+          temp.resize(0)
+          temp.write(0, str)
+          addr = bin.length
+          bin.resize(addr+temp.length)
+          bin.write(addr, temp.dump)
         end
       end
     end

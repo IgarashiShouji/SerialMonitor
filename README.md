@@ -484,17 +484,36 @@ bin.compress();
 bin.uncompress();
 ~~~
 
+# BinEdit.toArray, BinEdit.toHexString
+
+data convert functions.
+
+| Function            | Overview                              |
+|:--------------------|:--------------------------------------|
+| BinEdit.toArray     | convert of hex string to value array. |
+| BinEdit.toHexString | convert of value array to hex string. |
+
+~~~
+ex)
+print BinEdit.toArray('0102 FEFF FFFE 0100 0100 FCFFFFFF FFFFFFFC 01000000 00000001 00002041 41200000 5566 303132', 'bb sS wW iI dD fF h2 A3')
+print BinEdit.toHexString([1, 2, -2, -2, 1, 256, -4, -4, 1, 1, 10.0, 10.0, "5566", "210"], 'bbsSwWiIdDfFh2A3')
+~~~
+
 # Now testing.
 
 ~~~
-BinEdit.hexToArray
-BinEdit.hexFromArray
 BinEdit.readBinToXlsx
 ~~~
 
 ## CppRegexp
 
 ~~~
+
+
+  def self.compile(arg)
+  def === (arg)
+  def =~ (arg)
+
 CppRegexp.reg_match
 CppRegexp.reg_replace
 CppRegexp.reg_split
