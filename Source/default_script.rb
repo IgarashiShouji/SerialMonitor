@@ -14,7 +14,7 @@ fmt = '%-' + sprintf("%d", arg_sz) + 's:'
 printf("Date: %s\n", Core.date())
 Smon.open(Array.new(list_port)) do |smon|
   loop = true
-  smon.timer(Smon::CTIMER, (5*1000))
+  smon.timer(Smon::CTIMER, (60*1000))
   bin = BinEdit.new()
   while loop do
     str = Core.gets(smon, bin) do |idx, state|

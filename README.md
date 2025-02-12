@@ -507,23 +507,31 @@ BinEdit.readBinToXlsx
 
 ## CppRegexp
 
+### CppRegexp.new
+
+### reg.length
+
+### reg.match
+
+### reg.grep
+
+### reg.replace
+
+### reg.select
+
+### reg.split
+
+### CppRegexp.reg_match
+
+### CppRegexp.reg_replace
+
+### CppRegexp.reg_split
+
+
 ~~~
-
-
-  def self.compile(arg)
-  def === (arg)
-  def =~ (arg)
-
-CppRegexp.reg_match
-CppRegexp.reg_replace
-CppRegexp.reg_split
-reg = CppRegexp.new
-reg.length
-reg.match
-reg.grep
-reg.replace
-reg.select
-reg.split
+self.compile(arg)
+=== (arg)
+=~ (arg)
 ~~~
 
 Now testting.

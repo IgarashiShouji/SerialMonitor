@@ -59,6 +59,7 @@
 class OneShotTimer
 {
 private:
+    uint32_t                                id;
     std::atomic<bool>                       running;
     std::atomic<unsigned int>               idx;
     std::vector<size_t>                     timer;
@@ -92,24 +93,31 @@ inline void OneShotTimer::start(void)
         running.store(true);
         while(running.load())
         {
+            auto to_id = this->id;
             auto max = timer.size();
             if(idx.load() < max)
             {
                 auto now = std::chrono::system_clock::now();
                 auto tick = this->get_timeout_tick(now);
-                if(200 < tick) { std::this_thread::sleep_for(std::chrono::milliseconds(200)); }
-                else
+                if(tick < timer[0])
                 {
                     std::this_thread::sleep_for(std::chrono::milliseconds(tick));
                     if(running.load())
                     {
+                        std::lock_guard<std::mutex> lock(mtx);
+                        uint32_t id = this->id;
                         auto idx = this->idx.load();
-                        if(idx < max)
+                        if((id == to_id)&&(idx < max))
                         {
                             act(idx);
                             this->idx.store(idx+1);
                         }
                     }
+                }
+                else
+                {
+                    if(200 < timer[0])  { std::this_thread::sleep_for(std::chrono::milliseconds(200));      }
+                    else                { std::this_thread::sleep_for(std::chrono::milliseconds(timer[0])); }
                 }
             }
             else
@@ -124,13 +132,18 @@ inline void OneShotTimer::start(void)
 }
 inline void OneShotTimer::restart(void)
 {
+    std::lock_guard<std::mutex> lock(mtx);
+    this->id ++;
     this->idx.store(timer.size());
     begin.store(std::chrono::system_clock::now());
     if(!running.load())
     {
         if(task.joinable()) { task.join(); }
+        this->idx.store(0);
         start();
-    } else { this->idx.store(0); }
+    } else {
+        this->idx.store(0);
+    }
 }
 inline void OneShotTimer::stop(void)
 {
@@ -138,7 +151,7 @@ inline void OneShotTimer::stop(void)
     if(task.joinable()) { task.join(); }
 }
 inline OneShotTimer::OneShotTimer(std::vector<size_t> & timer_list, std::function<void(size_t)> callback)
-  : running(true), idx(0), timer(timer_list), act(callback), begin(std::chrono::system_clock::now())
+  : id(0), running(true), idx(0), timer(timer_list), act(callback), begin(std::chrono::system_clock::now())
 {
     start();
 }
@@ -380,7 +393,7 @@ protected:
     std::vector<ReciveInfo>         cache;
     struct Sync *                   sync;
     unsigned int                    cache_size;
-    bool                            rcv_enable;
+    std::atomic<bool>               rcv_enable;
     CyclicTimer                     cyclic;
     CyclicTimer                     utimer;
     std::mutex                      mtx;
@@ -837,7 +850,7 @@ static void mrb_xlsx_context_free(mrb_state * mrb, void * ptr);
 
 
 /* -- static tables -- */
-static const char *  SoftwareRevision = "0.14.12";
+static const char *  SoftwareRevision = "0.14.13";
 static const struct mrb_data_type mrb_core_context_type =
 {
     "mrb_core_context",         mrb_core_context_free
@@ -4637,7 +4650,7 @@ void SerialMonitor::close(void)
 {
     bool is_open = false;
     std::unique_lock<std::mutex> lock(mtx);
-    rcv_enable = false;
+    rcv_enable.store(false);
     try
     {
         for(auto idx=0; idx < com.size(); idx ++)
@@ -4799,40 +4812,43 @@ void SerialMonitor::reciver(size_t idx)
         std::lock_guard<std::mutex> lock(mtx);
         oneshot[idx] = &timeout_evter;
     }
-    while((rcv_enable) && (nullptr != com[idx]))
+    while((rcv_enable.load()) && (nullptr != com[idx]))
     {
         unsigned char data;
         size_t len;
-        try { len = com[idx]->read(&(data), 1); } catch(...) { break; }
-        if(0 == len) { break; }
-        std::lock_guard<std::mutex> lock(mtx);
-        if(rcv_enable)
+        try
         {
-            timeout_evter.restart();
-            cache[idx].buff[cache[idx].cnt] = data;
-            cache[idx].cnt += len;
-            if(cache_size <= cache[idx].cnt)
+            len = com[idx]->read(&(data), 1);
+            if(0 == len) { break; }
+            if(rcv_enable.load())
             {
-                if(nullptr != sync)
+                timeout_evter.restart();
+                std::lock_guard<std::mutex> lock(mtx);
+                cache[idx].buff[cache[idx].cnt] = data;
+                cache[idx].cnt += len;
+                if(cache_size <= cache[idx].cnt)
                 {
-                    std::lock_guard<std::mutex> lock(sync->mtx);
-                    cache[idx].state = CACHE_FULL;
-                    rcv_cache.push_back(cache[idx]);
-                    sync->cond.notify_all();
+                    if(nullptr != sync)
+                    {
+                        std::lock_guard<std::mutex> lock(sync->mtx);
+                        cache[idx].state = CACHE_FULL;
+                        rcv_cache.push_back(cache[idx]);
+                        sync->cond.notify_all();
+                    }
+                    else
+                    {
+                        cache[idx].state = CACHE_FULL;
+                        rcv_cache.push_back(cache[idx]);
+                    }
+                    cache[idx].buff  = static_cast<unsigned char *>(std::malloc(cache_size));
+                    cache[idx].cnt   = 0;
+                    cond.notify_all();
                 }
-                else
-                {
-                    cache[idx].state = CACHE_FULL;
-                    rcv_cache.push_back(cache[idx]);
-                }
-                cache[idx].buff  = static_cast<unsigned char *>(std::malloc(cache_size));
-                cache[idx].cnt   = 0;
-                cond.notify_all();
             }
-        }
+        } catch(...) { break; }
     }
     std::lock_guard<std::mutex> lock(mtx);
-    rcv_enable = false;
+    rcv_enable.store(false);
     cache[idx].state = CLOSE;
     cache[idx].cnt   = 0;
     rcv_cache.push_back(cache[idx]);
