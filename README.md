@@ -507,34 +507,175 @@ BinEdit.readBinToXlsx
 
 ## CppRegexp
 
+This class is regexp utilities.
+Regexp is c++ algorithm.
+
 ### CppRegexp.new
+
+~~~
+CppRegexp.new('reg')
+CppRegexp.new(['reg1', 'reg2'])
+CppRegexp.new('reg1, 'reg2')
+~~~
 
 ### reg.length
 
+Return value is regexp array count.
+
+~~~
+reg = CppRegexp.new('reg')
+print reg.length
+  ==> 1
+reg = CppRegexp.new(['reg1', 'reg2'])
+print reg.length
+  ==> 2
+reg = CppRegexp.new('reg1, 'reg2')
+print reg.length
+  ==> 2
+~~~
+
 ### reg.match
+
+This is search of string list of regex array match(matches any one).
+
+~~~
+reg = CppRegexp.new('reg')
+print reg.match('reg')
+  ==> true
+print reg.match('test')
+  ==> false
+
+reg = CppRegexp.new('reg1', 'reg2')
+or
+reg = CppRegexp.new(['reg1', 'reg2'])
+print reg.match(['test', 'test1 reg1', 'test2 reg1 reg2', 'test3 reg2', 'test4 reg'])
+  ==> ['test1 reg1', 'test2 reg1 reg2', 'test3 reg2']
+print reg.match('test', 'test1 reg1', 'test2 reg1 reg2', 'test3 reg2', 'test4 reg')
+  ==> ['test1 reg1', 'test2 reg1 reg2', 'test3 reg2']
+print reg.match('test', ['test1 reg1', 'test2 reg1 reg2'] , ['test3 reg2', 'test4 reg'])
+  ==> ['test1 reg1', 'test2 reg1 reg2', 'test3 reg2']
+~~~
 
 ### reg.grep
 
+This is search of string list of regex array match(matches all).
+
+~~~
+reg = CppRegexp.new('reg')
+print reg.grep('reg')
+  ==> ['reg']
+print reg.grep('test')
+  ==> []
+
+reg = CppRegexp.new('reg1', 'reg2')
+or
+reg = CppRegexp.new(['reg1', 'reg2'])
+print reg.grep(['test', 'test1 reg1', 'test2 reg1 reg2', 'test3 reg2', 'test4 reg'])
+  ==> ['test2 reg1 reg2']
+print reg.grep('test', 'test1 reg', 'test2 reg1 reg2', 'test3 reg2', 'test4 reg')
+  ==> ['test2 reg1 reg2']
+print reg.grep('test', ['test1 reg', 'test2 reg1 reg2'] , ['test3 reg2', 'test4 reg'])
+  ==> ['test2 reg1 reg2']
+~~~
+
 ### reg.replace
 
-### reg.select
+This is replace string list to arg[0] by regex array match(mathes any one).
+
+~~~
+reg = CppRegexp.new('reg1', 'reg2')
+or
+reg = CppRegexp.new(['reg1', 'reg2'])
+
+print reg.replace('reg', ['test', 'test1 reg1', 'test2 reg1 reg2', 'test3 reg2', 'test4 reg'])
+  ==> ['test', 'test1 reg', 'test2 reg reg', 'test3 reg', 'test4 reg']
+print reg.replace('reg', 'test', ['test1 reg1', 'test2 reg1 reg2'], ['test3 reg2', 'test4 reg'])
+  ==> ['test', 'test1 reg', 'test2 reg reg', 'test3 reg', 'test4 reg']
+~~~
 
 ### reg.split
 
+get string split by regex arry.
+
+~~~
+reg = CppRegexp.new([',', ':'])
+
+print reg.select('123,456:789')
+  ==> ['123', '456', '789']
+~~~
+
+### reg.select
+
+get matched index by regex.
+
+~~~
+reg = CppRegexp.new('reg1', 'reg2')
+or
+reg = CppRegexp.new(['reg1', 'reg2'])
+
+print reg.select('reg1')
+  ==> 0
+print reg.select('reg2')
+  ==> 1
+print reg.select('reg')
+  ==> 2
+print reg.select()
+  ==> 2
+~~~
+
 ### CppRegexp.reg_match
+
+This is search of string list of regex array match(matches any one).
+
+~~~
+print CppRegexp.reg_match('test reg 123', ['A', 'B', '1'])              # -> true
+print CppRegexp.reg_match('test reg 123', ['A', 'B'], '2')              # -> true
+print CppRegexp.reg_match(['test', 'reg', '123'], ['A', 're', '2'])     # => ['reg', '123']
+print CppRegexp.reg_match(['test', 'reg', '123'], ['A', 'e'], '3')      # => ['reg', '123']
+~~~
+
+### CppRegexp.reg_grep
+
+This is search of string list of regex array match(matches all).
+
+~~~
+print CppRegexp.reg_match('test reg 123', ['A', 'B', '1'])              # -> true
+print CppRegexp.reg_match('test reg 123', ['A', 'B'], '2')              # -> true
+print CppRegexp.reg_match(['test', 'reg', '123'], ['A', 're', '2'])     # => ['reg', '123']
+print CppRegexp.reg_match(['test', 'reg', '123'], ['A', 'e'], '3')      # => ['reg', '123']
+~~~
 
 ### CppRegexp.reg_replace
 
+This is replace string list to arg[0] by regex array match(mathes any one).
+
+~~~
+print CppRegexp.reg_replace('test', 'A', 'es')                              # => tAt
+print CppRegexp.reg_replace(['test', 'reg', '123'], 'A', ['e', 's'])        # => [ 'tAAt', 'rAg', '123' ]
+print CppRegexp.reg_replace(['test', 'reg', '123'], '-', ['e', 's'], '1')   # => [ 't--t', 'r-g', '-23' ]
+print CppRegexp.reg_replace(['test', 'reg', '123'], '-', 'A')               # => [ 'test', 'reg', '123' ]
+~~~
+
 ### CppRegexp.reg_split
 
+get string split by regex arry.
 
 ~~~
-self.compile(arg)
-=== (arg)
-=~ (arg)
+print CppRegexp.reg_split('123,456:789', ',', ':')                      # => [ '123', '456', '789' ]
+print CppRegexp.reg_split('123,456:789', [',', ':'])                    # => [ '123', '456', '789' ]
 ~~~
 
-Now testting.
+### CppRegexp.reg_select
+
+get matched index by regex.
+
+~~~
+print CppRegexp.reg_split('cmd1', 'cmd1', 'cmd2', 'cmd3')               # => 0
+print CppRegexp.reg_split('cmd2', ['cmd1', 'cmd2', 'cmd3'])             # => 1
+print CppRegexp.reg_split('cmd4', ['cmd1', 'cmd2'], 'cmd3')             # => 3
+~~~
+
+### Now testting.
 
 ~~~
 CppRegexp.compile

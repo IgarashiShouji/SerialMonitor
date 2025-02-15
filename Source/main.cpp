@@ -319,7 +319,7 @@ public:
     std::list<std::string> grep(std::list<std::string> & text);
     void replace(std::list<std::string> & text, const char * rep);
     unsigned int select(const char * str);
-    std::list<std::string> split(std::string & org);
+    std::list<std::string> split(std::string & src);
 };
 
 /**
@@ -801,15 +801,17 @@ static void mrb_bedit_context_free(mrb_state * mrb, void * ptr);
 static BinaryControl * get_bedit_ptr(mrb_value & argv);
 
 static mrb_value mrb_cppregexp_reg_match(mrb_state* mrb, mrb_value self);
+static mrb_value mrb_cppregexp_reg_grep(mrb_state* mrb, mrb_value self);
 static mrb_value mrb_cppregexp_reg_replace(mrb_state* mrb, mrb_value self);
 static mrb_value mrb_cppregexp_reg_split(mrb_state* mrb, mrb_value self);
+static mrb_value mrb_cppregexp_reg_select(mrb_state* mrb, mrb_value self);
 static mrb_value mrb_cppregexp_initialize(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_cppregexp_length(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_cppregexp_match(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_cppregexp_grep(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_cppregexp_replace(mrb_state * mrb, mrb_value self);
-static mrb_value mrb_cppregexp_select(mrb_state * mrb, mrb_value self);
 static mrb_value mrb_cppregexp_split(mrb_state * mrb, mrb_value self);
+static mrb_value mrb_cppregexp_select(mrb_state * mrb, mrb_value self);
 static void mrb_regexp_context_free(mrb_state * mrb, void * ptr);
 
 static mrb_value mrb_thread_initialize(mrb_state * mrb, mrb_value self);
@@ -850,7 +852,7 @@ static void mrb_xlsx_context_free(mrb_state * mrb, void * ptr);
 
 
 /* -- static tables -- */
-static const char *  SoftwareRevision = "0.14.13";
+static const char *  SoftwareRevision = "0.14.14";
 static const struct mrb_data_type mrb_core_context_type =
 {
     "mrb_core_context",         mrb_core_context_free
@@ -1354,9 +1356,11 @@ public:
 
             /* Class CppRegexp */
             struct RClass * cppregexp_class = mrb_define_class(mrb, "CppRegexp", mrb->object_class);
-            mrb_define_module_function(mrb, cppregexp_class, "reg_match",   mrb_cppregexp_reg_match,   MRB_ARGS_ARG(2, 1) );
-            mrb_define_module_function(mrb, cppregexp_class, "reg_replace", mrb_cppregexp_reg_replace, MRB_ARGS_ARG(3, 1) );
-            mrb_define_module_function(mrb, cppregexp_class, "reg_split",   mrb_cppregexp_reg_split,   MRB_ARGS_ARG(2, 1) );
+            mrb_define_module_function(mrb, cppregexp_class, "reg_match",   mrb_cppregexp_reg_match,   MRB_ARGS_ANY());
+            mrb_define_module_function(mrb, cppregexp_class, "reg_grep",    mrb_cppregexp_reg_grep,    MRB_ARGS_ANY());
+            mrb_define_module_function(mrb, cppregexp_class, "reg_replace", mrb_cppregexp_reg_replace, MRB_ARGS_ANY());
+            mrb_define_module_function(mrb, cppregexp_class, "reg_split",   mrb_cppregexp_reg_split,   MRB_ARGS_ANY());
+            mrb_define_module_function(mrb, cppregexp_class, "reg_select",  mrb_cppregexp_reg_select,  MRB_ARGS_ANY());
             mrb_define_method( mrb, cppregexp_class, "initialize", mrb_cppregexp_initialize, MRB_ARGS_ANY()     );
             mrb_define_method( mrb, cppregexp_class, "length",     mrb_cppregexp_length,     MRB_ARGS_NONE()    );
             mrb_define_method( mrb, cppregexp_class, "match",      mrb_cppregexp_match,      MRB_ARGS_ANY()     );
@@ -2295,39 +2299,53 @@ static mrb_value mrb_cppregexp_reg_match(mrb_state* mrb, mrb_value self)
 {
     mrb_value proc; mrb_int argc; mrb_value * argv;
     mrb_get_args(mrb, "&*", &proc, &argv, &argc);
-    if((0 < argc) && (MRB_TT_STRING == mrb_type(argv[0])))
+    if(2 <= argc)
     {
-        std::string str( RSTR_PTR(mrb_str_ptr(argv[0])) );
-        for(auto idx = 1; idx < argc; idx ++)
+        auto type = mrb_type(argv[0]);
+        if((MRB_TT_STRING == type) || (MRB_TT_ARRAY == type))
         {
-            switch( mrb_type(argv[idx]) )
+            std::list<std::string> text;
+            mrb_value item;
+            for(auto idx = 1; idx < argc; idx ++)
             {
-            case MRB_TT_STRING:
+                switch(mrb_type(argv[idx]))
                 {
-                    std::regex reg( RSTR_PTR(mrb_str_ptr(argv[idx])) );
-                    if(std::regex_search(str, reg))
-                    {
-                        return mrb_bool_value(true);
-                    }
-                }
-                break;
-            case MRB_TT_ARRAY:
-                {
-                    bool result = true;
-                    mrb_value item;
-                    while( result && !mrb_nil_p( item = mrb_ary_shift(mrb, argv[idx])) )
+                case MRB_TT_STRING:
+                    text.push_back(std::string(RSTR_PTR(mrb_str_ptr(argv[idx]))));
+                    break;
+                case MRB_TT_ARRAY:
+                    while(!mrb_nil_p(item = mrb_ary_shift(mrb, argv[idx])))
                     {
                         if(MRB_TT_STRING == mrb_type(item))
                         {
-                            std::regex reg( RSTR_PTR(mrb_str_ptr(item)) );
-                            if(std::regex_search(str, reg))
-                            {
-                                continue;
-                            }
+                            text.push_back(std::string(RSTR_PTR(mrb_str_ptr(item))));
                         }
-                        result = false;
                     }
-                    if(result) { return mrb_bool_value(true); }
+                    break;
+                default:
+                    break;
+                }
+            }
+            CppRegexp reg(text);
+            switch(type)
+            {
+            case MRB_TT_STRING:
+                if(reg.match(std::string(RSTR_PTR(mrb_str_ptr(argv[0])))))
+                {
+                    return mrb_bool_value(true);
+                }
+                break;
+            case MRB_TT_ARRAY:
+                while(!mrb_nil_p(item = mrb_ary_shift(mrb, argv[0])))
+                {
+                    if(MRB_TT_STRING == mrb_type(item))
+                    {
+                        std::string str(RSTR_PTR(mrb_str_ptr(item)));
+                        if(reg.match(str))
+                        {
+                            return mrb_bool_value(true);
+                        }
+                    }
                 }
                 break;
             default:
@@ -2337,140 +2355,192 @@ static mrb_value mrb_cppregexp_reg_match(mrb_state* mrb, mrb_value self)
     }
     return mrb_bool_value(false);
 }
-static mrb_value mrb_cppregexp_reg_replace(mrb_state* mrb, mrb_value self)
+static mrb_value mrb_cppregexp_reg_grep(mrb_state* mrb, mrb_value self)
 {
-    mrb_int argc; mrb_value * argv;
-    mrb_get_args(mrb, "*", &argv, &argc);
-    std::string result("");
-    if(1 < argc)
+    auto arry = mrb_ary_new(mrb);
+    mrb_value proc; mrb_int argc; mrb_value * argv;
+    mrb_get_args(mrb, "&*", &proc, &argv, &argc);
+    if(2 <= argc)
     {
+        std::list<std::string> text;
+        mrb_value item;
+        for(auto idx = 1; idx < argc; idx ++)
+        {
+            switch(mrb_type(argv[idx]))
+            {
+            case MRB_TT_STRING:
+                text.push_back(std::string(RSTR_PTR(mrb_str_ptr(argv[idx]))));
+                break;
+            case MRB_TT_ARRAY:
+                while(!mrb_nil_p(item = mrb_ary_shift(mrb, argv[idx])))
+                {
+                    if(MRB_TT_STRING == mrb_type(item))
+                    {
+                        std::string str(RSTR_PTR(mrb_str_ptr(item)));
+                        text.push_back(str);
+                    }
+                }
+                break;
+            default:
+                break;
+            }
+        }
+        CppRegexp reg(text);
+        text.clear();
         switch(mrb_type(argv[0]))
         {
         case MRB_TT_STRING:
-            {
-                std::string str(RSTR_PTR(mrb_str_ptr(argv[0])));
-                switch(mrb_type(argv[1]))
-                {
-                case MRB_TT_STRING:
-                    {
-                        std::regex reg(RSTR_PTR(mrb_str_ptr(argv[1])));
-                        if((3 == argc) && (MRB_TT_STRING == mrb_type(argv[2])))
-                        {
-                            std::string rep(RSTR_PTR(mrb_str_ptr(argv[2])));
-                            str = std::regex_replace(str, reg, rep);
-                        }
-                        return mrb_str_new_cstr(mrb, str.c_str());
-                    }
-                    break;
-                case MRB_TT_ARRAY:
-                    {
-                        for(auto idx=1; idx < argc; idx++)
-                        {
-                            if(MRB_TT_ARRAY == mrb_type(argv[idx]))
-                            {
-                                mrb_value arg1 = mrb_ary_shift(mrb, argv[idx]);
-                                mrb_value arg2 = mrb_ary_shift(mrb, argv[idx]);
-                                if(  (MRB_TT_STRING == mrb_type(arg1))
-                                   &&(MRB_TT_STRING == mrb_type(arg2)))
-                                {
-                                    std::regex  reg(RSTR_PTR(mrb_str_ptr(arg1)));
-                                    std::string rep(RSTR_PTR(mrb_str_ptr(arg2)));
-                                    str = std::regex_replace(str, reg, rep);
-                                }
-                            }
-                        }
-                        return mrb_str_new_cstr(mrb, str.c_str());
-                    }
-                    break;
-                }
-            }
+            text.push_back(std::string(RSTR_PTR(mrb_str_ptr(argv[0]))));
             break;
         case MRB_TT_ARRAY:
+            while(!mrb_nil_p(item = mrb_ary_shift(mrb, argv[0])))
             {
-                auto arry = mrb_ary_new(mrb);
-                mrb_value item;
-                switch(mrb_type(argv[1]))
+                if(MRB_TT_STRING == mrb_type(item))
                 {
-                case MRB_TT_STRING:
-                    {
-                        std::regex reg(RSTR_PTR(mrb_str_ptr(argv[1])));
-                        if((3 == argc) && (MRB_TT_STRING == mrb_type(argv[2])))
-                        {
-                            std::string rep(RSTR_PTR(mrb_str_ptr(argv[2])));
-                            while( !mrb_nil_p( item = mrb_ary_shift(mrb, argv[0])) )
-                            {
-                                std::string str(RSTR_PTR(mrb_str_ptr(item)));
-                                if(MRB_TT_STRING == mrb_type(item))
-                                {
-                                    str = std::regex_replace(str, reg, rep);
-                                    mrb_ary_push(mrb, arry , mrb_str_new_cstr(mrb, str.c_str()));
-                                }
-                            }
-                        }
-                    }
-                    break;
-                case MRB_TT_ARRAY:
-                    while( !mrb_nil_p( item = mrb_ary_shift(mrb, argv[0])) )
-                    {
-                        if(MRB_TT_STRING == mrb_type(item))
-                        {
-                            std::string str(RSTR_PTR(mrb_str_ptr(item)));
-                            for(auto idx=1; idx < argc; idx++)
-                            {
-                                if(MRB_TT_ARRAY == mrb_type(argv[idx]))
-                                {
-                                    mrb_value arg1 = mrb_ary_shift(mrb, argv[idx]);
-                                    mrb_value arg2 = mrb_ary_shift(mrb, argv[idx]);
-                                    if(  (MRB_TT_STRING == mrb_type(arg1))
-                                       &&(MRB_TT_STRING == mrb_type(arg2)))
-                                    {
-                                        std::regex  reg(RSTR_PTR(mrb_str_ptr(arg1)));
-                                        std::string rep(RSTR_PTR(mrb_str_ptr(arg2)));
-                                        str = std::regex_replace(str, reg, rep);
-                                    }
-                                }
-                            }
-                            mrb_ary_push(mrb, arry , mrb_str_new_cstr(mrb, str.c_str()));
-                        }
-                    }
-                    break;
-                default:
-                    while( !mrb_nil_p( item = mrb_ary_shift(mrb, argv[0])) )
-                    {
-                        if(MRB_TT_STRING == mrb_type(item))
-                        {
-                            std::string str(RSTR_PTR(mrb_str_ptr(item)));
-                            mrb_ary_push(mrb, arry , mrb_str_new_cstr(mrb, str.c_str()));
-                        }
-                    }
-                    break;
+                    std::string str(RSTR_PTR(mrb_str_ptr(item)));
+                    text.push_back(str);
                 }
-                return arry;
             }
             break;
         default:
             break;
         }
-    }
-    return self;
-}
-static mrb_value mrb_cppregexp_reg_split(mrb_state* mrb, mrb_value self)
-{
-    mrb_value proc; mrb_int argc; mrb_value * argv;
-    mrb_get_args(mrb, "&*", &proc, &argv, &argc);
-    mrb_value arry = mrb_ary_new(mrb);
-    if(    (2 == argc)
-        && (mrb_type(argv[0]) == MRB_TT_STRING)
-        && (mrb_type(argv[1]) == MRB_TT_STRING) )
-    {
-        std::string str(RSTR_PTR(mrb_str_ptr(argv[0])));
-        std::regex  reg(RSTR_PTR(mrb_str_ptr(argv[1])));
-        for(auto && str : str_split(str, reg))
+        for(auto & item : reg.grep(text))
         {
-            mrb_ary_push(mrb, arry , mrb_str_new_cstr(mrb, str.c_str()));
+            mrb_ary_push(mrb, arry, mrb_str_new_cstr(mrb, item.c_str()));
         }
     }
     return arry;
+}
+static mrb_value mrb_cppregexp_reg_replace(mrb_state* mrb, mrb_value self)
+{
+    auto arry = mrb_ary_new(mrb);
+    mrb_value proc; mrb_int argc; mrb_value * argv;
+    mrb_get_args(mrb, "&*", &proc, &argv, &argc);
+    if((3 <= argc) && (MRB_TT_STRING == mrb_type(argv[1])))
+    {
+        auto str_replace = RSTR_PTR(mrb_str_ptr(argv[1]));
+        std::list<std::string> text;
+        mrb_value item;
+        for(auto idx = 2; idx < argc; idx ++)
+        {
+            switch(mrb_type(argv[idx]))
+            {
+            case MRB_TT_STRING:
+                text.push_back(std::string(RSTR_PTR(mrb_str_ptr(argv[idx]))));
+                break;
+            case MRB_TT_ARRAY:
+                while(!mrb_nil_p(item = mrb_ary_shift(mrb, argv[idx])))
+                {
+                    if(MRB_TT_STRING == mrb_type(item))
+                    {
+                        text.push_back(std::string(RSTR_PTR(mrb_str_ptr(item))));
+                    }
+                }
+                break;
+            default:
+                break;
+            }
+        }
+        CppRegexp reg(text);
+        text.clear();
+        switch(mrb_type(argv[0]))
+        {
+        case MRB_TT_STRING:
+            text.push_back(std::string(RSTR_PTR(mrb_str_ptr(argv[0]))));
+            break;
+        case MRB_TT_ARRAY:
+            while(!mrb_nil_p(item = mrb_ary_shift(mrb, argv[0])))
+            {
+                if(MRB_TT_STRING == mrb_type(item))
+                {
+                    std::string str(RSTR_PTR(mrb_str_ptr(item)));
+                    text.push_back(str);
+                }
+            }
+            break;
+        default:
+            break;
+        }
+        reg.replace(text, str_replace);
+        for(auto & item : text)
+        {
+            mrb_ary_push(mrb, arry, mrb_str_new_cstr(mrb, item.c_str()));
+        }
+    }
+    return arry;
+}
+static mrb_value mrb_cppregexp_reg_split(mrb_state* mrb, mrb_value self)
+{
+    auto arry = mrb_ary_new(mrb);
+    mrb_value proc; mrb_int argc; mrb_value * argv;
+    mrb_get_args(mrb, "&*", &proc, &argv, &argc);
+    if((2 <= argc) && (MRB_TT_STRING == mrb_type(argv[0])))
+    {
+        std::string str(RSTR_PTR(mrb_str_ptr(argv[0])));
+        std::list<std::string> text;
+        mrb_value item;
+        for(auto idx = 1; idx < argc; idx ++)
+        {
+            switch(mrb_type(argv[idx]))
+            {
+            case MRB_TT_STRING:
+                text.push_back(std::string(RSTR_PTR(mrb_str_ptr(argv[idx]))));
+                break;
+            case MRB_TT_ARRAY:
+                while(!mrb_nil_p(item = mrb_ary_shift(mrb, argv[idx])))
+                {
+                    if(MRB_TT_STRING == mrb_type(item))
+                    {
+                        text.push_back(std::string(RSTR_PTR(mrb_str_ptr(item))));
+                    }
+                }
+                break;
+            default:
+                break;
+            }
+        }
+        CppRegexp reg(text);
+        for(auto & item : reg.split(str))
+        {
+            mrb_ary_push(mrb, arry, mrb_str_new_cstr(mrb, item.c_str()));
+        }
+    }
+    return arry;
+}
+static mrb_value mrb_cppregexp_reg_select(mrb_state* mrb, mrb_value self)
+{
+    mrb_value proc; mrb_int argc; mrb_value * argv;
+    mrb_get_args(mrb, "&*", &proc, &argv, &argc);
+    if((2 <= argc) && (MRB_TT_STRING == mrb_type(argv[0])))
+    {
+        std::string str(RSTR_PTR(mrb_str_ptr(argv[0])));
+        std::list<std::string> text;
+        mrb_value item;
+        for(auto idx = 1; idx < argc; idx ++)
+        {
+            switch(mrb_type(argv[idx]))
+            {
+            case MRB_TT_STRING:
+                text.push_back(std::string(RSTR_PTR(mrb_str_ptr(argv[idx]))));
+                break;
+            case MRB_TT_ARRAY:
+                while(!mrb_nil_p(item = mrb_ary_shift(mrb, argv[idx])))
+                {
+                    if(MRB_TT_STRING == mrb_type(item))
+                    {
+                        text.push_back(std::string(RSTR_PTR(mrb_str_ptr(item))));
+                    }
+                }
+                break;
+            default:
+                break;
+            }
+        }
+        CppRegexp reg(text);
+        return mrb_int_value(mrb, reg.select(RSTR_PTR(mrb_str_ptr(argv[0]))));
+    }
+    return mrb_nil_value();
 }
 mrb_value mrb_cppregexp_initialize(mrb_state * mrb, mrb_value self)
 {
@@ -2493,55 +2563,43 @@ mrb_value mrb_cppregexp_length(mrb_state * mrb, mrb_value self)
 }
 mrb_value mrb_cppregexp_match(mrb_state * mrb, mrb_value self)
 {
-    mrb_value result = mrb_ary_new(mrb);
     CppRegexp * reg = static_cast<CppRegexp *>(DATA_PTR(self));
+    mrb_int argc; mrb_value * argv;
+    mrb_get_args(mrb, "*", &argv, &argc);
+    if((nullptr != reg) && (1 == argc) && (MRB_TT_STRING == mrb_type(argv[0])))
+    {
+        if(reg->match(RSTR_PTR(mrb_str_ptr(argv[0]))))
+        {
+            return mrb_bool_value(true);
+        }
+        return mrb_bool_value(false);
+    }
+    mrb_value result = mrb_ary_new(mrb);
     if(nullptr != reg)
     {
         std::list<std::string> text;
-        mrb_int argc; mrb_value * argv;
-        mrb_get_args(mrb, "*", &argv, &argc);
-        switch(argc)
+        mrb_value item;
+        for(auto idx = 0; idx < argc; idx ++)
         {
-        case 0:
-            break;
-        case 1:
-            switch(mrb_type(argv[0]))
+            switch(mrb_type(argv[idx]))
             {
             case MRB_TT_STRING:
-                if( reg->match(RSTR_PTR(mrb_str_ptr(argv[0]))) )
-                {
-                    return mrb_bool_value(true);
-                }
-                return mrb_bool_value(false);
+                text.push_back(std::string(RSTR_PTR(mrb_str_ptr(argv[idx]))));
+                break;
             case MRB_TT_ARRAY:
+                while(!mrb_nil_p(item = mrb_ary_shift(mrb, argv[idx])))
                 {
-                    mrb_value item;
-                    while( !mrb_nil_p( item = mrb_ary_shift(mrb, argv[0])) )
+                    if(MRB_TT_STRING == mrb_type(item))
                     {
-                        if(MRB_TT_STRING == mrb_type(item))
-                        {
-                            std::string str( RSTR_PTR( mrb_str_ptr( item ) ) );
-                            text.push_back( str );
-                        }
+                        text.push_back(std::string(RSTR_PTR(mrb_str_ptr(item))));
                     }
                 }
                 break;
             default:
                 break;
             }
-            break;
-        default:
-            for(auto idx = 0; idx < argc; idx ++)
-            {
-                if( MRB_TT_STRING == mrb_type( argv[idx] ) )
-                {
-                    std::string str( RSTR_PTR( mrb_str_ptr( argv[idx] ) ) );
-                    text.push_back( str );
-                }
-            }
-            break;
         }
-        for( auto & item : reg->match( text ) )
+        for(auto & item : reg->match(text))
         {
             mrb_ary_push(mrb, result, mrb_str_new_cstr(mrb, item.c_str()));
         }
@@ -2552,53 +2610,33 @@ mrb_value mrb_cppregexp_grep(mrb_state * mrb, mrb_value self)
 {
     mrb_value result = mrb_ary_new(mrb);
     CppRegexp * reg = static_cast<CppRegexp *>(DATA_PTR(self));
-    std::list<std::string> text;
-    if(nullptr != reg)
+    mrb_int argc; mrb_value * argv;
+    mrb_get_args(mrb, "*", &argv, &argc);
+    if((nullptr != reg) && (0 < argc))
     {
-        mrb_int argc; mrb_value * argv;
-        mrb_get_args(mrb, "*", &argv, &argc);
-        switch(argc)
+        std::list<std::string> text;
+        for(auto idx = 0; idx < argc; idx ++)
         {
-        case 0:
-            break;
-        case 1:
-            switch(mrb_type(argv[0]))
+            mrb_value item;
+            switch(mrb_type(argv[idx]))
             {
             case MRB_TT_STRING:
-                {
-                    std::string str( RSTR_PTR( mrb_str_ptr( argv[0] ) ) );
-                    text.push_back( str );
-                }
+                text.push_back(std::string(RSTR_PTR(mrb_str_ptr(argv[idx]))));
                 break;
             case MRB_TT_ARRAY:
+                while(!mrb_nil_p(item = mrb_ary_shift(mrb, argv[idx])))
                 {
-                    mrb_value item;
-                    while( !mrb_nil_p( item = mrb_ary_shift(mrb, argv[0])) )
+                    if(MRB_TT_STRING == mrb_type(item))
                     {
-                        if(MRB_TT_STRING == mrb_type(item))
-                        {
-                            std::string str( RSTR_PTR( mrb_str_ptr( item ) ) );
-                            text.push_back( str );
-                        }
+                        text.push_back(std::string(RSTR_PTR(mrb_str_ptr(item))));
                     }
                 }
                 break;
             default:
                 break;
             }
-            break;
-        default:
-            for(auto idx = 0; idx < argc; idx ++)
-            {
-                if( MRB_TT_STRING == mrb_type( argv[idx] ) )
-                {
-                    std::string str( RSTR_PTR( mrb_str_ptr( argv[idx] ) ) );
-                    text.push_back( str );
-                }
-            }
-            break;
         }
-        for( auto & item : reg->grep( text ) )
+        for(auto & item : reg->grep(text))
         {
             mrb_ary_push(mrb, result, mrb_str_new_cstr(mrb, item.c_str()));
         }
@@ -2609,43 +2647,35 @@ mrb_value mrb_cppregexp_replace(mrb_state * mrb, mrb_value self)
 {
     mrb_value result = mrb_ary_new(mrb);
     CppRegexp * reg = static_cast<CppRegexp *>(DATA_PTR(self));
-    if(nullptr != reg)
+    mrb_int argc; mrb_value * argv;
+    mrb_get_args(mrb, "*", &argv, &argc);
+    if((nullptr != reg) && (2 <= argc))
     {
+        const char * rep = RSTR_PTR(mrb_str_ptr(argv[0]));
         std::list<std::string> text;
-        char * rep = nullptr;
-        mrb_int argc; mrb_value * argv;
-        mrb_get_args(mrb, "*", &argv, &argc);
-        switch(argc)
+        for(auto idx = 1; idx < argc; idx ++)
         {
-        case 0:
-        case 1:
-            break;
-        case 2:
-            if(  (MRB_TT_STRING == mrb_type(argv[0]))
-               &&(MRB_TT_STRING == mrb_type(argv[1])))
+            mrb_value item;
+            switch(mrb_type(argv[idx]))
             {
-                rep = RSTR_PTR(mrb_str_ptr(argv[0]));
-                std::string str( RSTR_PTR( mrb_str_ptr( argv[1] ) ) );
-                text.push_back(str);
-            }
-            break;
-        default:
-            if(MRB_TT_STRING == mrb_type(argv[0]))
-            {
-                rep = RSTR_PTR(mrb_str_ptr(argv[0]));
-                for(auto idx = 1; idx < argc; idx ++)
+            case MRB_TT_STRING:
+                text.push_back(std::string(RSTR_PTR(mrb_str_ptr(argv[idx]))));
+                break;
+            case MRB_TT_ARRAY:
+                while(!mrb_nil_p(item = mrb_ary_shift(mrb, argv[idx])))
                 {
-                    if(MRB_TT_STRING == mrb_type(argv[idx]))
+                    if(MRB_TT_STRING == mrb_type(item))
                     {
-                        std::string str( RSTR_PTR(mrb_str_ptr(argv[idx])) );
-                        text.push_back(str);
+                        text.push_back(std::string(RSTR_PTR(mrb_str_ptr(item))));
                     }
                 }
+                break;
+            default:
+                break;
             }
-            break;
         }
         reg->replace(text, rep);
-        for( auto & item : text)
+        for(auto & item : text)
         {
             mrb_ary_push(mrb, result, mrb_str_new_cstr(mrb, item.c_str()));
         }
@@ -2659,46 +2689,32 @@ mrb_value mrb_cppregexp_select(mrb_state * mrb, mrb_value self)
     {
         mrb_int argc; mrb_value * argv;
         mrb_get_args(mrb, "*", &argv, &argc);
-        switch(argc)
+        if((1 == argc) && (MRB_TT_STRING == mrb_type(argv[0])))
         {
-        case 1:
-            if(MRB_TT_STRING == mrb_type(argv[0]))
-            {
-                return mrb_int_value(mrb, reg->select( RSTR_PTR(mrb_str_ptr(argv[0])) ));
-            }
-            break;
-        default:
-            break;
+            return mrb_int_value(mrb, reg->select(RSTR_PTR(mrb_str_ptr(argv[0]))));
         }
+        return mrb_int_value(mrb, reg->length());
     }
     return mrb_nil_value();
 }
 mrb_value mrb_cppregexp_split(mrb_state * mrb, mrb_value self)
 {
+    mrb_value arry = mrb_ary_new(mrb);
     CppRegexp * reg = static_cast<CppRegexp *>(DATA_PTR(self));
     if(nullptr != reg)
     {
         mrb_int argc; mrb_value * argv;
         mrb_get_args(mrb, "*", &argv, &argc);
-        switch(argc)
+        if((1 == argc) && (MRB_TT_STRING == mrb_type(argv[0])))
         {
-        case 1:
-            if(MRB_TT_STRING == mrb_type(argv[0]))
+            std::string str(RSTR_PTR(mrb_str_ptr(argv[0])));
+            for(auto && str : reg->split(str))
             {
-                std::string str( RSTR_PTR(mrb_str_ptr( argv[0] ) ) );
-                mrb_value arry = mrb_ary_new(mrb);
-                for( auto && str : reg->split(str))
-                {
-                    mrb_ary_push(mrb, arry , mrb_str_new_cstr(mrb, str.c_str()));
-                }
-                return arry ;
+                mrb_ary_push(mrb, arry , mrb_str_new_cstr(mrb, str.c_str()));
             }
-            break;
-        default:
-            break;
         }
     }
-    return mrb_nil_value();
+    return arry ;
 }
 
 mrb_value mrb_thread_initialize(mrb_state * mrb, mrb_value self)
@@ -4330,10 +4346,10 @@ unsigned int CppRegexp::select(const char * str)
     }
     return 1;
 }
-std::list<std::string> CppRegexp::split(std::string & org)
+std::list<std::string> CppRegexp::split(std::string & src)
 {
     std::list<std::string> result;
-    result.push_back( org );
+    result.push_back(src);
     for(auto & reg : regs)
     {
         std::list<std::string> temp;

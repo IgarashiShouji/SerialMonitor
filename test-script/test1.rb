@@ -309,50 +309,87 @@ end
 def test_cpp_regexp
   print "CppRegexp test\n"
   # Class method test
-  printf("  reg_match: %s\n",   (CppRegexp.reg_match('123:456:789', ':') ? "OK" : "NG"))
-  printf("  reg_replace: %s\n", CppRegexp.reg_replace('123:456:789', ':', ' '))
-  print  "  reg_split: ", CppRegexp.reg_split('123:456:789', ':'), "\n"
-  printf("  reg_match  1: %s\n",   (!CppRegexp.reg_match('123:456:789', ',', ';', 'i') ? "OK" : "NG"))
-  printf("  reg_match  2: %s\n",   (CppRegexp.reg_match('123:456:789', 'g', ':') ? "OK" : "NG"))
-  printf("  reg_match  3: %s\n",   ( CppRegexp.reg_match('123:456:789', ':', ';', 'o') ? "OK" : "NG"))
-  printf("  reg_match  4: %s\n",   ( CppRegexp.reg_match('123:456:789', ';', ':', 'j') ? "OK" : "NG"))
-  printf("  reg_match  5: %s\n",   ( CppRegexp.reg_match('123:456:789', ',', ';', ':') ? "OK" : "NG"))
-  printf("  reg_match 10: %s\n",   ( CppRegexp.reg_match('123:456:789', [ '1', '5', '9' ]) ? "OK" : "NG"))
-  printf("  reg_match 11: %s\n",   (!CppRegexp.reg_match('123:456:789', [ '1', '5', 'i' ]) ? "OK" : "NG"))
-  printf("  reg_match 12: %s\n",   (!CppRegexp.reg_match('123:456:789', [ '1', 'i', '9' ]) ? "OK" : "NG"))
-  printf("  reg_match 13: %s\n",   (!CppRegexp.reg_match('123:456:789', [ 'i', '5', '9' ]) ? "OK" : "NG"))
-  printf("  reg_match 20: %s\n",   (!CppRegexp.reg_match('123:456:789', ',', [ ';', 'h' ]) ? "OK" : "NG"))
-  printf("  reg_match 21: %s\n",   (!CppRegexp.reg_match('123:456:789', 'I', [ '5', 'e' ]) ? "OK" : "NG"))
-  printf("  reg_match 22: %s\n",   (!CppRegexp.reg_match('123:456:789', 'H', [ 'v', '8' ]) ? "OK" : "NG"))
-  printf("  reg_match 23: %s\n",   ( CppRegexp.reg_match('123:456:789', ':', [ 'H', 'V' ]) ? "OK" : "NG"))
-  printf("  reg_match 24: %s\n",   ( CppRegexp.reg_match('123:456:789', 'I', [ '6', '7' ]) ? "OK" : "NG"))
-  printf("  reg_match 25: %s\n",   ( CppRegexp.reg_match('123:456:789', [ '1', '4' ], 'B') ? "OK" : "NG"))
-  printf("  reg_match 26: %s\n",   (!CppRegexp.reg_match('123:456:789', [ 'G', '4' ], 'B') ? "OK" : "NG"))
-  printf("  reg_match 27: %s\n",   (!CppRegexp.reg_match('123:456:789', [ '3', 'G' ], 'B') ? "OK" : "NG"))
-  printf("  reg_match 27: %s\n",   ( CppRegexp.reg_match('123:456:789', [ '3', 'G' ], '9') ? "OK" : "NG"))
+  ## CppRegexp.reg_match
+  printf("  reg_match  1: %s\n",   ( CppRegexp.reg_match('123:456:789', ':')                      ? "OK" : "NG"))
+  printf("  reg_match  2: %s\n",   (!CppRegexp.reg_match('123:456:789', 'A')                      ? "OK" : "NG"))
+  printf("  reg_match  3: %s\n",   (!CppRegexp.reg_match('123:456:789', ',', ';', 'i')            ? "OK" : "NG"))
+  printf("  reg_match  4: %s\n",   ( CppRegexp.reg_match('123:456:789', 'g', ':')                 ? "OK" : "NG"))
+  printf("  reg_match  5: %s\n",   ( CppRegexp.reg_match('123:456:789', ':', ';', 'o')            ? "OK" : "NG"))
+  printf("  reg_match 10: %s\n",   ( CppRegexp.reg_match('123:456:789', ';', ':', 'j')            ? "OK" : "NG"))
+  printf("  reg_match 11: %s\n",   ( CppRegexp.reg_match('123:456:789', ',', ';', ':')            ? "OK" : "NG"))
+  printf("  reg_match 12: %s\n",   ( CppRegexp.reg_match('123:456:789', ['1', '5', '9'])          ? "OK" : "NG"))
+  printf("  reg_match 13: %s\n",   ( CppRegexp.reg_match('123:456:789', ['a', 'A'], '7')          ? "OK" : "NG"))
+  printf("  reg_match 14: %s\n",   ( CppRegexp.reg_match('123:456:789', '1', ['i', 'A'])          ? "OK" : "NG"))
+  printf("  reg_match 15: %s\n",   (!CppRegexp.reg_match('123:456:789', ['a', 'A', '-'])          ? "OK" : "NG"))
+  printf("  reg_match 16: %s\n",   ( CppRegexp.reg_match(['123', '456', '789'], '23')             ? "OK" : "NG"))
+  printf("  reg_match 17: %s\n",   ( CppRegexp.reg_match(['123', '456', '789'], '6')              ? "OK" : "NG"))
+  printf("  reg_match 18: %s\n",   ( CppRegexp.reg_match(['123', '456', '789'], '8')              ? "OK" : "NG"))
+  printf("  reg_match 19: %s\n",   (!CppRegexp.reg_match(['123', '456', '789'], 'A')              ? "OK" : "NG"))
+  printf("  reg_match 20: %s\n",   ( CppRegexp.reg_match(['123', '456', '789'], ['A', '23'])      ? "OK" : "NG"))
+  printf("  reg_match 21: %s\n",   ( CppRegexp.reg_match(['123', '456', '789'], 'A', '6', 'B')    ? "OK" : "NG"))
+  printf("  reg_match 22: %s\n",   ( CppRegexp.reg_match(['123', '456', '789'], 'A', ['B', '8'])  ? "OK" : "NG"))
+  printf("  reg_match 23: %s\n",   (!CppRegexp.reg_match(['123', '456', '789'], ['A', 'B', 'C'])  ? "OK" : "NG"))
+  ## CppRegexp.reg_grep
+  arry = CppRegexp.reg_grep('123:456:789', ':'                           ); print "  reg_grep  1: ", sprintf("%s: ", (arry == ['123:456:789']       ? "OK" : "NG")), arry, "\n"
+  arry = CppRegexp.reg_grep('123:456:789', 'A'                           ); print "  reg_grep  2: ", sprintf("%s: ", (arry == []                    ? "OK" : "NG")), arry, "\n"
+  arry = CppRegexp.reg_grep(['123', '456', '789'], '23'                  ); print "  reg_grep  3: ", sprintf("%s: ", (arry == ['123']               ? "OK" : "NG")), arry, "\n"
+  arry = CppRegexp.reg_grep(['123', '456', '789'], '6'                   ); print "  reg_grep  4: ", sprintf("%s: ", (arry == ['456']               ? "OK" : "NG")), arry, "\n"
+  arry = CppRegexp.reg_grep(['123', '456', '789'], '8'                   ); print "  reg_grep  5: ", sprintf("%s: ", (arry == ['789']               ? "OK" : "NG")), arry, "\n"
+  arry = CppRegexp.reg_grep(['123', '456', '789'], 'A'                   ); print "  reg_grep  6: ", sprintf("%s: ", (arry == []                    ? "OK" : "NG")), arry, "\n"
+  arry = CppRegexp.reg_grep(['123', '456', '789'], '[0-9]'               ); print "  reg_grep  7: ", sprintf("%s: ", (arry == ['123', '456', '789'] ? "OK" : "NG")), arry, "\n"
+  arry = CppRegexp.reg_grep(['123', '456', '789'], ['[0-9]', '23']       ); print "  reg_grep  8: ", sprintf("%s: ", (arry == ['123']               ? "OK" : "NG")), arry, "\n"
+  arry = CppRegexp.reg_grep(['123', '456', '789'], '.', '6', '4'         ); print "  reg_grep  9: ", sprintf("%s: ", (arry == ['456']               ? "OK" : "NG")), arry, "\n"
+  arry = CppRegexp.reg_grep(['123', '456', '789'], '.', ['9', '8']       ); print "  reg_grep 10: ", sprintf("%s: ", (arry == ['789']               ? "OK" : "NG")), arry, "\n"
+  arry = CppRegexp.reg_grep(['123', '456', '789'], ['.', '[0-9]', '[29]']); print "  reg_grep 11: ", sprintf("%s: ", (arry == ['123', '789']        ? "OK" : "NG")), arry, "\n"
+  ## CppRegexp.reg_replace
+  arry = CppRegexp.reg_replace('123:456:789', ' ', ':'                     ); print "  reg_replace  1: ", sprintf("%s: ", (arry == ['123 456 789']       ? "OK" : "NG")), arry, "\n"
+  arry = CppRegexp.reg_replace('123:456:789', ' ', 'A'                     ); print "  reg_replace  2: ", sprintf("%s: ", (arry == ['123:456:789']       ? "OK" : "NG")), arry, "\n"
+  arry = CppRegexp.reg_replace(['123', '456', '789'], '--', '23'           ); print "  reg_replace  3: ", sprintf("%s: ", (arry == ['1--', '456', '789'] ? "OK" : "NG")), arry, "\n"
+  arry = CppRegexp.reg_replace(['123', '456', '789'], '-', '6'             ); print "  reg_replace  4: ", sprintf("%s: ", (arry == ['123', '45-', '789'] ? "OK" : "NG")), arry, "\n"
+  arry = CppRegexp.reg_replace(['123', '456', '789'], 'A', '8'             ); print "  reg_replace  5: ", sprintf("%s: ", (arry == ['123', '456', '7A9'] ? "OK" : "NG")), arry, "\n"
+  arry = CppRegexp.reg_replace(['123', '456', '789'], '*', 'A'             ); print "  reg_replace  6: ", sprintf("%s: ", (arry == ['123', '456', '789'] ? "OK" : "NG")), arry, "\n"
+  arry = CppRegexp.reg_replace(['123', '456', '789'], 'i', '[A-Z]'         ); print "  reg_replace  7: ", sprintf("%s: ", (arry == ['123', '456', '789'] ? "OK" : "NG")), arry, "\n"
+  arry = CppRegexp.reg_replace(['123', '456', '789'], '*', ['[23]', '7']   ); print "  reg_replace  8: ", sprintf("%s: ", (arry == ['1**', '456', '*89'] ? "OK" : "NG")), arry, "\n"
+  arry = CppRegexp.reg_replace(['123', '456', '789'], '&', '7', '6', '4'   ); print "  reg_replace  9: ", sprintf("%s: ", (arry == ['123', '&5&', '&89'] ? "OK" : "NG")), arry, "\n"
+  arry = CppRegexp.reg_replace(['123', '456', '789'], 'm', '7', ['9', '8'] ); print "  reg_replace 10: ", sprintf("%s: ", (arry == ['123', '456', 'mmm'] ? "OK" : "NG")), arry, "\n"
+  arry = CppRegexp.reg_replace(['123', '456', '789'], '?', ['2', '5', '8'] ); print "  reg_replace 11: ", sprintf("%s: ", (arry == ['1?3', '4?6', '7?9'] ? "OK" : "NG")), arry, "\n"
+  ## CppRegexp.reg_split
+  arry = CppRegexp.reg_split('123,456:789', ':'        ); print "  reg_split  1: ", sprintf("%s: ", (arry == ['123,456','789']   ? "OK" : "NG")), arry, "\n"
+  arry = CppRegexp.reg_split('123,456:789', ',', ':'   ); print "  reg_split  2: ", sprintf("%s: ", (arry == ['123','456','789'] ? "OK" : "NG")), arry, "\n"
+  arry = CppRegexp.reg_split('123,456:789', [',', ':'] ); print "  reg_split  3: ", sprintf("%s: ", (arry == ['123','456','789'] ? "OK" : "NG")), arry, "\n"
+  ## CppRegexp.reg_select
+  arry = CppRegexp.reg_select('cmd1', 'cmd1', 'cmd2', 'cmd3'   ); print "  reg_select  1: ", sprintf("%s: ", (arry == 0 ? "OK" : "NG")), arry, "\n"
+  arry = CppRegexp.reg_select('cmd2', 'cmd1', ['cmd2', 'cmd3'] ); print "  reg_select  2: ", sprintf("%s: ", (arry == 1 ? "OK" : "NG")), arry, "\n"
+  arry = CppRegexp.reg_select('cmd3', ['cmd1', 'cmd2', 'cmd3'] ); print "  reg_select  3: ", sprintf("%s: ", (arry == 2 ? "OK" : "NG")), arry, "\n"
+  arry = CppRegexp.reg_select('cmd4', ['cmd1', 'cmd2', 'cmd3'] ); print "  reg_select  4: ", sprintf("%s: ", (arry == 3 ? "OK" : "NG")), arry, "\n"
 
   # Object method test
   reg = CppRegexp.new('[abc]')
-  print '  abcdecg: ', reg.match('abcdecg') ? "ok" : "ng" , "\n"
-  print '  test: ',    !reg.match('test')   ? "ok" : "ng" , "\n"
+  print '  abcdecg: check ',  reg.match('abcdecg') ? "OK" : "NG" , "\n"
+  print '  test: check ',    !reg.match('test')   ? "OK" : "NG" , "\n"
   reg = CppRegexp.new( [ '[abc]', '[def]', '[xyz]' ] )
-  printf("  reg.length(): %d\n", reg.length())
-  printf("  select:a -> %d: check %s\n", reg.select('a'), (0==reg.select('a') ? 'ok' : 'ng'))
-  printf("  select:e -> %d: check %s\n", reg.select('e'), (1==reg.select('e') ? 'ok' : 'ng'))
+  printf("  reg.length(): check %s: %d\n", (3 == reg.length() ? 'OK' : 'NG'), reg.length())
+  printf("  select:a -> %d: check %s\n", reg.select('a'), (0==reg.select('a') ? 'OK' : 'NG'))
+  printf("  select:e -> %d: check %s\n", reg.select('e'), (1==reg.select('e') ? 'OK' : 'NG'))
   reg = CppRegexp.new( '[abc]', '[def]', '[xyz]' )
-  printf("  select:z -> %d: check %s\n", reg.select('z'), (2==reg.select('z') ? 'ok' : 'ng'))
-  printf("  select:  -> %d: check %s\n", reg.select(' '), (3==reg.select(' ') ? 'ok' : 'ng'))
-  reg = CppRegexp.new('1', '[bc]')
-  print "  grep:  ", reg.grep(  [ '10:a', '11:b', '00:ig', '12:c', '13:d' ] ), "\n"
-  print "  match: ", reg.match( [ '10:a', '11:b', '00:ig', '12:c', '13:d' ] ), "\n"
-  reg = CppRegexp.new('1', 'x')
-  print "  grep: ", reg.grep('0', 's1as2bs3cs4ds5es6fs7xs8xs9zs10 s11', 's1as2bs3cs4ds5es6fs7    s11'), "\n"
-  reg = CppRegexp.new(' ', 'x')
-  print "  replace: ", reg.replace('--', 's1as2bs3cs4ds5es6fs7xs8xs9zs10 s11', 's1as2bs3cs4ds5es6fs7    s11'), "\n"
+  printf("  select:z -> %d: check %s\n", reg.select('z'), (2==reg.select('z') ? 'OK' : 'NG'))
+  printf("  select:  -> %d: check %s\n", reg.select(' '), (3==reg.select(' ') ? 'OK' : 'NG'))
 
+  text = ['10:a','11:b','00:ig','12:c','13:d']
+  reg = CppRegexp.new('1', '[bc]')
+  print "  grep:  check ", (["11:b","12:c"] == reg.grep(Array.new(text)) ? 'OK' : 'NG'), ': ', reg.grep(Array.new(text)), "\n"
+  print "  match: check ", (["10:a","11:b","12:c","13:d"] == reg.match(Array.new(text)) ? 'OK' : 'NG'), ': ', reg.match(Array.new(text)), "\n"
+
+  text = ['0', 's1as2bs3cs4ds5es6fs7xs8xs9zs10 s11', 's1as2bs3cs4ds5es6fs7    s11']
+  reg = CppRegexp.new('1', 'x')
+  print "  grep: check ", (["s1as2bs3cs4ds5es6fs7xs8xs9zs10 s11"] == reg.grep(Array.new(text)) ? 'OK' : 'NG'), ': ', reg.grep(Array.new(text)), "\n"
+
+  text = ['123', '456', '789']
+  reg = CppRegexp.new('5', '8')
+  print "  replace: check ", (['123', '4-6', '7-9'] == reg.replace('-', Array.new(text)) ? 'OK' : 'NG'), ': ', reg.replace('-', Array.new(text)), "\n"
   reg = CppRegexp.new(':', ',')
-  msg = '123,456,789:abc,dfg,hij'
-  print "  split: ", reg.split(msg), "\n"
+  text = '123,456,789:abc,dfg,hij'
+  print "  split: check ", (["123", "456", "789", "abc", "dfg", "hij"] == reg.split(text) ? 'OK' : 'NG'), ': ', reg.split(text), "\n"
 
   print "CppRegexp test end\n"
 end
