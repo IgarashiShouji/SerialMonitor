@@ -342,8 +342,8 @@ def test_cpp_regexp
   arry = CppRegexp.reg_grep(['123', '456', '789'], '.', ['9', '8']       ); print "  reg_grep 10: ", sprintf("%s: ", (arry == ['789']               ? "OK" : "NG")), arry, "\n"
   arry = CppRegexp.reg_grep(['123', '456', '789'], ['.', '[0-9]', '[29]']); print "  reg_grep 11: ", sprintf("%s: ", (arry == ['123', '789']        ? "OK" : "NG")), arry, "\n"
   ## CppRegexp.reg_replace
-  arry = CppRegexp.reg_replace('123:456:789', ' ', ':'                     ); print "  reg_replace  1: ", sprintf("%s: ", (arry == ['123 456 789']       ? "OK" : "NG")), arry, "\n"
-  arry = CppRegexp.reg_replace('123:456:789', ' ', 'A'                     ); print "  reg_replace  2: ", sprintf("%s: ", (arry == ['123:456:789']       ? "OK" : "NG")), arry, "\n"
+  arry = CppRegexp.reg_replace('123:456:789', ':', ' '                     ); print "  reg_replace  1: ", sprintf("%s: ", (arry == '123 456 789'         ? "OK" : "NG")), arry, "\n"
+  arry = CppRegexp.reg_replace('123:456:789', 'A', ' '                     ); print "  reg_replace  2: ", sprintf("%s: ", (arry == '123:456:789'         ? "OK" : "NG")), arry, "\n"
   arry = CppRegexp.reg_replace(['123', '456', '789'], '--', '23'           ); print "  reg_replace  3: ", sprintf("%s: ", (arry == ['1--', '456', '789'] ? "OK" : "NG")), arry, "\n"
   arry = CppRegexp.reg_replace(['123', '456', '789'], '-', '6'             ); print "  reg_replace  4: ", sprintf("%s: ", (arry == ['123', '45-', '789'] ? "OK" : "NG")), arry, "\n"
   arry = CppRegexp.reg_replace(['123', '456', '789'], 'A', '8'             ); print "  reg_replace  5: ", sprintf("%s: ", (arry == ['123', '456', '7A9'] ? "OK" : "NG")), arry, "\n"

@@ -650,10 +650,17 @@ print CppRegexp.reg_match(['test', 'reg', '123'], ['A', 'e'], '3')      # => ['r
 This is replace string list to arg[0] by regex array match(mathes any one).
 
 ~~~
-print CppRegexp.reg_replace('test', 'A', 'es')                              # => tAt
+print CppRegexp.reg_replace('test', 'ex', 'A')                              # => tAt
+                                    ^^^  ^^^
+                                    |||  +++-  Replace String
+                                    +++------- Regex list
+
 print CppRegexp.reg_replace(['test', 'reg', '123'], 'A', ['e', 's'])        # => [ 'tAAt', 'rAg', '123' ]
 print CppRegexp.reg_replace(['test', 'reg', '123'], '-', ['e', 's'], '1')   # => [ 't--t', 'r-g', '-23' ]
 print CppRegexp.reg_replace(['test', 'reg', '123'], '-', 'A')               # => [ 'test', 'reg', '123' ]
+                                                    ^^^  ^^^
+                                                    |||  +++-  Regex list
+                                                    +++------- Replace String
 ~~~
 
 ### CppRegexp.reg_split

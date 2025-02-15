@@ -852,7 +852,7 @@ static void mrb_xlsx_context_free(mrb_state * mrb, void * ptr);
 
 
 /* -- static tables -- */
-static const char *  SoftwareRevision = "0.14.14";
+static const char *  SoftwareRevision = "0.14.15";
 static const struct mrb_data_type mrb_core_context_type =
 {
     "mrb_core_context",         mrb_core_context_free
@@ -2414,9 +2414,23 @@ static mrb_value mrb_cppregexp_reg_grep(mrb_state* mrb, mrb_value self)
 }
 static mrb_value mrb_cppregexp_reg_replace(mrb_state* mrb, mrb_value self)
 {
-    auto arry = mrb_ary_new(mrb);
     mrb_value proc; mrb_int argc; mrb_value * argv;
     mrb_get_args(mrb, "&*", &proc, &argv, &argc);
+    if(  (3 == argc)
+      && (MRB_TT_STRING == mrb_type(argv[0]))
+      && (MRB_TT_STRING == mrb_type(argv[1]))
+      && (MRB_TT_STRING == mrb_type(argv[2])))
+    {
+        std::list<std::string> text;
+        text.push_back(RSTR_PTR(mrb_str_ptr(argv[0])));
+        CppRegexp reg(RSTR_PTR(mrb_str_ptr(argv[1])));
+        reg.replace(text, RSTR_PTR(mrb_str_ptr(argv[2])));
+        for(auto & item : text)
+        {
+            return mrb_str_new_cstr(mrb, item.c_str());
+        }
+    }
+    auto arry = mrb_ary_new(mrb);
     if((3 <= argc) && (MRB_TT_STRING == mrb_type(argv[1])))
     {
         auto str_replace = RSTR_PTR(mrb_str_ptr(argv[1]));
