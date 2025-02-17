@@ -200,8 +200,15 @@ Core * Core::createObject(void)
 }
 
 
-#if 0
 /* --------------------------------------------------------------------------------<< Serial Control >>-------------------------------------------------------------------------------- */
+void SerialControl::setHiPriorityThread(void)
+{
+    HANDLE hThread = GetCurrentThread();
+    SetThreadAffinityMask(hThread, 1);
+    SetThreadPriority(hThread, THREAD_PRIORITY_TIME_CRITICAL);
+}
+
+#if 0
 class SerialControlWinAPI : public SerialControl
 {
 protected:

@@ -142,9 +142,9 @@ std::size_t SerialControlLinux::send(unsigned char * data, std::size_t size)
         if((0 <= fd) && (port.is_open()))
         {
             setRTS(true);
-            unsigned int send_time = (1000 * bit_num * (size+1)) / profile.baud;
+            unsigned int send_time = (((bit_num * 1000000) / profile.baud) * size) + ((2 * 100000) / profile.baud);
             wr_size = port.write_some(buffer(data, size));
-            std::this_thread::sleep_for(std::chrono::milliseconds(send_time));
+            std::this_thread::sleep_for(std::chrono::microseconds(send_time));
             setRTS(false);
         }
     } catch(...) { }
@@ -194,6 +194,16 @@ void SerialControlLinux::close(void)
 SerialControl * SerialControl::createObject(const std::string & name, SerialControl::Profile & profile)
 {
     return new SerialControlLinux(name.c_str(), profile);
+}
+
+void SerialControl::setHiPriorityThread(void)
+{
+#if 0
+    if (setpriority(PRIO_PROCESS, 0, -20) != 0)
+    {
+        std::cerr << "Failed to set priority" << std::endl;
+    }
+#endif
 }
 
 

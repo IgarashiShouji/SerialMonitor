@@ -852,7 +852,7 @@ static void mrb_xlsx_context_free(mrb_state * mrb, void * ptr);
 
 
 /* -- static tables -- */
-static const char *  SoftwareRevision = "0.14.15";
+static const char *  SoftwareRevision = "0.14.16";
 static const struct mrb_data_type mrb_core_context_type =
 {
     "mrb_core_context",         mrb_core_context_free
@@ -4810,7 +4810,6 @@ void SerialMonitor::reciver(size_t idx)
     auto user_timer = [&](size_t t_idx)
     {
         std::lock_guard<std::mutex> lock(mtx);
-
         if(CLOSE != cache[idx].state)
         {
             if( !com[idx]->rts_status() )

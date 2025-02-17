@@ -51,6 +51,7 @@ public:
     virtual bool rts_status(void) const = 0;
     virtual void setRTS(bool rts) = 0;
     virtual void close(void) = 0;
+    static void setHiPriorityThread(void);
 };
 
 
