@@ -852,7 +852,7 @@ static void mrb_xlsx_context_free(mrb_state * mrb, void * ptr);
 
 
 /* -- static tables -- */
-static const char *  SoftwareRevision = "0.14.16";
+static const char *  SoftwareRevision = "0.14.17";
 static const struct mrb_data_type mrb_core_context_type =
 {
     "mrb_core_context",         mrb_core_context_free
@@ -4800,6 +4800,7 @@ SerialMonitor::State SerialMonitor::read_wait(BinaryControl & bin)
 }
 void SerialMonitor::reciver(size_t idx)
 {
+    SerialControl::setHiPriorityThread();
     std::vector<size_t> timer;
     {
         std::lock_guard<std::mutex> lock(mtx);

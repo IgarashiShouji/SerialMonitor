@@ -97,9 +97,9 @@ std::size_t SerialControlBoost::send(unsigned char * data, std::size_t size)
         if(port.is_open())
         {
             setRTS(true);
-            unsigned int send_time = (1000 * bit_num * (size+1)) / profile.baud;
+            unsigned int send_time = (((bit_num * 1000000) / profile.baud) * size) + ((2 * 100000) / profile.baud);
             wr_size = port.write_some(buffer(data, size));
-            std::this_thread::sleep_for(std::chrono::milliseconds(send_time));
+            std::this_thread::sleep_for(std::chrono::microseconds(send_time));
             setRTS(false);
         }
     } catch(...) { }

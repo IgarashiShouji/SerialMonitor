@@ -198,10 +198,21 @@ SerialControl * SerialControl::createObject(const std::string & name, SerialCont
 
 void SerialControl::setHiPriorityThread(void)
 {
+    pthread_t thread = pthread_self();
+    struct sched_param param;
+    int policy;
+    pthread_getschedparam(thread, &policy, &param);
+    policy = SCHED_FIFO;
+    param.sched_priority = sched_get_priority_max(SCHED_FIFO);
+    if (pthread_setschedparam(thread, policy, &param) == 0) {
+//        std::cout << "Thread priority set to highest.\n";
+    } else {
+//        std::cerr << "Failed to set thread priority. (Are you root?)\n";
+    }
 #if 0
-    if (setpriority(PRIO_PROCESS, 0, -20) != 0)
+    if(setpriority(PRIO_PROCESS, 0, -20) != 0)
     {
-        std::cerr << "Failed to set priority" << std::endl;
+        printf("Failed to set priority\n");
     }
 #endif
 }
