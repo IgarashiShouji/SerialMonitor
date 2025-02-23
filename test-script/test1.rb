@@ -397,6 +397,12 @@ end
 def test_thead
   print "thread test\n"
   begin
+    Core.tick
+    WorkerThread.ms_sleep(200)
+    tick = Core.tick
+    printf("  WorkerThread.ms_sleep: check %s: result %d\n", (tick == 200 ? 'OK' : 'NG'), tick)
+  end
+  begin
     th = WorkerThread.new
     th1 = WorkerThread.run(1) do |th|
       th.synchronize do

@@ -188,6 +188,15 @@ class OpenXLSX
       end
     end
   end
+  def readArray(sheet_name, clm, row, len)
+    list = Array.new
+    sheet(sheet_name) do
+      len.times do |idx|
+        list.push(cell(sprintf("%s%d", clm, row + idx)))
+      end
+    end
+    return list
+  end
 end
 
 class SvgSequence
