@@ -184,7 +184,9 @@ class OpenXLSX
   def writeArray(sheet_name, clm, row, list)
     sheet(sheet_name) do
       list.each_with_index do |data, idx|
-        set_value(sprintf("%s%d", clm, row + idx), data)
+        if nil != data then
+          set_value(sprintf("%s%d", clm, row + idx), data)
+        end
       end
     end
   end
