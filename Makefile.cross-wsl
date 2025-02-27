@@ -16,6 +16,7 @@ clean:
 
 $(TARGET): Objects/main.o $(MAIN_DEPS)
 	$(CPP) $(CPPFLAGS) $< -o $@ $(OBJS) $(LIBS)
+	x86_64-w64-mingw32.static-strip $(TARGET)
 
 Objects:
 	mkdir -p Objects
