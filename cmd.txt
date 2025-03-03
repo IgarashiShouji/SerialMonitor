@@ -1,0 +1,5 @@
+load Source/help.txt
+load test-script/test1.rb
+compress
+save Source/help.txt.compress
+quit

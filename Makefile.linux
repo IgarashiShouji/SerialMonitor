@@ -50,8 +50,9 @@ Source/default_options.c:      Source/default_options.rb mruby/build/host/lib/li
 	./mruby/bin/mrbc -Bdefault_options $<
 Source/default_script.c:      Source/default_script.rb  mruby/build/host/lib/libmruby.a
 	./mruby/bin/mrbc -Bdefault_script $<
-Objects/help.o: Source/help.s Source/help.txt
-	yes | lz4 Source/help.txt
-	g++ -c -Wa,--noexecstac -o $@ $<
 Objects/qrcodegen.o: QR-Code-generator/cpp/qrcodegen.cpp
 	$(CPP) $(CPPFLAGS) -c -o $@ $<
+Objects/help.o: Source/help.s Source/help.txt.compress
+	g++ -c -Wa,--noexecstac -o $@ $<
+Source/help.txt.compress: Source/help.txt test-script/test1.rb
+	cat cmd.txt | ./$(TARGET)
