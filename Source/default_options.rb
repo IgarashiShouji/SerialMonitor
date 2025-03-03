@@ -10,6 +10,11 @@ class BinEdit
     bin.set(0, format, arry)
     return bin.dump
   end
+  def cat(src)
+    pos = length
+    resize(length + src.length)
+    memcpy(pos, src)
+  end
 
   def self.readBinToXlsx(bin_file, xls_file)
     xls = OpenXLSX.new
@@ -667,6 +672,20 @@ class Core
     end
     list_cmd.push(cmd)
 
+    list_reg.push('^[ \t]*compress\b')
+    cmd = Proc.new do |str|
+      # compress
+      bin.compress()
+    end
+    list_cmd.push(cmd)
+
+    list_reg.push('^[ \t]*uncompress\b')
+    cmd = Proc.new do |str|
+      # compress
+      bin.uncompress()
+    end
+    list_cmd.push(cmd)
+
     list_reg.push('^[ \t]*save\b')
     cmd = Proc.new do |str|
       # save command
@@ -679,7 +698,7 @@ class Core
     cmd = Proc.new do |str|
       # load command
       fname = CppRegexp.reg_replace(str, '^[ \t]*load[ \t]*', '')
-      bin = BinEdit.new(sprintf("file:%s", fname))
+      bin.cat(BinEdit.new(sprintf("file:%s", fname)))
     end
     list_cmd.push(cmd)
 

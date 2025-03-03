@@ -162,16 +162,25 @@ def test_bin_edit
 
   begin
     print "  BinEdit: test compress\n"
-    bin = BinEdit.new('010203040506070809112233445566778899AABBCCDDEEFF010203040506070809')
-    printf("  compress: \n")
-    printf("  %d: %s\n", bin.length, bin.dump)
-    bin.compress();   printf("  %d: %s\n", bin.length, bin.dump)
-    bin.uncompress(); printf("  %d: %s\n", bin.length, bin.dump)
     bin = BinEdit.new('010203040506070809FFFFFFFFFFFFFFFFFFFFFFFFFFFFFF010203040506070809')
     printf("  compress: \n")
     printf("  %d: %s\n", bin.length, bin.dump)
     bin.compress();   printf("  %d: %s\n", bin.length, bin.dump)
+    printf("  check %s: bin.length -> %d\n", (23 == bin.length ? 'OK' : 'NG'), bin.length)
+    printf("  check %s: bin.length -> %s\n", ('AA010203040506070809FF010090010203040506070809' == bin.dump ? 'OK' : 'NG'), bin.dump)
     bin.uncompress(); printf("  %d: %s\n", bin.length, bin.dump)
+    printf("  check %s: bin.length -> %d\n", (33 == bin.length ? 'OK' : 'NG'), bin.length)
+    printf("  check %s: bin.length -> %s\n", ('010203040506070809FFFFFFFFFFFFFFFFFFFFFFFFFFFFFF010203040506070809' == bin.dump ? 'OK' : 'NG'), bin.dump)
+
+    bin = BinEdit.new('010203040506070809112233445566778899AABBCCDDEEFF010203040506070809')
+    printf("  compress: \n")
+    printf("  %d: %s\n", bin.length, bin.dump)
+    bin.compress();   printf("  %d: %s\n", bin.length, bin.dump)
+    printf("  check %s: bin.length -> %d\n", (33 == bin.length ? 'OK' : 'NG'), bin.length)
+    printf("  check %s: bin.length -> %s\n", ('010203040506070809112233445566778899AABBCCDDEEFF010203040506070809' == bin.dump ? 'OK' : 'NG'), bin.dump)
+    bin.uncompress(); printf("  %d: %s\n", bin.length, bin.dump)
+    printf("  check %s: bin.length -> %d\n", (33 == bin.length ? 'OK' : 'NG'), bin.length)
+    printf("  check %s: bin.length -> %s\n", ('010203040506070809112233445566778899AABBCCDDEEFF010203040506070809' == bin.dump ? 'OK' : 'NG'), bin.dump)
     print "\n"
   end
 
@@ -261,6 +270,16 @@ def test_bin_edit
     printf("  check %s: %s\n", (0 != bin1.memcmp(4, 1, bin2, 2) ? 'OK' : 'NG'),     bin1.memcmp(4, 1, bin2, 2))
     printf("  check %s: %s\n", (     bin1.memcmp(5, 1, bin3, 2) < 0 ? 'OK' : 'NG'), bin1.memcmp(5, 1, bin3, 2))
     printf("  check %s: %s\n", (0 <  bin1.memcmp(5, 1, bin4, 2) ? 'OK' : 'NG'),     bin1.memcmp(5, 1, bin4, 2))
+    print "\n"
+  end
+
+  begin
+    print "  BinEdit: cat\n"
+    bin1 = BinEdit.new('010203')
+    printf("  check %s: %s\n", ('010203' == bin1.dump ? 'OK' : 'NG'), bin1.dump)
+    bin2 = BinEdit.new('112233')
+    bin1.cat(bin2)
+    printf("  check %s: %s\n", ('010203112233' == bin1.dump ? 'OK' : 'NG'), bin1.dump)
     print "\n"
   end
 

@@ -852,7 +852,7 @@ static void mrb_xlsx_context_free(mrb_state * mrb, void * ptr);
 
 
 /* -- static tables -- */
-static const char *  SoftwareRevision = "0.15.00";
+static const char *  SoftwareRevision = "0.15.01";
 static const struct mrb_data_type mrb_core_context_type =
 {
     "mrb_core_context",         mrb_core_context_free
@@ -3456,7 +3456,6 @@ uint32_t BinaryControl::uncompress(void)
 {
     if(nullptr != data)
     {
-        if(0 == compress_size) { compress_size = length; length = 0; }
         if(0 < compress_size)
         {
             if(0 < length)
@@ -4982,8 +4981,10 @@ OpenXLSXCtrl::Type OpenXLSXCtrl::get_cell(std::string & cell, OpenXLSXCtrl::Data
 /* -------- << Program Main >>-------- */
 extern "C"
 {
-extern const char    help_msg[];
-extern unsigned int  help_size;
+//extern const char    help_msg[];
+//extern unsigned int  help_size;
+extern const char    help_comp[];
+extern unsigned int  help_comp_size;
 }
 int main(int argc, char * argv[])
 {
@@ -5036,10 +5037,9 @@ int main(int argc, char * argv[])
             std::cout << "smon Revision " << SoftwareRevision << std::endl;
             std::cout << std::endl;
             std::cout << desc << std::endl;
-            std::cout << help_msg << std::endl;
-#if 0
-            printf("debug: %d\n", help_size);
-#endif
+            std::vector<unsigned char> text(10*1024*1024);
+            auto size = LZ4_decompress_safe(reinterpret_cast<const char *>(help_comp), reinterpret_cast<char *>(&(text[0])), help_comp_size, text.size());
+            std::cout << &(text[0]) << std::endl;
             return 0;
         }
         std::vector<std::string> arg;
