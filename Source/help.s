@@ -13,7 +13,6 @@ help_size:
     .global help_comp
 help_comp:
     .incbin "Source/help.txt.compress"
-    .zero 1
     .set _sizeof_help_comp, . - help_comp
     .global help_comp_size
 help_comp_size:

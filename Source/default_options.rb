@@ -675,7 +675,15 @@ class Core
     list_reg.push('^[ \t]*compress\b')
     cmd = Proc.new do |str|
       # compress
-      bin.compress()
+      fname = CppRegexp.reg_replace(str, '^[ \t]*compress[ \t]*', '')
+      if 0 < fname.length then
+        # load compress file
+        printf("load-compress: %s\n", fname)
+        bin.resize(0)
+        bin = BinEdit.new(sprintf("compress:%s", fname))
+      else
+        bin.compress()
+      end
     end
     list_cmd.push(cmd)
 

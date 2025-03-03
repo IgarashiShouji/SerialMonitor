@@ -852,7 +852,7 @@ static void mrb_xlsx_context_free(mrb_state * mrb, void * ptr);
 
 
 /* -- static tables -- */
-static const char *  SoftwareRevision = "0.15.01";
+static const char *  SoftwareRevision = "0.15.02";
 static const struct mrb_data_type mrb_core_context_type =
 {
     "mrb_core_context",         mrb_core_context_free
@@ -5039,6 +5039,7 @@ int main(int argc, char * argv[])
             std::cout << desc << std::endl;
             std::vector<unsigned char> text(10*1024*1024);
             auto size = LZ4_decompress_safe(reinterpret_cast<const char *>(help_comp), reinterpret_cast<char *>(&(text[0])), help_comp_size, text.size());
+            text[size] = '\0';
             std::cout << &(text[0]) << std::endl;
             return 0;
         }
