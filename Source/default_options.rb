@@ -412,6 +412,8 @@ class Core
     else
       port = args.shift()
       Smon.open(port) do |smon|
+        bin = BinEdit.new
+        while Smon::GAP != smon.read_wait(bin); end
         printf("Date: %s\n", Core.date())
         smon.timer(Smon::CTIMER, (20*1000))
         args.each do |data|
@@ -423,7 +425,6 @@ class Core
           interval = 0
           loop = true
           rdata = ''
-          bin = BinEdit.new
           while loop do
             state = smon.read_wait(bin)
             now = Core.tick()
