@@ -1,0 +1,20 @@
+    .section ".rodata"
+    .balign 4
+
+    .global help_msg
+help_msg:
+    .zero 1
+    .set _sizeof_help_msg, . - help_msg
+    .global help_size
+help_size:
+    .long _sizeof_help_msg
+
+    .global help_comp
+help_comp:
+    .zero 1
+    .set _sizeof_help_comp, . - help_comp
+    .global help_comp_size
+help_comp_size:
+    .long _sizeof_help_comp
+
+    .section ".text"

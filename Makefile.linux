@@ -6,8 +6,8 @@ CFLAGS_COMMON=-I ./Include -I ./MyUtilities/Include -I ./mruby/include -I ./Open
 LIBS_COMMON=-L ./MyUtilities -L OpenXLSX/build/output/ -lUtilities -lmruby -lOpenXLSX -llz4
 CFLAGS=-g $(CFLAGS_COMMON) -I ./mruby/build/host/include -pipe -O3 -march=native
 LIBS=-L ./mruby/build/host/lib $(LIBS_COMMON) -lboost_program_options -lboost_filesystem -lpthread
-AR_OBJS=Objects/linux-api.o Objects/qrcodegen.o Objects/default_options.o Objects/default_script.o Objects/help.o
-MAIN_DEPS=$(AR_OBJS) MyUtilities/libUtilities.a mruby/build/host/lib/libmruby.a OpenXLSX/build/output/libOpenXLSX.a Objects
+OBJS=Objects/linux-api.o Objects/qrcodegen.o Objects/default_options.o Objects/default_script.o
+MAIN_DEPS=$(OBJS) MyUtilities/libUtilities.a mruby/build/host/lib/libmruby.a OpenXLSX/build/output/libOpenXLSX.a Objects
 CPPFLAGS=-std=c++17 $(CFLAGS) -I QR-Code-generator/cpp/
 
 all: $(Objects) $(TARGET)
@@ -15,8 +15,11 @@ all: $(Objects) $(TARGET)
 clean:
 	rm -rf $(TARGET) Objects/*.[ao]
 
-$(TARGET): Objects/main.o $(MAIN_DEPS)
-	$(CPP) $(CPPFLAGS) $< $(AR_OBJS) -o $@ $(LIBS)
+$(TARGET): Objects/main.o $(MAIN_DEPS) Objects/help.o
+	$(CPP) $(CPPFLAGS) $< $(OBJS) Objects/help.o -o $@ $(LIBS)
+
+./pre_smon: Objects/main.o $(MAIN_DEPS) Objects/help_dummy.o
+	$(CPP) $(CPPFLAGS) $< $(OBJS) Objects/help_dummy.o -o $@ $(LIBS)
 
 Objects:
 	mkdir -p Objects
@@ -54,5 +57,7 @@ Objects/qrcodegen.o: QR-Code-generator/cpp/qrcodegen.cpp
 	$(CPP) $(CPPFLAGS) -c -o $@ $<
 Objects/help.o: Source/help.s Source/help.txt.compress
 	g++ -c -Wa,--noexecstac -o $@ $<
-Source/help.txt.compress: Source/help.txt test-script/test1.rb
-	cat cmd.txt | ./$(TARGET)
+Source/help.txt.compress: Source/help.txt test-script/test1.rb cmd.txt ./pre_smon
+	cat cmd.txt | ./pre_smon
+Objects/help_dummy.o: Source/help_dummy.s
+	g++ -c -Wa,--noexecstac -o $@ $<
