@@ -1,42 +1,65 @@
 TARGET=smon
-CFLAGS=-g -std=c++14 -DBOOST_THREAD_USE_LIB -I ./Include -I ./MyUtilities/Include -pipe -O3 -march=armv7-a -mfpu=neon-vfpv4 -mfloat-abi=hard
+CPP=/usr/bin/aarch64-unknown-linux-gnu-c++ 
+AR=/usr/bin/aarch64-unknown-linux-gnu-ar
 
-all: Doxygen/html/index.html $(TARGET)
+#CFLAGS=-g -std=c++14 -DBOOST_THREAD_USE_LIB -I ./Include -I ./MyUtilities/Include -pipe -O3 -march=armv7-a -mfpu=neon-vfpv4 -mfloat-abi=hard
+CFLAGS_COMMON=-I ./Include -I ./MyUtilities/Include -I ./mruby/include -I ./OpenXLSX/OpenXLSX -I ./OpenXLSX/OpenXLSX/headers -I ./OpenXLSX/build/OpenXLSX -I ./OpenXLSX/Examples/external/nowide/include --input-charset=UTF-8 --exec-charset=UTF-8
+LIBS_COMMON=-L ./MyUtilities -L OpenXLSX/build/output/ -lUtilities -lmruby -lOpenXLSX -llz4
+#CFLAGS=-g $(CFLAGS_COMMON) -I ./mruby/build/host/include -pipe -O3 -march=armv7-a -mfpu=neon-vfpv4 -mfloat-abi=hard
+CFLAGS=-g $(CFLAGS_COMMON) -I ./mruby/build/host/include -pipe -O3 -march=native
+LIBS=-L ./mruby/build/host/lib $(LIBS_COMMON) -lboost_program_options -lboost_filesystem -lpthread
+OBJS=Objects/linux-api.o Objects/qrcodegen.o Objects/default_options.o Objects/default_script.o
+MAIN_DEPS=$(OBJS) MyUtilities/libUtilities.a mruby/build/host/lib/libmruby.a OpenXLSX/build/output/libOpenXLSX.a Objects
+CPPFLAGS=-std=c++17 $(CFLAGS) -I QR-Code-generator/cpp/
+
+all: $(Objects) $(TARGET)
 
 clean:
 	rm -rf $(TARGET) Objects/*.[ao]
 
-$(TARGET): Objects/main.o MyUtilities/libUtilities.a Objects/libSerialMonitor.a Objects
-	g++ $(CFLAGS) -o $@ $< -L ./Objects -L ./MyUtilities -lSerialMonitor -lUtilities -lboost_program_options -lboost_system -lboost_thread -lpthread
-	doxygen Doxyfile
+$(TARGET): Objects/main.o $(MAIN_DEPS) Objects/help.o
+	$(CPP) $(CPPFLAGS) $< $(OBJS) Objects/help.o -o $@ $(LIBS)
+
+./pre_smon: Objects/main.o $(MAIN_DEPS) Objects/help_dummy.o
+	$(CPP) $(CPPFLAGS) $< $(OBJS) Objects/help_dummy.o -o $@ $(LIBS)
 
 Objects:
 	mkdir -p Objects
 
-MyUtilities:
-	git clone https://github.com/IgarashiShouji/MyUtilities.git
+document: Doxygen/html/index.html
 
 Doxygen:
 	mkdir -p Doxygen
-
-Doxygen/html/index.html: Doxyfile Doxygen \
-							Source/main.cpp Include/CyclicTimer.hpp Include/SerialControl.hpp \
-							Source/CyclicTimer.cpp Include/CyclicTimer.hpp \
-							Source/SerialControl.cpp Include/SerialControl.hpp \
-							Source/RTSControl-mingw.cpp Include/SerialControl.hpp Include/CyclicTimer.hpp 
+Doxygen/html/index.html: Doxygen Doxyfile Source/main.cpp Source/linux-api.cpp Include/SerialControl.hpp Include/ComList.hpp Include/PipeList.hpp
 	doxygen Doxyfile
 
-MyUtilities/libUtilities.a: MyUtilities
-	cd MyUtilities; make -f Makefile all
-
-Objects/libSerialMonitor.a: Objects/CyclicTimer.o Objects/SerialControl.o Objects/RTSControl-linux.o
-	ar rcs $@ $^
+mruby/build/host/lib/libmruby.a:
+	/bin/bash build-mruby.sh
+MyUtilities/libUtilities.a:
+	/bin/bash build-MyUtilities.sh
+OpenXLSX/build/output/libOpenXLSX.a:
+	/bin/bash build-OpenXLSX.sh
+QR-Code-generator/cpp/qrcodegen.cpp:
+	/bin/bash build-QR-Code-generator.sh
 
 Objects/%.o: Source/%.cpp
-	g++ $(CFLAGS) -c -o $@ $<
+	$(CPP) $(CPPFLAGS) -c -o $@ $<
+Objects/%.o: Source/%.c
+	$(CPP) $(CFLAGS) -c -o $@ $<
 
-MyUtilities/Include/Entity.hpp: MyUtilities
-Objects/main.o: Source/main.cpp Include/CyclicTimer.hpp Include/SerialControl.hpp MyUtilities/Include/Entity.hpp Objects
-Objects/CyclicTimer.o: Source/CyclicTimer.cpp Include/CyclicTimer.hpp MyUtilities/Include/Entity.hpp Objects
-Objects/SerialControl.o: Source/SerialControl.cpp Include/SerialControl.hpp Include/CyclicTimer.hpp MyUtilities/Include/Entity.hpp Objects
-Objects/RTSControl-linux.o: Source/RTSControl-linux.cpp Include/SerialControl.hpp Include/CyclicTimer.hpp MyUtilities/Include/Entity.hpp Objects
+Objects/main.o:                Source/main.cpp      Include/SerialControl.hpp MyUtilities/libUtilities.a mruby/build/host/lib/libmruby.a OpenXLSX/build/output/libOpenXLSX.a
+Objects/linux-api.o:           Source/linux-api.cpp Include/SerialControl.hpp MyUtilities/libUtilities.a mruby/build/host/lib/libmruby.a OpenXLSX/build/output/libOpenXLSX.a
+Objects/default_options.o:     Source/default_options.c
+Objects/default_script.o:      Source/default_script.c
+Source/default_options.c:      Source/default_options.rb mruby/build/host/lib/libmruby.a
+	./mruby/bin/mrbc -Bdefault_options $<
+Source/default_script.c:      Source/default_script.rb  mruby/build/host/lib/libmruby.a
+	./mruby/bin/mrbc -Bdefault_script $<
+Objects/qrcodegen.o: QR-Code-generator/cpp/qrcodegen.cpp
+	$(CPP) $(CPPFLAGS) -c -o $@ $<
+Objects/help.o: Source/help.s Source/help.txt.compress
+	g++ -c -Wa,--noexecstac -o $@ $<
+Source/help.txt.compress: Source/help.txt test-script/test1.rb cmd.txt ./pre_smon
+	cat cmd.txt | ./pre_smon
+Objects/help_dummy.o: Source/help_dummy.s
+	g++ -c -Wa,--noexecstac -o $@ $<

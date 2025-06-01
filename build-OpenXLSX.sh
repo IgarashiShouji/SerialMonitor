@@ -1,5 +1,6 @@
 #! /bin/bash
 
+PATH=/usr/bin:/bin
 SYSTEM=`bash --norc ./check-system.sh $1`
 if [ ! -d OpenXLSX ]; then
   git clone https://github.com/troldal/OpenXLSX.git
