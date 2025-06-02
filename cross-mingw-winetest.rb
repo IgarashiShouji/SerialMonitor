@@ -4,7 +4,8 @@ MRuby::CrossBuild.new("cross-mingw") do |conf|
   conf.host_target = "x86_64-w64-mingw32.static"
   conf.exts.executable = ".exe"
 
-  conf.cc.command = "#{conf.host_target}-gcc"
+# conf.cc.command = "#{conf.host_target}-gcc"
+  conf.cc.command = "/opt/mxe/usr/bin/x86_64-w64-mingw32.static-gcc"
   conf.cc.flags = [ '-static', '-Os', '-pipe' ]
   conf.cc.defines << %w(MRB_USE_THREAD_API MRB_USE_MUTEX_API MRB_USE_GVL_API MRB_USE_ATOMIC_API)
 
@@ -13,7 +14,7 @@ MRuby::CrossBuild.new("cross-mingw") do |conf|
   conf.linker.command   = conf.cc.command
   conf.linker.flags     += [ '-static', '-Os', '-pipe' ]
   #conf.linker.libraries += [ 'setupapi', 'ksguid', 'ole32', 'winmm', 'dsound', 'ws2_32', 'readline', 'tinfo' ]
-  conf.linker.libraries += [ 'setupapi', 'ksguid', 'ole32', 'winmm', 'dsound', 'ws2_32', 'readline', 'ncurses' ]
+  conf.linker.libraries += [ 'setupapi', 'ksguid', 'ole32', 'winmm', 'dsound', 'ws2_32', 'ncurses' ]
 
   conf.test_runner do |t|
     thisdir = File.absolute_path( File.dirname(__FILE__) )
