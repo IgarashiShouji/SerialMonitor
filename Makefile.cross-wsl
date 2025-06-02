@@ -5,19 +5,23 @@ CFLAGS_COMMON=-I ./Include -I ./MyUtilities/Include -I ./mruby/include -I ./Open
 LIBS_COMMON=-L ./MyUtilities -L OpenXLSX/build/output/ -lUtilities -lmruby -lOpenXLSX -llz4
 #CFLAGS=-g -I /usr/x86_64-w64-mingw32/include $(CFLAGS_COMMON) -I ./mruby/build/cross-mingw/include -pipe -Os -march=native
 CFLAGS=-g -I /usr/x86_64-w64-mingw32/include $(CFLAGS_COMMON) -I ./mruby/build/cross-mingw/include -pipe -Os
-LIBS=-static -L ./mruby/build/cross-mingw/lib $(LIBS_COMMON) -lboost_atomic-mt-x64 -lboost_date_time-mt-x64 -lboost_program_options-mt-x64 -lboost_serialization-mt-x64 -lboost_filesystem-mt-x64 -lboost_wserialization-mt-x64 -lboost_system-mt-x64 -lpthread -liconv -lsetupapi -lksguid -lole32 -lwinmm -ldsound -lws2_32 -lreadline -lncurses
-OBJS=Objects/qrcodegen.o Objects/default_options.o Objects/default_script.o Objects/mingw-api.o Objects/mingw-SerialControl.o Objects/help.o
+#LIBS=-static -L ./mruby/build/cross-mingw/lib $(LIBS_COMMON) -lboost_atomic-mt-x64 -lboost_date_time-mt-x64 -lboost_program_options-mt-x64 -lboost_serialization-mt-x64 -lboost_filesystem-mt-x64 -lboost_wserialization-mt-x64 -lboost_system-mt-x64 -lpthread -liconv -lsetupapi -lksguid -lole32 -lwinmm -ldsound -lws2_32 -lreadline -lncurses
+LIBS=-static -L ./mruby/build/cross-mingw/lib $(LIBS_COMMON) -lboost_atomic-mt-x64 -lboost_date_time-mt-x64 -lboost_program_options-mt-x64 -lboost_serialization-mt-x64 -lboost_filesystem-mt-x64 -lboost_wserialization-mt-x64 -lboost_system-mt-x64 -lpthread -liconv -lsetupapi -lksguid -lole32 -lwinmm -ldsound -lws2_32 -lncurses
+OBJS=Objects/qrcodegen.o Objects/default_options.o Objects/default_script.o Objects/mingw-api.o Objects/mingw-SerialControl.o
 MAIN_DEPS=$(OBJS) MyUtilities/libUtilities.a OpenXLSX/build/output/libOpenXLSX.a mruby/build/cross-mingw/lib/libmruby.a Objects
 CPPFLAGS=-std=c++17 $(CFLAGS) -I QR-Code-generator/cpp/
 
 all: $(Objects) $(TARGET)
 
 clean:
-	rm -rf $(TARGET) Objects/*.[ao]
+	rm -rf $(TARGET) Objects/pre_smon.exe Objects/*.[ao]
 
-$(TARGET): Objects/main.o $(MAIN_DEPS)
-	$(CPP) $(CPPFLAGS) $< -o $@ $(OBJS) $(LIBS)
+$(TARGET): Objects/main.o $(MAIN_DEPS) Objects/help.o
+	$(CPP) $(CPPFLAGS) $< $(OBJS) Objects/help.o -o $@ $(LIBS)
 	x86_64-w64-mingw32.static-strip $(TARGET)
+
+Objects/pre_smon.exe: Objects/main.o $(MAIN_DEPS) Objects/help_dummy.o
+	$(CPP) $(CPPFLAGS) $< $(OBJS) Objects/help_dummy.o -o $@ $(LIBS)
 
 Objects:
 	mkdir -p Objects
@@ -39,24 +43,25 @@ mruby/build/cross-mingw/lib/libmruby.a:
 QR-Code-generator/cpp/qrcodegen.cpp:
 	/bin/bash build-QR-Code-generator.sh MXE
 
-
 Objects/%.o: Source/%.cpp
 	$(CPP) $(CPPFLAGS) -c -o $@ $<
 Objects/%.o: Source/%.c
 	$(CPP) $(CFLAGS) -c -o $@ $<
 
-Objects/main.o: Source/main.cpp Include/SerialControl.hpp MyUtilities/libUtilities.a mruby/build/cross-mingw/lib/libmruby.a OpenXLSX/build/output/libOpenXLSX.a
-Objects/default_options.o: Source/default_options.c
-Objects/default_script.o: Source/default_script.c
-Source/default_options.c: Source/default_options.rb mruby/build/cross-mingw/lib/libmruby.a
+Objects/main.o:                Source/main.cpp      Include/SerialControl.hpp MyUtilities/libUtilities.a mruby/build/cross-mingw/lib/libmruby.a OpenXLSX/build/output/libOpenXLSX.a
+Objects/default_options.o:     Source/default_options.c
+Objects/default_script.o:      Source/default_script.c
+Source/default_options.c:      Source/default_options.rb mruby/build/cross-mingw/lib/libmruby.a
 	./mruby/bin/mrbc -Bdefault_options $<
-Source/default_script.c: Source/default_script.rb mruby/build/cross-mingw/lib/libmruby.a
+Source/default_script.c:       Source/default_script.rb mruby/build/cross-mingw/lib/libmruby.a
 	./mruby/bin/mrbc -Bdefault_script $<
-Objects/mingw-api.o: Source/mingw-api.cpp MyUtilities/libUtilities.a
+Objects/mingw-api.o:           Source/mingw-api.cpp MyUtilities/libUtilities.a
 Objects/mingw-SerialControl.o: Source/mingw-SerialControl.cpp Include/SerialControl.hpp MyUtilities/libUtilities.a
 Objects/qrcodegen.o: QR-Code-generator/cpp/qrcodegen.cpp
 	$(CPP) $(CPPFLAGS) -c -o $@ $<
 Objects/help.o: Source/help.s Source/help.txt.compress
 	$(CPP) -c -o $@ $<
-Source/help.txt.compress: Source/help.txt test-script/test1.rb
-	cat cmd.txt | ./$(TARGET)
+Source/help.txt.compress: Source/help.txt test-script/test1.rb cmd.txt Objects/pre_smon.exe
+	cat cmd.txt | ./Objects/pre_smon.exe
+Objects/help_dummy.o: Source/help_dummy.s
+	$(CPP) -c -o $@ $<

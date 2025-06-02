@@ -15,12 +15,12 @@ CPPFLAGS=-std=c++17 $(CFLAGS) -I QR-Code-generator/cpp/
 all: $(Objects) $(TARGET)
 
 clean:
-	rm -rf $(TARGET) Objects/*.[ao]
+	rm -rf $(TARGET) Objects/pre_smon Objects/*.[ao]
 
 $(TARGET): Objects/main.o $(MAIN_DEPS) Objects/help.o
 	$(CPP) $(CPPFLAGS) $< $(OBJS) Objects/help.o -o $@ $(LIBS)
 
-./pre_smon: Objects/main.o $(MAIN_DEPS) Objects/help_dummy.o
+Objects/pre_smon: Objects/main.o $(MAIN_DEPS) Objects/help_dummy.o
 	$(CPP) $(CPPFLAGS) $< $(OBJS) Objects/help_dummy.o -o $@ $(LIBS)
 
 Objects:
@@ -58,8 +58,8 @@ Source/default_script.c:      Source/default_script.rb  mruby/build/host/lib/lib
 Objects/qrcodegen.o: QR-Code-generator/cpp/qrcodegen.cpp
 	$(CPP) $(CPPFLAGS) -c -o $@ $<
 Objects/help.o: Source/help.s Source/help.txt.compress
-	g++ -c -Wa,--noexecstac -o $@ $<
-Source/help.txt.compress: Source/help.txt test-script/test1.rb cmd.txt ./pre_smon
-	cat cmd.txt | ./pre_smon
+	$(CPP) -c -Wa,--noexecstac -o $@ $<
+Source/help.txt.compress: Source/help.txt test-script/test1.rb cmd.txt Objects/pre_smon
+	cat cmd.txt | ./Objects/pre_smon
 Objects/help_dummy.o: Source/help_dummy.s
-	g++ -c -Wa,--noexecstac -o $@ $<
+	$(CPP) -c -Wa,--noexecstac -o $@ $<
