@@ -8,17 +8,20 @@ LIBS_COMMON=-L ./MyUtilities -L OpenXLSX/build/output/ -lUtilities -lmruby -lOpe
 #CFLAGS=-g $(CFLAGS_COMMON) -I ./mruby/build/host/include -pipe -O3 -march=armv7-a -mfpu=neon-vfpv4 -mfloat-abi=hard
 CFLAGS=-g $(CFLAGS_COMMON) -I ./mruby/build/host/include -pipe -O3 -march=native
 LIBS=-L ./mruby/build/host/lib $(LIBS_COMMON) -lboost_program_options -lboost_filesystem -lpthread
-AR_OBJS=Objects/linux-api.o Objects/qrcodegen.o Objects/default_options.o Objects/default_script.o Objects/help.o
-MAIN_DEPS=$(AR_OBJS) MyUtilities/libUtilities.a mruby/build/host/lib/libmruby.a OpenXLSX/build/output/libOpenXLSX.a Objects
+OBJS=Objects/linux-api.o Objects/qrcodegen.o Objects/default_options.o Objects/default_script.o
+MAIN_DEPS=$(OBJS) MyUtilities/libUtilities.a mruby/build/host/lib/libmruby.a OpenXLSX/build/output/libOpenXLSX.a Objects
 CPPFLAGS=-std=c++17 $(CFLAGS) -I QR-Code-generator/cpp/
 
 all: $(Objects) $(TARGET)
 
 clean:
-	rm -rf $(TARGET) Objects/*.[ao]
+	rm -rf $(TARGET) Objects/pre_smon Objects/*.[ao]
 
-$(TARGET): Objects/main.o $(MAIN_DEPS)
-	$(CPP) $(CPPFLAGS) $< $(AR_OBJS) -o $@ $(LIBS)
+$(TARGET): Objects/main.o $(MAIN_DEPS) Objects/help.o
+	$(CPP) $(CPPFLAGS) $< $(OBJS) Objects/help.o -o $@ $(LIBS)
+
+Objects/pre_smon: Objects/main.o $(MAIN_DEPS) Objects/help_dummy.o
+	$(CPP) $(CPPFLAGS) $< $(OBJS) Objects/help_dummy.o -o $@ $(LIBS)
 
 Objects:
 	mkdir -p Objects
@@ -50,11 +53,13 @@ Objects/default_options.o:     Source/default_options.c
 Objects/default_script.o:      Source/default_script.c
 Source/default_options.c:      Source/default_options.rb mruby/build/host/lib/libmruby.a
 	./mruby/bin/mrbc -Bdefault_options $<
-Source/default_script.c:      Source/default_script.rb  mruby/build/host/lib/libmruby.a
+Source/default_script.c:       Source/default_script.rb  mruby/build/host/lib/libmruby.a
 	./mruby/bin/mrbc -Bdefault_script $<
 Objects/qrcodegen.o: QR-Code-generator/cpp/qrcodegen.cpp
 	$(CPP) $(CPPFLAGS) -c -o $@ $<
 Objects/help.o: Source/help.s Source/help.txt.compress
-	g++ -c -Wa,--noexecstac -o $@ $<
-Source/help.txt.compress: Source/help.txt test-script/test1.rb
-	cat cmd.txt | ./$(TARGET)
+	$(CPP) -c -Wa,--noexecstac -o $@ $<
+Source/help.txt.compress: Source/help.txt test-script/test1.rb cmd.txt Objects/pre_smon
+	cat cmd.txt | ./Objects/pre_smon
+Objects/help_dummy.o: Source/help_dummy.s
+	$(CPP) -c -Wa,--noexecstac -o $@ $<
